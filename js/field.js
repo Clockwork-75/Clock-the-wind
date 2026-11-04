@@ -32,7 +32,11 @@ function bil(a, off, f, x0, y0, tx, ty) {
 // sample variables at lat/lon/time. names: array of var names. returns array of values (NaN if missing)
 export function sample(f, names, lat, lon, t, out = []) {
   let y = (lat - f.lat0) / f.dlat, x = (lon - f.lon0) / f.dlon;
-  if (y < -0.5 || x < -0.5 || y > f.ny - 0.5 || x > f.nx - 0.5) { for (let i = 0; i < names.length; i++) out[i] = NaN; return out; }
+  if (y < -0.5 || x < -0.5 || y > f.ny - 0.5 || x > f.nx - 0.5) {
+    for (let i = 0; i < names.length; i++) out[i] = NaN;
+    if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);
+    return out;
+  }
   y = Math.max(0, Math.min(f.ny - 1, y)); x = Math.max(0, Math.min(f.nx - 1, x));
   const x0 = Math.min(Math.floor(x), f.nx - 1), y0 = Math.min(Math.floor(y), f.ny - 1);
   const tx = x - x0, ty = y - y0;
@@ -46,5 +50,21 @@ export function sample(f, names, lat, lon, t, out = []) {
     const a1 = bil(a, i1 * N, f, x0, y0, tx, ty);
     out[k] = a0 === a0 && a1 === a1 ? a0 + (a1 - a0) * tt : (a0 === a0 ? a0 : a1);
   }
+  if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);
   return out;
+}
+
+// where the chosen model has no data (outside its domain / area), use the next model in line
+function fillFromFallback(f, names, lat, lon, t, out) {
+  let missing = false;
+  for (let k = 0; k < names.length; k++) if (out[k] !== out[k]) { missing = true; break; }
+  if (!missing) return;
+  const tmp = [];
+  for (const fb of f.fallback) {
+    if (t < fb.times[0] - 3600000 || t > (fb.validUntil || fb.times[fb.times.length - 1]) + 3600000) continue;   // outside its forecast time
+    sample(fb, names, lat, lon, t, tmp);
+    let still = false;
+    for (let k = 0; k < names.length; k++) { if (out[k] !== out[k]) { out[k] = tmp[k]; if (out[k] !== out[k]) still = true; } }
+    if (!still) return;
+  }
 }

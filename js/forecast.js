@@ -5,28 +5,28 @@ import { uvFromSpeedDir } from './geo.js';
 import { kv } from './db.js';
 
 export const MODELS = [
-  { id: 'italia_meteo_arpae_icon_2i', meta: 'italia_meteo_arpae_icon_2i', name: 'ICON-2I', res: '2.2 km', step: 0.025, color: '#ff5d73', def: true,  note: 'ItaliaMeteo – cijeli Jadran, najviša rezolucija, potencijal munja' },
-  { id: 'icon_d2', meta: 'dwd_icon_d2',                    name: 'ICON-D2', res: '2.2 km', step: 0.025, color: '#ffb300', def: false, note: 'DWD – sjeverni Jadran (Istra, Kvarner, do ~Zadra)' },
-  { id: 'knmi_harmonie_arome_europe', meta: 'knmi_harmonie_arome_europe', name: 'HARMONIE', res: '5.5 km', step: 0.05, color: '#ffe066', def: false, note: 'KNMI AROME – sjeverni i srednji Jadran' },
-  { id: 'ecmwf_ifs', meta: 'ecmwf_ifs',                    name: 'ECMWF',   res: '9 km',   step: 0.1,  color: '#4fc3f7', def: true,  note: 'ECMWF IFS HRES – referentni globalni model' },
-  { id: 'ecmwf_aifs025_single', meta: 'ecmwf_aifs025_single', name: 'AIFS', res: '25 km',  step: 0.25, color: '#80deea', def: false, note: 'ECMWF AI model' },
-  { id: 'icon_eu', meta: 'dwd_icon_eu',                    name: 'ICON-EU', res: '7 km',   step: 0.0625, color: '#81c784', def: true, note: 'DWD – europski model' },
-  { id: 'meteofrance_arpege_europe', meta: 'meteofrance_arpege_europe', name: 'ARPEGE', res: '11 km', step: 0.1, color: '#ce93d8', def: false, note: 'Météo-France' },
-  { id: 'ukmo_global_deterministic_10km', meta: 'ukmo_global_deterministic_10km', name: 'UKMO', res: '10 km', step: 0.1, color: '#f48fb1', def: false, note: 'UK Met Office' },
-  { id: 'gfs_seamless', meta: 'ncep_gfs025',               name: 'GFS',     res: '25 km',  step: 0.25, color: '#e0e0e0', def: true,  note: 'NOAA GFS' },
+  { id: 'italia_meteo_arpae_icon_2i', meta: 'italia_meteo_arpae_icon_2i', name: 'ICON-2I', res: '2.2 km', step: 0.025, color: '#ff1744', def: true,  note: 'ItaliaMeteo – cijeli Jadran, najviša rezolucija, potencijal munja' },
+  { id: 'icon_d2', meta: 'dwd_icon_d2',                    name: 'ICON-D2', res: '2.2 km', step: 0.025, color: '#ff9100', def: false, note: 'DWD – sjeverni Jadran (Istra, Kvarner, do ~Zadra)' },
+  { id: 'knmi_harmonie_arome_europe', meta: 'knmi_harmonie_arome_europe', name: 'HARMONIE', res: '5.5 km', step: 0.05, color: '#ffea00', def: false, note: 'KNMI AROME – sjeverni i srednji Jadran' },
+  { id: 'ecmwf_ifs', meta: 'ecmwf_ifs',                    name: 'ECMWF',   res: '9 km',   step: 0.1,  color: '#2979ff', def: true,  note: 'ECMWF IFS HRES – referentni globalni model' },
+  { id: 'ecmwf_aifs025_single', meta: 'ecmwf_aifs025_single', name: 'AIFS', res: '25 km',  step: 0.25, color: '#00e5ff', def: false, note: 'ECMWF AI model' },
+  { id: 'icon_eu', meta: 'dwd_icon_eu',                    name: 'ICON-EU', res: '7 km',   step: 0.0625, color: '#00e676', def: true, note: 'DWD – europski model' },
+  { id: 'meteofrance_arpege_europe', meta: 'meteofrance_arpege_europe', name: 'ARPEGE', res: '11 km', step: 0.1, color: '#d500f9', def: false, note: 'Météo-France' },
+  { id: 'ukmo_global_deterministic_10km', meta: 'ukmo_global_deterministic_10km', name: 'UKMO', res: '10 km', step: 0.1, color: '#ff80ab', def: false, note: 'UK Met Office' },
+  { id: 'gfs_seamless', meta: 'ncep_gfs025',               name: 'GFS',     res: '25 km',  step: 0.25, color: '#ffffff', def: false,  note: 'NOAA GFS' },
 ];
 export const MARINE_STEP = 0.08;
 export const ALADIN = { id: 'aladin_hr', name: 'ALADIN-HR', res: '2 km', note: 'DHMZ – javno nema GRIB API. Kad dobijemo pristup, dodaje se kao izvor ili GRIB uvozom.' };
 export const QUALITY = {
-  standard: { name: 'Standard', factor: 1.6, cap: 700 },
-  hd:       { name: 'HD (nativna rezolucija)', factor: 1.0, cap: 1600 },
+  standard: { name: 'Standard (preporučeno)', factor: 1.6, cap: 600 },
+  hd:       { name: 'HD (nativna rezolucija) – troši puno poziva', factor: 1.0, cap: 1600 },
   ultra:    { name: 'Ultra HD', factor: 0.8, cap: 3200 },
 };
 // paid / extra models available through Meteomatics (user's own account)
 export const MM_MODELS = [
-  { id: 'mm:mix', mm: 'mix', name: 'MM mix', res: '1 km', color: '#ff8a65' },
-  { id: 'mm:ecmwf-ifs', mm: 'ecmwf-ifs', name: 'MM ECMWF', res: '9 km', color: '#29b6f6' },
-  { id: 'mm:mm-swiss1k', mm: 'mm-swiss1k', name: 'MM 1k', res: '1 km', color: '#ffab40' },
+  { id: 'mm:mix', mm: 'mix', name: 'MM mix', res: '1 km', color: '#bcaaa4' },
+  { id: 'mm:ecmwf-ifs', mm: 'ecmwf-ifs', name: 'MM ECMWF', res: '9 km', color: '#82b1ff' },
+  { id: 'mm:mm-swiss1k', mm: 'mm-swiss1k', name: 'MM 1k', res: '1 km', color: '#ffd180' },
 ];
 
 const extra = new Map();
@@ -81,15 +81,16 @@ async function fetchJSON(url, signal, progress, opts = {}) {
     try { const j = await r.json(); reason = j.reason || j.message || ''; } catch { /* ignore */ }
     if (r.status === 429 && /minut|hour/i.test(reason) && attempt < 5) {
       const wait = /hour/i.test(reason) ? 0 : 62;
-      if (!wait) throw new Error('Satni limit API-ja potrošen – pokušaj kasnije ili koristi API ključ.');
+      if (!wait) { const e = new Error('DAILY_LIMIT'); e.daily = true; throw e; }
       for (let s = wait; s > 0; s--) {
         if (signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
         progress && progress(null, `Limit besplatnog API-ja po minuti – nastavljam za ${s}s`); await new Promise(res => setTimeout(res, 1000));
       }
       continue;
     }
-    if (r.status === 401 || r.status === 403) throw new Error('Pristup odbijen (provjeri ključ/korisničko ime): ' + reason);
-    if (r.status === 429) throw new Error('Limit poziva je potrošen (' + (reason || '429') + '). Smanji kvalitetu/modele ili unesi API ključ.');
+    if (r.status === 400 && /api key/i.test(reason)) throw new Error('Open-Meteo API ključ nije ispravan – provjeri ga u Postavke → Izvori.');
+    if (r.status === 401 || r.status === 403) throw new Error('Pristup odbijen – provjeri korisničko ime/lozinku ili ključ. ' + reason);
+    if (r.status === 429) { const e = new Error('DAILY_LIMIT'); e.daily = /daily|day/i.test(reason) || true; throw e; }
     if (attempt >= 2) throw new Error(`Greška ${r.status}: ${reason}`);
     await new Promise(res => setTimeout(res, 1500 * (attempt + 1)));
   }
@@ -184,7 +185,11 @@ async function fetchMeteomatics({ mm, grid, times, settings, signal, progress })
   const params = 'wind_speed_10m:kn,wind_dir_10m:d,wind_gusts_10m_1h:kn,precip_1h:mm,cape:Jkg';
   const url = `https://api.meteomatics.com/${new Date(times[0]).toISOString().slice(0, 19)}Z--${new Date(times[T - 1]).toISOString().slice(0, 19)}Z:PT1H/${params}/${n},${w}_${s},${e}:${grid.dlat},${grid.dlon}/json?model=${mm}`;
   progress(null, `Meteomatics ${mm}…`);
-  const j = await fetchJSON(url, signal, progress, { headers: { Authorization: 'Basic ' + btoa(`${settings.mmUser}:${settings.mmPass}`) } });
+  const auth = btoa(`${settings.mmUser}:${settings.mmPass}`);
+  // Meteomatics sends no CORS header, so in the Mac app it goes through the local proxy
+  const j = settings._native
+    ? await fetchJSON(`/proxy?u=${encodeURIComponent(url)}&auth=${encodeURIComponent(auth)}`, signal, progress)
+    : await fetchJSON(url, signal, progress, { headers: { Authorization: 'Basic ' + auth } });
   const by = {}; j.data.forEach(d => { by[d.parameter.split(':')[0]] = d.coordinates; });
   const idx = (lat, lon) => Math.round((lat - grid.lat0) / grid.dlat) * grid.nx + Math.round((lon - grid.lon0) / grid.dlon);
   const tIdx = d => Math.round((Date.parse(d) - times[0]) / 3600000);
@@ -227,7 +232,7 @@ export async function downloadForecast({ bbox, modelIds, window, quality, settin
       f.run = meta[id] || null;
       if (f.validUntil == null) empty.push(id); else fields[id] = f;
     } catch (err) {
-      if (err.name === 'AbortError') throw err;
+      if (err.name === 'AbortError' || err.daily) throw err; // no point trying the other models
       console.warn(id, err); errors.push(`${m.name}: ${err.message}`);
     }
     progress(++done / jobs, `${m.name} gotov`);

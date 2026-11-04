@@ -23,9 +23,12 @@ function scale(stops) {
   return { stops, lo, hi, lut, idx: v => Math.max(0, Math.min(1023, Math.round((v - lo) / (hi - lo) * 1023))) };
 }
 
-const WIND = [[0, '#2c3e8f'], [3, '#2f6db5'], [6, '#2f9fc4'], [9, '#35b99a'], [12, '#4cc35a'], [15, '#a5d63a'], [18, '#f2d930'], [21, '#f6a723'], [25, '#ef6a24'], [30, '#de2f2f'], [35, '#b8237f'], [45, '#6a2390']];
+// Sailing (PredictWind-style) knots scale. Edit the stops here or in Postavke → Boje vjetra.
+export const WIND_STOPS = [[0, '#8f8fdc'], [3, '#6b7fe0'], [6, '#4a9be6'], [9, '#38c1e0'], [12, '#3ad39a'], [15, '#5fd848'], [18, '#c4e43c'],
+  [21, '#ffe23a'], [24, '#ffb22e'], [27, '#ff7a26'], [30, '#f2382c'], [35, '#d8256f'], [40, '#b12eb7'], [50, '#6b2394']];
+const WIND = WIND_STOPS;
 export const LAYERS = {
-  wind:    { name: 'Vjetar', unit: 'kn', vars: ['u', 'v'], src: 'wx', scale: scale(WIND), value: (a) => Math.hypot(a[0], a[1]), legend: [0, 5, 10, 15, 20, 25, 30, 35] },
+  wind:    { name: 'Vjetar', unit: 'kn', vars: ['u', 'v'], src: 'wx', scale: scale(WIND), value: (a) => Math.hypot(a[0], a[1]), legend: [0, 5, 10, 15, 20, 25, 30, 35, 40] },
   gust:    { name: 'Udari', unit: 'kn', vars: ['gust'], src: 'wx', scale: scale(WIND), value: a => a[0], legend: [0, 5, 10, 15, 20, 25, 30, 35, 40] },
   waves:   { name: 'Valovi', unit: 'm', vars: ['wave', 'waveDir'], src: 'marine', scale: scale([[0, '#24508f'], [0.25, '#2b78b8'], [0.5, '#2fa3c0'], [1, '#3bbb8e'], [1.5, '#a6d145'], [2, '#f2cf35'], [3, '#f0832a'], [4, '#d63a3a'], [6, '#8f2a8f']]), value: a => a[0], legend: [0, 0.5, 1, 1.5, 2, 3, 4] },
   current: { name: 'Struje', unit: 'kn', vars: ['cu', 'cv'], src: 'marine', scale: scale([[0, '#1d3557'], [0.15, '#245d8f'], [0.3, '#2a86b8'], [0.5, '#39b39c'], [0.75, '#c9d64a'], [1, '#f2c037'], [1.5, '#f08a2a'], [2.5, '#e03a3a']]), value: a => Math.hypot(a[0], a[1]), legend: [0, 0.25, 0.5, 1, 1.5, 2] },
@@ -247,28 +250,32 @@ export class ParticleLayer {
     const n = Math.round(Math.min(4000, size.x * size.y / 260) * (this.state.particleDensity || 1));
     this.parts = Array.from({ length: n }, () => this.rand(size));
   }
-  rand(size) { return { x: Math.random() * size.x, y: Math.random() * size.y, age: Math.floor(Math.random() * 80) }; }
+  rand(size) { return { x: Math.random() * size.x, y: Math.random() * size.y, age: Math.floor(Math.random() * 140) }; }
   start() {
     if (this.running) return; this.running = true; this.seed();
     const out = [];
-    const tick = () => {
+    let last = performance.now();
+    const tick = (now = performance.now()) => {
       if (!this.running) return;
       requestAnimationFrame(tick);
+      const dt = Math.min(0.05, Math.max(0.005, (now - last) / 1000)); last = now;
       const st = this.state;
       const { ctx } = this.p, size = this.map.getSize();
       if (this.pause || !st.particles) { ctx.clearRect(0, 0, size.x, size.y); return; }
       const src = st.layer === 'current' ? st.marine : st.wind;
       if (!src) return;
       const vars = st.layer === 'current' ? ['cu', 'cv'] : ['u', 'v'];
-      const k = st.layer === 'current' ? 2.2 : 0.11;
+      // px per second per knot: 2 kn ≈ barely moving, 5 kn slow, 10 kn clearly moving, 20+ kn fast
+      const PX_PER_KN = st.layer === 'current' ? 60 : 3.4;
+      const k = PX_PER_KN * dt;
       ctx.globalCompositeOperation = 'destination-in';
-      ctx.fillStyle = 'rgba(0,0,0,0.90)'; ctx.fillRect(0, 0, size.x, size.y);
+      ctx.fillStyle = 'rgba(0,0,0,0.93)'; ctx.fillRect(0, 0, size.x, size.y);
       ctx.globalCompositeOperation = 'source-over';
       ctx.lineWidth = 1.15; ctx.strokeStyle = st.layer === 'current' ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.8)';
       ctx.beginPath();
-      const zoomK = Math.pow(1.35, this.map.getZoom() - 8);
+      const zoomK = 1;
       for (const p of this.parts) {
-        if (p.age++ > 90) { Object.assign(p, this.rand(size), { age: 0 }); continue; }
+        if (p.age++ > 160) { Object.assign(p, this.rand(size), { age: 0 }); continue; }
         const ll = this.map.containerPointToLatLng([p.x, p.y]);
         if (st.landAt && st.landAt(ll.lat, ll.lng)) { Object.assign(p, this.rand(size), { age: 0 }); continue; }
         sample(src, vars, ll.lat, ll.lng, st.time, out);
@@ -324,7 +331,7 @@ export function drawIsobaths(ctx, map, b, onTop) {
   const z = map.getZoom();
   if (z < 6.5) return;
   const bb = map.getBounds();
-  const levels = z >= 12 ? ISOBATHS : z >= 10.5 ? [5, 10, 20, 50, 100] : z >= 9.5 ? [10, 20, 50, 100] : z >= 8 ? [20, 50, 100, 200] : [50, 100, 200];
+  const levels = z >= 12 ? ISOBATHS : z >= 10.5 ? [5, 10, 20, 50, 100] : z >= 9.5 ? [10, 20, 50, 100] : z >= 8.5 ? [20, 50, 100, 200] : [50, 100, 200];
   const stride = z >= 11 ? 1 : z >= 10 ? 2 : z >= 9 ? 3 : z >= 8 ? 5 : 8;
   const segs = isobaths(b, bb.getSouth(), bb.getNorth(), bb.getWest(), bb.getEast(), levels, stride);
   const labels = [];
@@ -342,9 +349,12 @@ export function drawIsobaths(ctx, map, b, onTop) {
     if (onTop) { draw(L <= 5 ? 3.2 : 2.6, 'rgba(255,255,255,.55)'); draw(L <= 5 ? 1.5 : 1.1, col); }
     else { ctx.globalAlpha = .75; draw(L <= 5 ? 1.1 : 0.8, col); ctx.globalAlpha = 1; }
     // sparse depth labels along each contour
+    // sparse depth numbers: more of them only when zoomed in
+    if (z < 9) return;
+    const gx = z >= 11 ? 90 : z >= 10 ? 140 : 200, gy = z >= 11 ? 40 : z >= 10 ? 70 : 100;
     for (let i = 0; i < arr.length; i += 4 * 9) {
       const p = map.latLngToContainerPoint([arr[i], arr[i + 1]]);
-      if (labels.some(l => Math.abs(l.x - p.x) < 90 && Math.abs(l.y - p.y) < 40)) continue;
+      if (labels.some(l => Math.abs(l.x - p.x) < gx && Math.abs(l.y - p.y) < gy)) continue;
       labels.push({ x: p.x, y: p.y, t: String(L), col });
     }
   });

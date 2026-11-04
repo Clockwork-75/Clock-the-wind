@@ -1,10 +1,10 @@
 // Clock the Wind service worker: app shell offline + cache-as-you-go map tiles.
-const SHELL = 'ctw-shell-v5';
+const SHELL = 'ctw-shell-v28';
 const TILES = 'ctw-tiles-v1';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/polar.js', 'js/sails.js', 'js/geo.js', 'js/landmask.js', 'js/field.js', 'js/forecast.js',
-  'js/db.js', 'js/layers.js', 'js/courses.js', 'js/router.js', 'js/router.worker.js', 'js/bathy.js', 'js/grib.js', 'js/intro.js', 'js/direct.js', 'img/clockwork-logo.png',
+  'js/db.js', 'js/layers.js', 'js/courses.js', 'js/router.js', 'js/router.worker.js', 'js/grib.worker.js', 'js/bathy.js', 'js/grib.js', 'js/intro.js', 'js/direct.js', 'img/clockwork-logo.png',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
   'data/landmask.bin', 'data/coast.json', 'data/depth.bin.gz', 'data/polar_melges40.csv',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-512.png',

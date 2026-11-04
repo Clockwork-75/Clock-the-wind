@@ -249,12 +249,12 @@ function parseGrib1(b, o, msgs) {
     for (let k = 0; k < grid.npts; k++) bm[k] = bs.read(1); bitmap = bm; p += bl;
   }
   const bds = p, bl = u24(b, bds), bflag = b[bds + 3];
-  if (bflag & 0x40) throw new Error('GRIB1 kompleksno pakiranje nije podržano');
   const E = s16(b, bds + 4), R = ibm(b, bds + 6), nbits = b[bds + 10];
   const unused = bflag & 0x0f;
   const n = bitmap ? bitmap.reduce((a, c) => a + c, 0) : Math.floor(((bl - 11) * 8 - unused) / Math.max(1, nbits));
   const name = GRIB1[param];
-  const okLevel = (name === 'U' || name === 'V') ? (ltype === 105 && lev === 10) || ltype === 1 : true;
+  if (name && (bflag & 0x40)) throw new Error('GRIB1 kompleksno pakiranje nije podržano – izvezi GRIB s jednostavnim pakiranjem');
+  const okLevel = (name === 'U' || name === 'V') ? ANY_LEVEL || (ltype === 105 && lev === 10) || ltype === 1 : true;
   if (name && okLevel) {
     const vals = unpackSimple(b, bds + 11, Math.min(n, grid.npts), nbits, R, E, D);
     msgs.push({ name, valid: ref + ft * 3600000, grid, vals: expand(vals, bitmap, grid.npts) });
@@ -262,15 +262,25 @@ function parseGrib1(b, o, msgs) {
   return end;
 }
 
-export function decodeGrib(buffer) {
-  const b = new Uint8Array(buffer), msgs = [];
+// Files from paid services often mix variables, levels and packings: a message we cannot read is skipped
+// (and remembered), so the wind in the same file is still imported. Only if nothing usable is left do we fail.
+let ANY_LEVEL = false;   // tests only: accept U/V on any level
+export function decodeGrib(buffer, opts = {}) {
+  const b = new Uint8Array(buffer), msgs = [], skipped = [];
+  ANY_LEVEL = !!opts.anyLevel;
   let o = 0;
   while (o < b.length - 8) {
     if (b[o] === 0x47 && b[o + 1] === 0x52 && b[o + 2] === 0x49 && b[o + 3] === 0x42) {
       const ed = b[o + 7];
-      o = ed === 2 ? parseGrib2(b, o, msgs) : parseGrib1(b, o, msgs);
+      const len = ed === 2 ? Number(new DataView(b.buffer, b.byteOffset + o + 8, 8).getBigUint64(0, false)) : u24(b, o + 4);
+      try { ed === 2 ? parseGrib2(b, o, msgs) : parseGrib1(b, o, msgs); }
+      catch (e) { skipped.push(e.message); }
+      o += len > 8 ? len : 1;
     } else o++;
   }
+  ANY_LEVEL = false;
+  msgs.skipped = skipped;
+  if (!msgs.length && skipped.length) throw new Error(skipped[0]);
   return msgs;
 }
 
@@ -313,22 +323,25 @@ export function gribToField(msgs, bbox, id) {
 }
 
 // crop one decoded message to a bbox right away (keeps memory small when reading many global files)
-export function cropMsg(m, bbox) {
+// maxPts: for very large areas (zoomed far out) every k-th grid point is kept, so a whole-Mediterranean view stays
+// a few MB instead of hundreds – the detail is not visible at that zoom anyway.
+export function cropMsg(m, bbox, maxPts = Infinity) {
   const g = m.grid;
   const lonN = x => (x >= 180 ? x - 360 : x);
   const south = Math.min(g.la1, g.la2), west = lonN(g.lo1), dlon = g.di, dlat = g.dj;
   const i0 = Math.max(0, Math.floor((bbox.w - west) / dlon) - 1), i1 = Math.min(g.ni - 1, Math.ceil((bbox.e - west) / dlon) + 1);
   const j0 = Math.max(0, Math.floor((bbox.s - south) / dlat) - 1), j1 = Math.min(g.nj - 1, Math.ceil((bbox.n - south) / dlat) + 1);
   if (i1 <= i0 || j1 <= j0) return null;
-  const nx = i1 - i0 + 1, ny = j1 - j0 + 1, vals = new Float32Array(nx * ny);
+  const k = Math.max(1, Math.ceil(Math.sqrt((i1 - i0 + 1) * (j1 - j0 + 1) / maxPts)));
+  const nx = Math.floor((i1 - i0) / k) + 1, ny = Math.floor((j1 - j0) / k) + 1, vals = new Float32Array(nx * ny);
   const southFirst = (g.scan & 0x40) !== 0, westFirst = (g.scan & 0x80) === 0;
   for (let j = 0; j < ny; j++) {
-    const row = southFirst ? j0 + j : g.nj - 1 - (j0 + j);
+    const row = southFirst ? j0 + j * k : g.nj - 1 - (j0 + j * k);
     for (let i = 0; i < nx; i++) {
-      const col = westFirst ? i0 + i : g.ni - 1 - (i0 + i);
+      const col = westFirst ? i0 + i * k : g.ni - 1 - (i0 + i * k);
       vals[j * nx + i] = m.vals[row * g.ni + col];
     }
   }
   const la1 = south + j0 * dlat, lo1 = west + i0 * dlon;
-  return { name: m.name, valid: m.valid, vals, grid: { ni: nx, nj: ny, la1, lo1, la2: la1 + (ny - 1) * dlat, lo2: lo1 + (nx - 1) * dlon, di: dlon, dj: dlat, scan: 0x40, npts: nx * ny } };
+  return { name: m.name, valid: m.valid, vals, grid: { ni: nx, nj: ny, la1, lo1, la2: la1 + (ny - 1) * dlat * k, lo2: lo1 + (nx - 1) * dlon * k, di: dlon * k, dj: dlat * k, scan: 0x40, npts: nx * ny } };
 }

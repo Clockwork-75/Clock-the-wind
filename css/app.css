@@ -192,7 +192,7 @@ canvas.chart { width: 100%; height: 190px; display: block; margin-top: 8px; back
   .fab { padding: 9px 12px; font-size: 13px; }
   .tl-info { display: none; }
   .tl-time { font-size: 15px; }
-  #sheet { left: 0; right: 0; top: auto; bottom: 0; width: 100%; height: 68vh; border-radius: 20px 20px 0 0; padding-bottom: var(--sab); }
+  #sheet { left: 0; right: 0; top: auto; bottom: 0; width: 100%; height: 60vh; border-radius: 20px 20px 0 0; padding-bottom: var(--sab); }
   .grab { display: block; width: 40px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); margin: 7px auto 0; }
   #pointCard { bottom: calc(108px + var(--sab)); }
 }
@@ -250,3 +250,122 @@ body[data-basemap="emodnet"] #map, body[data-basemap="emodnet"] .leaflet-contain
 
 #layerbar .ov.on { background: rgba(0,229,255,.16); color: #fff; }
 #layerbar .ov.on svg { color: #00e5ff; }
+.limitbox { margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255,181,71,.12); border: 1px solid rgba(255,181,71,.35); color: var(--text); font-size: 12.5px; line-height: 1.45; }
+.limitbox ol { margin: 6px 0; padding-left: 18px; } .limitbox li { margin: 3px 0; }
+
+/* compact, draggable point card */
+#pointCard { width: min(430px, calc(100vw - 16px)); padding: 6px 10px 8px; border-radius: 14px; font-size: 12px; }
+#pointCard .hd { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; margin-bottom: 4px; gap: 6px; }
+#pointCard.dragging { opacity: .92; } #pointCard.dragging .hd { cursor: grabbing; }
+#pointCard .grip { color: var(--muted); font-size: 14px; }
+#pointCard .hd b { font-size: 12px; }
+#pointCard .pcbtns { margin-left: auto; display: flex; gap: 2px; }
+#pointCard .pcbtns button { margin: 0; padding: 3px 6px; border-radius: 7px; color: var(--muted); font-size: 12px; }
+#pointCard .pcbtns button.on { color: #fff; background: rgba(255,255,255,.1); }
+#pointCard td, #pointCard th { padding: 2px 4px; font-size: 11.5px; }
+#pointCard canvas { height: 90px; }
+#pointCard.mini { width: auto; max-width: calc(100vw - 16px); padding: 4px 8px; }
+#pointCard.mini .hd { margin: 0; }
+#pointCard .pcsum { white-space: nowrap; }
+
+/* mode pill + regatta marks */
+.modepill { flex: none; display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700;
+  background: rgba(62,199,255,.14); color: #bfeeff; border: 1px solid rgba(62,199,255,.35); max-width: 190px; }
+.modepill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modepill.race { background: rgba(255,138,29,.16); color: #ffd3a8; border-color: rgba(255,138,29,.45); }
+.mark-ic { background: none; border: 0; filter: drop-shadow(0 2px 2px rgba(0,0,0,.45)); cursor: grab; }
+.mark-ic:active { cursor: grabbing; }
+@media (max-width: 700px) { .modepill { position: fixed; z-index: 1000; left: calc(8px + var(--sal)); top: calc(66px + var(--sat)); padding: 9px 12px; max-width: 150px; font-size: 12.5px; background: var(--glass-2); box-shadow: 0 6px 20px rgba(0,0,0,.35); } .modepill.race { background: #3b2410; } }
+
+/* clearly editable names */
+.editrow { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.28); border-radius: 9px; padding: 4px 8px; margin: 6px 0; }
+.editrow:focus-within { border-style: solid; border-color: var(--accent); }
+.editrow .pen { font-size: 12px; opacity: .8; }
+.editrow input.editable { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); font-weight: 650; padding: 3px 0; }
+.editrow input.editable:focus { outline: none; }
+.editrow.mini { flex: 1; margin: 0; padding: 2px 6px; }
+
+/* routes: boats, manoeuvres, replay */
+.boat svg { width: 30px; height: 30px; }
+.boat .boatlbl { cursor: pointer; }
+.boatstar { position: absolute; left: -6px; top: -26px; color: #ffd400; font-size: 14px; text-shadow: 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+.man span { position: absolute; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center;
+  font: 800 9.5px/1 -apple-system, system-ui; background: #fff; color: #000; border: 2.5px solid; box-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.man.gybe span { background: #000; color: #fff; border-radius: 3px; }
+.boatpop .leaflet-popup-content-wrapper { background: rgba(10,16,26,.92); color: #e8eef6; border-radius: 10px; padding: 0; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+.boatpop .leaflet-popup-content { margin: 7px 10px; font-size: 11.5px; line-height: 1.35; width: auto !important; }
+.boatpop .leaflet-popup-tip { background: rgba(10,16,26,.92); }
+.boatpop a.leaflet-popup-close-button { color: #9fb0c3; top: 2px; right: 2px; }
+.bi .bih { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; padding-right: 14px; }
+.bi .bit { margin-left: auto; color: #9fb0c3; font-variant-numeric: tabular-nums; }
+.bi .big { display: grid; grid-template-columns: auto auto; gap: 1px 10px; font-variant-numeric: tabular-nums; }
+.bi .big span { color: #9fb0c3; } .bi .big b { color: #fff; }
+.bi .bis { margin-top: 3px; color: #cfd8e3; }
+#replayBar { position: fixed; z-index: 1001; top: calc(66px + var(--sat)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
+  padding: 5px 7px; border-radius: 999px; max-width: calc(100vw - 140px); }
+#replayBar.hidden { display: none; }
+#replayBar .rpbtn { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #000; font-size: 15px; font-weight: 800; flex: none; display: grid; place-items: center; }
+#replayBar .rpbtn.small { width: auto; height: 28px; padding: 0 10px; border-radius: 999px; background: rgba(255,255,255,.1); color: #fff; font-size: 12px; }
+#replayBar select { background: rgba(255,255,255,.08); color: #fff; border: 0; border-radius: 8px; padding: 5px 4px; font-size: 12px; flex: none; }
+.rprank { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.rprank::-webkit-scrollbar { display: none; }
+.rprank .rk { white-space: nowrap; font-size: 11.5px; font-weight: 700; padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,.07); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.rprank .rk i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1px #000; }
+.rprank .rk.done { background: rgba(76,209,138,.18); }
+.ideal { display: flex; gap: 10px; align-items: center; padding: 9px 11px; border-radius: 10px; background: rgba(255,212,0,.1); border: 1px solid rgba(255,212,0,.4); margin-bottom: 10px; }
+.ideal .dot { width: 14px; height: 14px; box-shadow: 0 0 0 2px #000; }
+@media (max-width: 700px) {
+  #replayBar { top: auto; bottom: calc(174px + var(--sab)); left: calc(8px + var(--sal)); right: calc(64px + var(--sar)); transform: none; max-width: none; border-radius: 14px; }
+}
+
+/* layer bar never runs under the timeline on short screens: scrolls instead */
+#layerbar { max-height: calc(100vh - 66px - 122px - var(--sat) - var(--sab)); overflow-y: auto; scrollbar-width: none; }
+#layerbar::-webkit-scrollbar { display: none; }
+@media (max-width: 700px) { #layerbar { max-height: calc(100vh - 110px - 160px - var(--sat) - var(--sab)); } }
+
+/* route hover info */
+.leaflet-tooltip.rtip { background: rgba(10,16,26,.92); color: #e8eef6; border: 0; border-radius: 9px; padding: 6px 9px; font-size: 11.5px; line-height: 1.45; box-shadow: 0 4px 14px rgba(0,0,0,.5); white-space: nowrap; }
+.leaflet-tooltip.rtip::before { border-top-color: rgba(10,16,26,.92); }
+.rtip .dot { box-shadow: 0 0 0 1px #000; } .rtip small, .rtip .muted { color: #9fb0c3; }
+.rprank .rk i, .dot { box-shadow: 0 0 0 1px rgba(0,0,0,.8); }
+/* one colour per model everywhere: chip dot + coloured edge on the active chip */
+.chip i { width: 11px; height: 11px; box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
+.chip { border-bottom: 3px solid var(--mc, transparent); }
+.chip.on { border-color: var(--mc, var(--accent)); box-shadow: inset 0 0 0 1px var(--mc, transparent); }
+.dot, .rprank .rk i, .rtip .dot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
+
+/* fastest route: impossible to miss */
+.idealtag div { position: absolute; transform: translate(-50%, -150%); white-space: nowrap; background: #ffd400; color: #000; font: 800 11.5px/1 -apple-system, system-ui;
+  padding: 5px 8px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.55), 0 0 0 2px #000; }
+.idealtag .dot { width: 9px; height: 9px; margin-right: 4px; box-shadow: 0 0 0 1.5px #000; }
+.rprank .rk em { font-style: normal; font-weight: 600; opacity: .8; }
+.rprank .rk.best { background: #ffd400; color: #000; }
+.rprank .rk.best i { box-shadow: 0 0 0 1.5px #000; }
+.boatstar { font-size: 17px; top: -30px; }
+
+/* phone: compact but readable overlays – map stays the main thing */
+@media (max-width: 700px) {
+  .idealtag div { font-size: 10.5px; padding: 4px 7px; }
+  .w { display: none; }
+  .rprank .rk { font-size: 10.5px; padding: 3px 6px; gap: 3px; }
+  #replayBar { gap: 4px; padding: 4px 5px; }
+  #replayBar .rpbtn { width: 30px; height: 30px; font-size: 13px; }
+  #replayBar .rpbtn.small { height: 26px; padding: 0 7px; font-size: 11px; }
+  #replayBar select { font-size: 11px; padding: 4px 2px; }
+  .man span { width: 13px; height: 13px; font-size: 8px; border-width: 2px; }
+  .boatlbl { font-size: 10px; padding: 1px 5px; }
+  .boat svg { width: 26px; height: 26px; }
+  .leaflet-tooltip.rtip { font-size: 10.5px; padding: 5px 7px; white-space: normal; width: 230px; }
+}
+
+code.sel { display: block; user-select: all; -webkit-user-select: all; background: rgba(255,255,255,.08); padding: 6px 8px; border-radius: 7px; margin: 4px 0; word-break: break-all; font-size: 11.5px; }
+#sdModel { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px; flex: 1; }
+
+/* download button always reachable: pinned to the bottom of the panel */
+.dlbar { position: sticky; bottom: -20px; z-index: 3; margin: 10px -14px -20px; padding: 10px 14px 14px; background: #18212f;
+  border-top: 1px solid var(--line); box-shadow: 0 -8px 18px rgba(0,0,0,.35); }
+.dlbar .btn { margin: 0; }
+.dlbar .progress { margin-top: 6px; }
+.dlbar #dlText:empty { display: none; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,181,71,.0); } 50% { box-shadow: 0 0 0 6px rgba(255,181,71,.55); } }
+.btn.pulse { animation: pulse 1s ease-in-out 4; }

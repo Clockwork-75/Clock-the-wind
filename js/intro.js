@@ -50,6 +50,7 @@ export function playIntro({ force = false } = {}) {
     };
     img.src = LOGO;
     root.addEventListener('pointerdown', finish);
+    root.addEventListener('click', finish);
     addEventListener('keydown', finish, { once: true });
   });
 }

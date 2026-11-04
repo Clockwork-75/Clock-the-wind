@@ -1,13 +1,13 @@
 import { Polar, parsePolarCSV, parsePolarAny } from './polar.js';
 import { recommendSail, SAILS } from './sails.js';
-import { decodeLandmask, isLand } from './landmask.js';
+import { decodeLandmask, isLand, snapToSea } from './landmask.js';
 import { loadBathy, routingMask, depthAt } from './bathy.js';
 import { sample } from './field.js';
 import { MODELS, MM_MODELS, ALADIN, QUALITY, MARINE_STEP, modelById, registerModel, gridFor, raceWindow, estimateCalls, downloadForecast, checkNewRuns, saveForecast, loadForecast } from './forecast.js';
 import { decodeGrib, gribToField } from './grib.js';
-import { DIRECT, nativeAvailable, downloadDirect, exportPackage, isPackage, importPackage } from './direct.js';
+import { DIRECT, directUsable, nativeAvailable, downloadDirect, exportPackage, isPackage, importPackage, fetchCloudPackage, CLOUD_DEFAULT } from './direct.js';
 import { WeatherLayer, ParticleLayer, ChartLayer, DepthLayer, LAYERS, decodeCoast, colorFor, ISOBATHS } from './layers.js';
-import { PRESETS, PLACES } from './courses.js';
+import { PRESETS, REGATTAS, PLACES } from './courses.js';
 import { speedDirFromUV, distNm, bearing, fmtLatLon, angDiff } from './geo.js';
 import { kv } from './db.js';
 import { playIntro } from './intro.js';
@@ -21,14 +21,28 @@ const DAYS = ['ned', 'pon', 'uto', 'sri', 'čet', 'pet', 'sub'];
 // ---------------- persistent settings ----------------
 const DEFAULTS = {
   apiKey: '', efficiency: 100, tackPenaltySec: 25, gybePenaltySec: 20, dtMin: 10, useCurrents: true, wavePenalty: true,
-  quality: 'hd', dlModels: MODELS.filter(m => m.def).map(m => m.id), basemap: 'nautical', seamarks: false,
+  quality: 'standard', dlModels: MODELS.filter(m => m.def).map(m => m.id), basemap: 'nautical', seamarks: false,
   colorOverLand: false, opacity: 0.85, arrows: 'arrows', particles: true, showNumbers: false, layer: 'wind', particleDensity: 1,
   colors: true, hiRes: true, draft: 2.6, depthMargin: 1.4, avoidShallow: true, boatId: 'melges40', mmUser: '', mmPass: '',
 };
 const settings = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ctw.settings') || '{}'));
 if (settings.basemap === 'offline' && !localStorage.getItem('ctw.v2')) { settings.basemap = 'nautical'; localStorage.setItem('ctw.v2', '1'); }
 const saveSettings = () => localStorage.setItem('ctw.settings', JSON.stringify(settings));
-let course = JSON.parse(localStorage.getItem('ctw.course') || 'null') || { preset: 'viski', marks: PRESETS[0].marks.map(m => ({ ...m })), start: null };
+// v0.6: lighter defaults for Open-Meteo (free daily quota)
+if (!localStorage.getItem('ctw.v6')) {
+  settings.quality = 'standard';
+  settings.dlModels = settings.dlModels.filter(id => id !== 'gfs_seamless');
+  localStorage.setItem('ctw.v6', '1'); localStorage.setItem('ctw.settings', JSON.stringify(settings));
+}
+let course = JSON.parse(localStorage.getItem('ctw.course') || 'null') || { regattaId: 'viska', stage: 0, name: 'Viška regata', marks: REGATTAS[0].stages[0].marks.map(m => ({ ...m })), start: null };
+// v0.10: regattas with stages and official names – migrate older saved courses to the new data
+if (!localStorage.getItem('ctw.v10course')) {
+  const old = { viski: ['viska', 0], jabuka: ['jabuka', 0], mrdujska: ['mrdujska', 0], susac: ['susac', 0], fiumanka: ['fiumanka', 0], 'rovinj-pula': ['rovinj-pula', 0] }[course.preset];
+  if (old) { const r = REGATTAS.find(x => x.id === old[0]); Object.assign(course, { regattaId: r.id, stage: old[1], name: r.name, marks: r.stages[old[1]].marks.map(m => ({ ...m })) }); }
+  if (!course.name) course.name = 'Moja regata';
+  delete course.preset;
+  localStorage.setItem('ctw.course', JSON.stringify(course)); localStorage.setItem('ctw.v10course', '1');
+}
 const saveCourse = () => { localStorage.setItem('ctw.course', JSON.stringify(course)); markStale(); };
 
 const state = {
@@ -88,6 +102,13 @@ const fmtTime = (t, withDay = true) => {
 };
 const fmtRun = t => { const d = new Date(t); return `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}. ${String(d.getUTCHours()).padStart(2, '0')}z`; };
 const raceStart = () => course.start || defaultStart();
+// Model colours on the map: each model in the current forecast gets its own slot from a palette chosen to stand out
+// against the wind colours (no blues/greens) and against each other. Used everywhere (chips, routes, boats, tables).
+const ROUTE_PALETTE = ['#ff1744', '#ffffff', '#e040fb', '#ff9100', '#111111', '#ffee00', '#ff80ab', '#8d6e63', '#9e9e9e', '#ff6e40', '#7c4dff', '#f8bbd0'];
+function mcol(id) {
+  const s = state && state.set, i = s ? s.models.indexOf(id) : -1;
+  return i >= 0 && i < ROUTE_PALETTE.length ? ROUTE_PALETTE[i] : modelById(id).color;
+}
 function markStale() { if (state && state.routes) Object.values(state.routes).forEach(r => { r.stale = true; }); }
 const fmtDur = h => { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return `${hh}h ${String(mm).padStart(2, '0')}m`; };
 const toast = (msg, ms = 2600) => { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.add('hidden'), ms); };
@@ -139,9 +160,10 @@ async function saveBoats() { await kv.set('boats', boats.filter(b => !b.builtin)
 function useSet(set) {
   state.set = set;
   if (!set) { renderChips(); return; }
-  const pref = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'dir_icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'icon_eu', 'icon_d2', 'knmi_harmonie_arome_europe'];
+  const pref = ['italia_meteo_arpae_icon_2i', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
   if (!state.modelId || !set.fields[state.modelId]) state.modelId = pref.find(id => set.fields[id]) || set.models[0];
-  state.wind = set.fields[state.modelId];
+  state.wind = withFallback(set, state.modelId);
+  drawArea();
   state.marine = set.fields.marine;
   set.models.forEach(id => { if (set.fields[id].meta) registerModel(set.fields[id].meta); });
   const t0 = set.times[0], t1 = set.times[set.times.length - 1];
@@ -151,9 +173,48 @@ function useSet(set) {
   renderChips();
   redraw();
 }
+// display copy of a model that borrows from the next best models wherever it has no data
+const FILL_ORDER = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'meteofrance_arpege_europe', 'ukmo_global_deterministic_10km', 'ecmwf_aifs025_single', 'gfs_seamless', 'dir_gfs'];
+function withFallback(set, id) {
+  const f = set.fields[id]; if (!f) return f;
+  const rank = x => { const i = FILL_ORDER.indexOf(x); return i < 0 ? 99 : i; };
+  const others = set.models.filter(m => m !== id && !m.startsWith('grib:')).sort((a, b) => rank(a) - rank(b)).map(m => set.fields[m]);
+  const prev = (set.prev || []).map(k => set.fields[k]).filter(Boolean);   // earlier downloads: only where nothing newer exists
+  return { ...f, fallback: [...others, ...prev] };
+}
+// A new download never shrinks what is coloured: the previous forecast stays underneath as a reserve,
+// wherever (and whenever) the new one has no data. Old pieces fully covered by the new download are dropped.
+// imported GRIB files stay when a new forecast arrives
+function keepGribs(set, old) {
+  if (!old) return;
+  for (const id of old.models.filter(x => x.startsWith('grib:'))) if (!set.fields[id]) { set.fields[id] = old.fields[id]; set.models.push(id); }
+}
+const extentOf = f => ({ s: f.lat0, n: f.lat0 + f.dlat * (f.ny - 1), w: f.lon0, e: f.lon0 + f.dlon * (f.nx - 1) });
+function inheritCoverage(nw, old) {
+  if (!nw || !old || nw === old) return;
+  const ne = setExtent(nw), t0 = nw.times[0], t1 = nw.times[nw.times.length - 1];
+  const inside = (a, b) => b && a.s >= b.s && a.n <= b.n && a.w >= b.w && a.e <= b.e;
+  const cand = [...(old.models || []).filter(id => !id.startsWith('grib:')).map(id => [id, old.fields[id]]), ...(old.prev || []).map(k => [k.replace(/^prev\d*:/, ''), old.fields[k]])];
+  const keep = [];
+  for (const [id, f] of cand) {
+    if (!f || !f.nx || !f.times) continue;
+    if ((f.validUntil || f.times[f.times.length - 1]) < t0 || f.times[0] > t1) continue;   // no common time
+    if (inside(extentOf(f), ne)) continue;                                                   // already covered by the new one
+    keep.push([id, f]);
+  }
+  nw.prev = [];
+  keep.slice(0, 8).forEach(([id, f], i) => { const k = `prev${i}:${id}`; nw.fields[k] = f; nw.prev.push(k); });
+}
+// dashed outline of the downloaded forecast area, so it is always clear where data exists
+let areaRect = null;
+function drawArea() {
+  if (areaRect) { map.removeLayer(areaRect); areaRect = null; }
+  const b = state.set && state.set.bbox; if (!b) return;
+  areaRect = L.rectangle([[b.s, b.w], [b.n, b.e]], { pane: 'routes', color: '#ffffff', weight: 1.5, opacity: 0.7, dashArray: '6 6', fill: false, interactive: false }).addTo(map);
+}
 function selectModel(id) {
   state.modelId = id;
-  state.wind = state.set.fields[id];
+  state.wind = withFallback(state.set, id);
   renderChips(); redraw(); updatePointCard();
 }
 function renderChips() {
@@ -162,7 +223,7 @@ function renderChips() {
   el.innerHTML = state.set.models.map(id => {
     const m = modelById(id);
     const run = state.set.fields[id].run, isNew = state.newRuns.some(n => n.id === id);
-    return `<button class="chip ${id === state.modelId ? 'on' : ''}" data-model="${id}" title="${run ? 'run ' + fmtRun(run.runInit) : ''}"><i style="background:${m.color}"></i>${m.name}<small>${run ? fmtRun(run.runInit) : m.res}</small>${isNew ? '<b class="newdot" title="Dostupan noviji run">●</b>' : ''}</button>`;
+    return `<button class="chip ${id === state.modelId ? 'on' : ''}" style="--mc:${mcol(id)}" data-model="${id}" title="${run ? 'run ' + fmtRun(run.runInit) : ''}"><i style="background:${mcol(m.id)}"></i>${m.name}<small>${run ? fmtRun(run.runInit) : m.res}</small>${isNew ? '<b class="newdot" title="Dostupan noviji run">●</b>' : ''}</button>`;
   }).join('');
   el.querySelectorAll('.chip').forEach(b => b.onclick = () => selectModel(b.dataset.model));
 }
@@ -215,8 +276,8 @@ function drawTimeline() {
   }
   // route ETAs
   for (const [id, r] of Object.entries(state.routes)) {
-    if (!r.ok || fcMode()) continue;
-    c.fillStyle = modelById(id).color;
+    if (!r.ok || settings.mode !== 'race') continue;
+    c.fillStyle = mcol(id);
     c.fillRect(X(r.startTime), 10, Math.max(2, X(r.eta) - X(r.startTime)), 2);
     c.beginPath(); c.arc(X(r.eta), 11, 3, 0, 7); c.fill();
   }
@@ -303,19 +364,29 @@ function renderLegend() {
 // ---------------- course (marks) ----------------
 let markLayer = L.layerGroup().addTo(map);
 let courseLine = null;
+// regatta marks: start/finish flags, orange racing buoys in between. Only shown while a regatta is active.
+const BUOY = n => `<svg viewBox="0 0 32 40" width="30" height="38"><ellipse cx="16" cy="36" rx="9" ry="2.6" fill="rgba(0,0,0,.35)"/>
+  <path d="M8 34 L10 12 Q16 6 22 12 L24 34 Z" fill="#ff8a1d" stroke="#5a2a00" stroke-width="1.4"/>
+  <path d="M9.2 22 L22.8 22" stroke="#fff" stroke-width="3"/><rect x="14.6" y="2" width="2.8" height="8" fill="#5a2a00"/>
+  <text x="16" y="31.5" text-anchor="middle" font-size="9" font-weight="800" font-family="-apple-system,system-ui" fill="#3a1600">${n}</text></svg>`;
+const FLAG = (kind) => `<svg viewBox="0 0 32 40" width="30" height="38"><ellipse cx="9" cy="37" rx="7" ry="2.2" fill="rgba(0,0,0,.35)"/>
+  <rect x="7.6" y="3" width="2.6" height="34" rx="1" fill="#e9edf2" stroke="#222" stroke-width=".8"/>
+  ${kind === 's' ? '<path d="M10 4 L29 10 L10 17 Z" fill="#34c76b" stroke="#0d4d26" stroke-width="1.2"/><text x="16" y="13.5" font-size="7" font-weight="900" font-family="-apple-system,system-ui" fill="#06301a">S</text>'
+    : '<g stroke="#111" stroke-width="1"><rect x="10" y="4" width="19" height="13" fill="#fff"/><path fill="#111" d="M10 4h4.75v3.25H10zM19.5 4h4.75v3.25H19.5zM14.75 7.25h4.75v3.25h-4.75zM24.25 7.25H29v3.25h-4.75zM10 10.5h4.75v3.25H10zM19.5 10.5h4.75v3.25H19.5zM14.75 13.75h4.75V17h-4.75zM24.25 13.75H29V17h-4.75z"/></g>'}</svg>`;
 function drawCourse() {
   markLayer.clearLayers();
-  if (settings.mode === 'forecast') return; // pure forecast view: no course on the map
+  if (settings.mode !== 'race') return;           // no regatta → clean forecast map, no buoys
   const n = course.marks.length;
+  courseLine = L.polyline(course.marks.map(m => [m.lat, m.lon]), { color: '#fff', weight: 1.5, dashArray: '5 6', opacity: 0.75, interactive: false }).addTo(markLayer);
   course.marks.forEach((m, i) => {
-    const cls = i === 0 ? 's' : i === n - 1 ? 'f' : '';
-    const lbl = i === 0 ? 'S' : i === n - 1 ? 'C' : i;
-    const mk = L.marker([m.lat, m.lon], { draggable: true, icon: L.divIcon({ className: '', html: `<div class="mk ${cls}">${lbl}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }), title: m.name })
-      .addTo(markLayer);
-    mk.on('dragend', e => { const ll = e.target.getLatLng(); m.lat = +ll.lat.toFixed(5); m.lng = undefined; m.lon = +ll.lng.toFixed(5); saveCourse(); drawCourse(); renderCourseTab(); });
-    mk.bindTooltip(m.name, { direction: 'top', offset: [0, -12] });
+    const kind = i === 0 ? 's' : i === n - 1 ? 'f' : 'm';
+    const html = kind === 'm' ? BUOY(i) : FLAG(kind);
+    const icon = L.divIcon({ className: 'mark-ic', html, iconSize: [30, 38], iconAnchor: kind === 'm' ? [15, 36] : [9, 37] });
+    const mk = L.marker([m.lat, m.lon], { draggable: true, autoPan: true, icon, title: m.name, zIndexOffset: 1000 }).addTo(markLayer);
+    mk.on('drag', e => { const ll = e.target.getLatLng(); m.lat = +ll.lat.toFixed(5); m.lon = +ll.lng.toFixed(5); courseLine.setLatLngs(course.marks.map(q => [q.lat, q.lon])); });
+    mk.on('dragend', () => { saveCourse(); drawCourse(); if (!$('#tab-course').classList.contains('hidden')) renderCourseTab(); });
+    mk.bindTooltip(`${m.name}<br><small>povuci za pomicanje</small>`, { direction: 'top', offset: [0, -34] });
   });
-  courseLine = L.polyline(course.marks.map(m => [m.lat, m.lon]), { color: '#fff', weight: 1.5, dashArray: '5 6', opacity: 0.7, interactive: false }).addTo(markLayer);
 }
 function courseBBox() {
   const la = course.marks.map(m => m.lat), lo = course.marks.map(m => m.lon);
@@ -325,7 +396,30 @@ function courseBBox() {
 }
 
 // ---------------- sheet / tabs ----------------
+// One switch for the whole app: 'race' = regatta (buoys, routes, start sync) · 'forecast' = clean forecast map
+function setMode(m) {
+  if (settings.mode === m) { updateModePill(); return; }
+  settings.mode = m; saveSettings();
+  drawCourse();
+  if (m === 'race') { routeLayer.addTo(map); updateBoats(); } else { replayPause(); if (boatPopup) map.closePopup(boatPopup); routeLayer.remove(); }
+  renderReplayBar();
+  drawTimeline(); updateModePill(); updatePointCard();
+  const open = $('.tabs [data-tab].on');
+  if (open && !$('#sheet').classList.contains('hidden')) {
+    if (m === 'forecast' && ['course', 'routing', 'compare'].includes(open.dataset.tab)) { setEditing(false); $('#sheet').classList.add('hidden'); }
+    else openSheet(open.dataset.tab);
+  }
+}
+function updateModePill() {
+  const el = $('#modePill'); if (!el) return;
+  const race = settings.mode === 'race';
+  const r = REGATTAS.find(x => x.id === course.regattaId), st = r && r.stages.length > 1 ? r.stages[course.stage || 0] : null;
+  el.innerHTML = race ? `⛵ <span>${course.name || 'Regata'}${st ? ' · ' + st.name.split(':')[0] : ''}</span>` : '🌬 <span>Prognoza</span>';
+  el.title = race ? 'Regata aktivna – klikni za samo prognozu' : 'Samo prognoza – klikni za regatu (staza, bove, routing)';
+  el.classList.toggle('race', race);
+}
 function openSheet(tab) {
+  if (['course', 'routing', 'compare'].includes(tab) && settings.mode !== 'race') setMode('race');
   $('#sheet').classList.remove('hidden');
   $$('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   $$('.tabbody').forEach(b => b.classList.toggle('on', b.id === 'tab-' + tab));
@@ -334,7 +428,8 @@ function openSheet(tab) {
 $$('.tabs [data-tab]').forEach(b => b.onclick = () => openSheet(b.dataset.tab));
 $('#sheetClose').onclick = () => { $('#sheet').classList.add('hidden'); setEditing(false); };
 $('#btnMenu').onclick = () => $('#sheet').classList.contains('hidden') ? openSheet('data') : $('#sheet').classList.add('hidden');
-$('#fabCourse').onclick = () => { if (settings.mode === 'forecast') { settings.mode = 'race'; saveSettings(); drawCourse(); routeLayer.addTo(map); } openSheet('course'); };
+$('#fabCourse').onclick = () => openSheet('course');
+$('#modePill').onclick = () => { if (settings.mode === 'race') { setMode('forecast'); toast('Samo prognoza – bove i rute skrivene (staza je sačuvana)'); } else { setMode('race'); zoomCourse(); openSheet('course'); } };
 $('#fabRoute').onclick = () => openSheet(Object.keys(state.routes).length ? 'compare' : 'routing');
 $('#btnRefresh').onclick = () => openSheet('data');
 
@@ -346,17 +441,26 @@ function setEditing(on) {
 function renderCourseTab() {
   const el = $('#tab-course');
   const startT = course.start || defaultStart();
+  const reg = REGATTAS.find(x => x.id === course.regattaId);
+  const stage = reg ? reg.stages[course.stage || 0] : null;
+  const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   el.innerHTML = `
+    <div class="seg"><button data-cmode="race" class="on">⛵ Regata aktivna</button><button data-cmode="forecast">🌬 Bez regate</button></div>
     <h3>Regata</h3>
-    <div class="row"><select id="presetSel" class="field" style="max-width:100%;flex:1">
-      <option value="">— vlastita staza —</option>
-      ${PRESETS.map(p => `<option value="${p.id}" ${course.preset === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+    <div class="row"><select id="regSel" class="field" style="max-width:100%;flex:1">
+      <option value="">— vlastita regata —</option>
+      ${REGATTAS.map(r => `<option value="${r.id}" ${course.regattaId === r.id ? 'selected' : ''}>${r.name}${r.org ? ' · ' + r.org : ''}</option>`).join('')}
     </select></div>
-    <p class="note warn">Koordinate predložaka su približne. Povuci oznake na službene pozicije iz upute za jedrenje.</p>
+    ${reg && reg.stages.length > 1 ? `<div class="row"><label>Etapa</label><select id="stageSel">${reg.stages.map((s, i) => `<option value="${i}" ${(course.stage || 0) === i ? 'selected' : ''}>${s.name}</option>`).join('')}</select></div>` : ''}
+    <div class="editrow"><span class="pen">✏️</span><input id="regName" class="editable" value="${esc(course.name)}" placeholder="Naziv regate"></div>
+    ${stage && stage.inport ? `<div class="note warn"><b>In-port race</b> – kratka lokalna staza, za nju se ne radi weather routing. Odaberi drugu etapu za routing.</div>` : `
+    <p class="note">Pozicije oznaka su približne – povuci bove na službene pozicije iz upute za jedrenje. Imena možeš mijenjati (✏️).</p>
     <h3>Oznake (redom obilaska)</h3>
+    ${(() => { const w = course.marks.map((m, i) => ({ m, i, sn: snapToSea(state.mask, m.lat, m.lon) })).filter(x => x.sn.snapped || x.sn.fail);
+      return w.length ? `<div class="note">${w.map(x => x.sn.fail ? `⚠️ <b>${esc(x.m.name)}</b> je duboko u kopnu – povuci bovu na more.` : `ℹ️ <b>${esc(x.m.name)}</b> je na kopnu/plićini – ruta je obilazi na ~${x.sn.nm.toFixed(2)} nm.`).join('<br>')}</div>` : ''; })()}
     <ul class="marks">${course.marks.map((m, i) => `
       <li><span class="n ${i === 0 ? 's' : i === course.marks.length - 1 ? 'f' : ''}">${i === 0 ? 'S' : i === course.marks.length - 1 ? 'C' : i}</span>
-        <input value="${m.name.replace(/"/g, '&quot;')}" data-i="${i}" class="mname">
+        <div class="editrow mini"><span class="pen">✏️</span><input value="${esc(m.name)}" data-i="${i}" class="mname editable" title="Promijeni ime oznake"></div>
         <span class="ll">${fmtLatLon(m.lat, m.lon)}</span>
         <button data-up="${i}" title="Gore">↑</button><button data-del="${i}" title="Obriši">✕</button></li>`).join('')}
     </ul>
@@ -365,15 +469,23 @@ function renderCourseTab() {
     <h3>Start</h3>
     <div class="row"><label>Vrijeme starta (lokalno)</label><input type="datetime-local" id="startTime" value="${localInputValue(startT)}"></div>
     <button id="btnZoomCourse" class="btn block">Prikaži stazu na karti</button>
-    <button id="btnGoRoute" class="btn primary block">Dalje: Routing →</button>`;
-  el.querySelector('#presetSel').onchange = e => {
-    const p = PRESETS.find(x => x.id === e.target.value);
-    course.preset = e.target.value;
-    if (p) course.marks = p.marks.map(m => ({ ...m }));
-    saveCourse(); drawCourse(); renderCourseTab(); zoomCourse();
+    <button id="btnGoRoute" class="btn primary block">Dalje: Routing →</button>`}`;
+  const loadStage = () => {
+    const r = REGATTAS.find(x => x.id === course.regattaId), st = r && r.stages[course.stage || 0];
+    course.marks = st && !st.inport ? st.marks.map(m => ({ ...m })) : [];
+    saveCourse(); drawCourse(); renderCourseTab(); if (course.marks.length) zoomCourse(); updateModePill();
   };
-  el.querySelectorAll('.mname').forEach(i => i.onchange = () => { course.marks[i.dataset.i].name = i.value; saveCourse(); drawCourse(); });
-  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (course.marks.length <= 2) return toast('Staza treba barem start i cilj'); course.marks.splice(+b.dataset.del, 1); course.preset = ''; saveCourse(); drawCourse(); renderCourseTab(); });
+  el.querySelector('[data-cmode=forecast]').onclick = () => { setEditing(false); setMode('forecast'); $('#sheet').classList.add('hidden'); toast('Bez regate – bove i rute su skrivene, staza je sačuvana'); };
+  el.querySelector('#regSel').onchange = e => {
+    const r = REGATTAS.find(x => x.id === e.target.value);
+    if (r) { course.regattaId = r.id; course.stage = r.stages.findIndex(s => !s.inport); course.name = r.name; loadStage(); }
+    else { course.regattaId = ''; course.stage = 0; course.name = 'Moja regata'; saveCourse(); renderCourseTab(); updateModePill(); }
+  };
+  const ss = el.querySelector('#stageSel'); if (ss) ss.onchange = e => { course.stage = +e.target.value; loadStage(); };
+  el.querySelector('#regName').onchange = e => { course.name = e.target.value.trim() || 'Regata'; saveCourse(); updateModePill(); };
+  if (stage && stage.inport) return;
+  el.querySelectorAll('.mname').forEach(i => i.onchange = () => { course.marks[i.dataset.i].name = i.value.trim() || 'Oznaka'; saveCourse(); drawCourse(); });
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (course.marks.length <= 2) return toast('Staza treba barem start i cilj'); course.marks.splice(+b.dataset.del, 1); saveCourse(); drawCourse(); renderCourseTab(); });
   el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; if (!i) return; [course.marks[i - 1], course.marks[i]] = [course.marks[i], course.marks[i - 1]]; saveCourse(); drawCourse(); renderCourseTab(); });
   el.querySelector('#btnEdit').onclick = () => setEditing(!state.editing);
   setEditing(state.editing);
@@ -388,16 +500,63 @@ function renderCourseTab() {
   el.querySelector('#btnGoRoute').onclick = () => { setEditing(false); openSheet('routing'); };
 }
 function courseLength() { let d = 0; for (let i = 1; i < course.marks.length; i++) d += distNm(course.marks[i - 1].lat, course.marks[i - 1].lon, course.marks[i].lat, course.marks[i].lon); return d; }
-function zoomCourse() { map.fitBounds(L.latLngBounds(course.marks.map(m => [m.lat, m.lon])).pad(0.35)); }
+function zoomCourse() { if (!course.marks.length) return; map.fitBounds(L.latLngBounds(course.marks.map(m => [m.lat, m.lon])).pad(0.35)); }
 function defaultStart() { return Math.ceil(Date.now() / 3600000) * 3600000 + 3600000; }
+
+// ---------------- pick forecast area: two taps on opposite corners ----------------
+let pick = null;
+function startAreaPick() {
+  if (pendingRect) { map.removeLayer(pendingRect); pendingRect = null; }
+  pick = { a: null, rect: null, mk: null };
+  $('#sheet').classList.add('hidden');
+  document.body.classList.add('editing');
+  toast('Dodirni PRVI ugao područja na karti', 4000);
+}
+function areaPickClick(ll) {
+  if (!pick.a) {
+    pick.a = ll;
+    pick.mk = L.circleMarker(ll, { radius: 6, color: '#fff', weight: 2, fillColor: '#ffb547', fillOpacity: 1 }).addTo(map);
+    toast('Sada dodirni SUPROTNI ugao', 4000);
+    map.on('mousemove', pickPreview);
+    return;
+  }
+  const b = { s: Math.min(pick.a.lat, ll.lat), n: Math.max(pick.a.lat, ll.lat), w: Math.min(pick.a.lng, ll.lng), e: Math.max(pick.a.lng, ll.lng) };
+  map.off('mousemove', pickPreview);
+  [pick.rect, pick.mk].forEach(x => x && map.removeLayer(x));
+  pick = null; document.body.classList.remove('editing');
+  if (b.n - b.s < 0.05 || b.e - b.w < 0.05) { toast('Područje je premalo – pokušaj ponovno'); return; }
+  settings.customBBox = { s: +b.s.toFixed(3), n: +b.n.toFixed(3), w: +b.w.toFixed(3), e: +b.e.toFixed(3) };
+  settings.areaSel = 'custom'; saveSettings();
+  drawPendingArea();
+  openSheet('data');
+  const btn = $('#btnDownload');
+  if (btn) { btn.scrollIntoView({ block: 'nearest' }); btn.classList.add('pulse'); setTimeout(() => btn.classList.remove('pulse'), 4000); }
+  toast('Područje odabrano – stisni ⬇︎ Preuzmi prognozu', 4000);
+}
+// the rectangle you picked stays on the map (orange) until it is downloaded or you go back to "Cijeli prozor"
+let pendingRect = null;
+function drawPendingArea() {
+  if (pendingRect) { map.removeLayer(pendingRect); pendingRect = null; }
+  if (areaSel() !== 'custom') return;
+  const b = settings.customBBox;
+  pendingRect = L.rectangle([[b.s, b.w], [b.n, b.e]], { pane: 'routes', color: '#ffb547', weight: 2, dashArray: '6 5', fillOpacity: 0.06, interactive: false }).addTo(map);
+}
+function pickPreview(e) {
+  if (!pick || !pick.a) return;
+  if (pick.rect) pick.rect.setBounds([pick.a, e.latlng]);
+  else pick.rect = L.rectangle([pick.a, e.latlng], { color: '#ffb547', weight: 2, dashArray: '5 5', fillOpacity: 0.08, interactive: false }).addTo(map);
+}
+
+map.on('moveend', () => { const n = $('#areaNote'); if (n && $('#tab-data').classList.contains('on')) n.innerHTML = areaNote(); });
 
 // ---------------- map clicks ----------------
 map.on('click', e => {
+  if (pick) { areaPickClick(e.latlng); return; }
   if (state.editing) {
     const m = { name: `Oznaka ${course.marks.length}`, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) };
     if (state.landAt && state.landAt(m.lat, m.lon)) return toast('Ta točka je na kopnu');
     course.marks.splice(course.marks.length - 1, 0, m); // insert before finish
-    course.preset = ''; saveCourse(); drawCourse(); renderCourseTab();
+    saveCourse(); drawCourse(); renderCourseTab();
     return;
   }
   showPoint(e.latlng.lat, e.latlng.lng);
@@ -415,25 +574,61 @@ function updatePointCard() {
   const card = $('#pointCard');
   if (!point || !state.set) { card.classList.add('hidden'); return; }
   const s = state.set, out = [];
-  const rows = s.models.map(id => {
-    const f = s.fields[id], m = modelById(id);
-    sample(f, ['u', 'v', 'gust', 'precip', 'cape', 'lpi'], point.lat, point.lon, state.time, out);
+  const vals = s.models.map(id => ({ id, o: sample(s.fields[id], ['u', 'v', 'gust', 'precip', 'cape', 'lpi'], point.lat, point.lon, state.time, []) }));
+  const hasP = vals.some(v => v.o[3] === v.o[3]), hasC = vals.some(v => v.o[4] === v.o[4]);
+  const rows = vals.map(({ id, o: out }) => {
+    const m = modelById(id);
     const [tws, twd] = speedDirFromUV(out[0], out[1]);
     const valid = tws === tws;
-    return `<tr style="${id === state.modelId ? 'background:rgba(255,255,255,.06)' : ''}"><td><span class="dot" style="background:${m.color}"></span>${m.name}</td>
+    return `<tr style="${id === state.modelId ? 'background:rgba(255,255,255,.06)' : ''}"><td><span class="dot" style="background:${mcol(m.id)}"></span>${m.name}</td>
       <td>${valid ? `${dirArrow(twd)} ${Math.round(twd)}°` : '–'}</td><td><b>${valid ? tws.toFixed(1) : '–'}</b></td><td>${out[2] === out[2] ? out[2].toFixed(0) : '–'}</td>
-      <td>${out[3] === out[3] ? out[3].toFixed(1) : '–'}</td><td>${out[4] === out[4] ? Math.round(out[4]) : '–'}${out[5] > 0.5 ? ' ⚡' : ''}</td></tr>`;
+      ${hasP ? `<td>${out[3] === out[3] ? out[3].toFixed(1) : '–'}</td>` : ''}${hasC ? `<td>${out[4] === out[4] ? Math.round(out[4]) : '–'}${out[5] > 0.5 ? ' ⚡' : ''}</td>` : ''}</tr>`;
   }).join('');
   const mo = sample(s.fields.marine, ['wave', 'waveDir', 'wavePer', 'cu', 'cv'], point.lat, point.lon, state.time, []);
   const cs = Math.hypot(mo[3], mo[4]), cd = (Math.atan2(mo[3], mo[4]) * 180 / Math.PI + 360) % 360;
-  card.innerHTML = `<div class="hd"><b>${fmtLatLon(point.lat, point.lon)}</b><span class="note" style="margin:0">${fmtTime(state.time)}</span><button id="pcClose">✕</button></div>
-    <table><tr><th>Model</th><th>Smjer</th><th>kn</th><th>Udar</th><th>mm/h</th><th>CAPE</th></tr>${rows}</table>
+  const mini = !!settings.pcMini, chart = settings.pcChart !== false;
+  const sel = state.wind ? (() => { const o = sample(state.wind, ['u', 'v'], point.lat, point.lon, state.time, []); const [a, d] = speedDirFromUV(o[0], o[1]); return a === a ? `${dirArrow(d)} ${Math.round(d)}° <b>${a.toFixed(1)} kn</b>` : '–'; })() : '';
+  card.classList.toggle('mini', mini);
+  card.innerHTML = `<div class="hd" title="Povuci za pomicanje"><span class="grip">⠿</span><b>${fmtLatLon(point.lat, point.lon)}</b>${mini ? `<span class="pcsum">${sel}</span>` : `<span class="note" style="margin:0">${fmtTime(state.time)}</span>`}
+      <span class="pcbtns"><button id="pcChartT" title="Graf" class="${chart ? 'on' : ''}">📈</button><button id="pcMin" title="${mini ? 'Proširi' : 'Smanji'}">${mini ? '▢' : '—'}</button><button id="pcClose" title="Zatvori">✕</button></span></div>
+    ${mini ? '' : `<table><tr><th>Model</th><th>Smjer</th><th>kn</th><th>Udar</th>${hasP ? '<th>mm/h</th>' : ''}${hasC ? '<th>CAPE</th>' : ''}</tr>${rows}</table>`}
     <div class="note">${(() => { const d = depthAt(state.bathy, point.lat, point.lon); return d === d ? (d < 0 ? '<b>Kopno</b> · ' : `<b>Dubina ~${d < 10 ? d.toFixed(1) : Math.round(d)} m</b> · `) : ''; })()}Val ${mo[0] === mo[0] ? mo[0].toFixed(1) + ' m / ' + (mo[2] || 0).toFixed(0) + ' s iz ' + Math.round(mo[1]) + '°' : '–'} · Struja ${cs === cs ? cs.toFixed(2) + ' kn prema ' + Math.round(cd) + '°' : '–'}</div>
-    <canvas id="pcChart"></canvas>`;
+    ${chart ? '<canvas id="pcChart"></canvas>' : ''}`;
+  if (mini) { const n = card.querySelector('.note'); if (n) n.remove(); const c = card.querySelector('#pcChart'); if (c) c.remove(); }
   card.classList.remove('hidden');
+  placeCard(card);
   $('#pcClose').onclick = () => { point = null; card.classList.add('hidden'); if (pointMarker) map.removeLayer(pointMarker); };
-  drawMeteogram($('#pcChart'), point);
+  $('#pcMin').onclick = () => { settings.pcMini = !mini; saveSettings(); updatePointCard(); };
+  $('#pcChartT').onclick = () => { settings.pcChart = !chart; saveSettings(); updatePointCard(); };
+  if (!mini && chart) drawMeteogram($('#pcChart'), point);
 }
+// remember where the user dragged the card; keep it on screen
+function placeCard(card) {
+  const p = settings.pcPos;
+  if (!p) { card.style.left = ''; card.style.top = ''; card.style.bottom = ''; card.style.transform = ''; return; }
+  const w = card.offsetWidth, h = card.offsetHeight;
+  card.style.transform = 'none'; card.style.bottom = 'auto';
+  card.style.left = Math.max(4, Math.min(innerWidth - w - 4, p.x)) + 'px';
+  card.style.top = Math.max(4, Math.min(innerHeight - h - 4, p.y)) + 'px';
+}
+(() => {
+  const card = $('#pointCard'); let drag = null;
+  card.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.hd') || e.target.closest('button')) return;
+    const r = card.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
+    try { card.setPointerCapture(e.pointerId); } catch { /* synthetic or already released pointer */ }
+    card.classList.add('dragging'); e.preventDefault();
+  });
+  card.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    settings.pcPos = { x: e.clientX - drag.dx, y: e.clientY - drag.dy };
+    placeCard(card);
+  });
+  const end = () => { if (!drag) return; drag = null; card.classList.remove('dragging'); saveSettings(); };
+  card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
+  addEventListener('resize', () => placeCard(card));
+})();
 function drawMeteogram(cv, pt) {
   const s = state.set, dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   cv.width = w * dpr; cv.height = h * dpr; const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -450,7 +645,7 @@ function drawMeteogram(cv, pt) {
     if (hh === 0) { c.fillStyle = 'rgba(255,255,255,.18)'; c.fillRect(X(t), 0, 1, h - 12); c.fillStyle = '#9aa7b8'; c.fillText(fmtTime(t).slice(0, 10), X(t) + 3, h - 2); }
   }
   series.forEach(se => {
-    const col = modelById(se.id).color, sel = se.id === state.modelId;
+    const col = mcol(se.id), sel = se.id === state.modelId;
     c.strokeStyle = col; c.lineWidth = sel ? 2.4 : 1.3; c.globalAlpha = sel ? 1 : 0.8;
     c.beginPath(); let st = false;
     se.pts.forEach(([t, v]) => { if (v !== v) { st = false; return; } st ? c.lineTo(X(t), Y(v)) : c.moveTo(X(t), Y(v)); st = true; });
@@ -464,43 +659,65 @@ function drawMeteogram(cv, pt) {
 let dlAbort = null;
 const H1 = 3600000;
 const fcMode = () => settings.mode === 'forecast';
-function viewBBox() {
+// The whole visible map (+5 % so the colours reach the edges when you pan a little) – whatever the window, that is
+// what gets downloaded. Open-Meteo keeps its point count in check through the quality setting (coarser grid).
+function viewBBox(k = 0.525) {
   const b = map.getBounds(), c = b.getCenter();
-  const hlat = Math.min(3, (b.getNorth() - b.getSouth()) / 2), hlon = Math.min(4, (b.getEast() - b.getWest()) / 2);
-  return { s: c.lat - hlat, n: c.lat + hlat, w: c.lng - hlon, e: c.lng + hlon };
+  const hlat = (b.getNorth() - b.getSouth()) * k, hlon = (b.getEast() - b.getWest()) * k;   // no cap: always fill the window
+  const r = v => Math.round(v * 1000) / 1000;
+  return { s: r(Math.max(-85, c.lat - hlat)), n: r(Math.min(85, c.lat + hlat)), w: r(c.lng - hlon), e: r(c.lng + hlon) };
 }
-const dlArea = () => fcMode() ? viewBBox() : courseBBox();
+const ADRIATIC = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 };
+const union = (a, b) => ({ s: Math.min(a.s, b.s), n: Math.max(a.n, b.n), w: Math.min(a.w, b.w), e: Math.max(a.e, b.e) });
+const areaSel = () => settings.areaSel === 'custom' && settings.customBBox ? 'custom' : settings.areaSel === 'adriatic' ? 'adriatic' : 'view';
+// forecast: what you see (default) / your rectangle / Adriatic. Race: the same, always including the whole course.
+let areaOverride = null;   // set while the map-follow download runs
+function dlArea() {
+  if (areaOverride) return areaOverride;
+  const a = areaSel(), base = a === 'custom' ? settings.customBBox : a === 'adriatic' ? ADRIATIC : viewBBox();
+  return fcMode() || !course.marks.length ? base : union(base, courseBBox());
+}
 function dlWindow() {
   if (!fcMode()) return raceWindow(raceStart(), courseLength());
   const t0 = Math.floor(Date.now() / H1) * H1 - H1;
   return { t0, t1: t0 + (settings.fcDays || 3) * 24 * H1, estHours: 0 };
 }
+function areaNote() {
+  const bb = dlArea(), a = areaSel();
+  return `${a === 'view' ? '<b>Cijeli prozor karte</b> – preuzima se točno ono što vidiš kad stisneš Preuzmi' : a === 'custom' ? '<b>Tvoje područje</b> (narančasti okvir)' : '<b>Cijeli Jadran</b>'}${fcMode() ? '' : ' + cijela staza'}<br>${bb.s.toFixed(2)}–${bb.n.toFixed(2)}°N · ${bb.w.toFixed(2)}–${bb.e.toFixed(2)}°E`
+    + (settings.source === 'cloud' && (bb.s < ADRIATIC.s - 0.3 || bb.n > ADRIATIC.n + 0.3 || bb.w < ADRIATIC.w - 0.3 || bb.e > ADRIATIC.e + 0.3) ? '<div class="note warn">Paket iz oblaka pokriva samo Jadran – za ovo područje odaberi „GRIB izravno“ ili „Open-Meteo“.</div>' : '');
+}
+const AREA_UI = () => `<div class="row"><label>Područje</label></div>
+    <div class="seg"><button data-area="view" class="${areaSel() === 'view' ? 'on' : ''}">⛶ Cijeli prozor</button><button data-area="custom" class="${areaSel() === 'custom' ? 'on' : ''}">✎ Odaberi na karti</button><button data-area="adriatic" class="${areaSel() === 'adriatic' ? 'on' : ''}">Cijeli Jadran</button></div>
+    <div class="note" id="areaNote">${areaNote()}</div>`;
 function renderDataTab() {
   const el = $('#tab-data');
   const bb = dlArea(), st = raceStart(), win = dlWindow();
   const est = estimateCalls(bb, settings.dlModels.filter(id => !id.startsWith('mm:')), settings.quality);
   const s = state.set;
-  const direct = state.native && settings.source === 'direct';
-  const dirList = DIRECT.map(m => `<label class="check"><input type="checkbox" data-dir="${m.id}" ${(settings.directModels || []).includes(m.id) ? 'checked' : ''}>
-      <div><div class="t"><span class="dot" style="background:${m.color}"></span>${m.name} <small style="color:var(--muted)">${m.res}</small></div><div class="d">${m.note}</div></div></label>`).join('');
+  const direct = settings.source === 'direct';
+  const cloud = settings.source === 'cloud';
+  const dirList = DIRECT.map(m => `<label class="check"><input type="checkbox" data-dir="${m.id}" ${directUsable(m.id, state.native) ? ((settings.directModels || []).includes(m.id) ? 'checked' : '') : 'disabled'}>
+      <div><div class="t"><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} <small style="color:var(--muted)">${m.res}</small></div><div class="d">${m.note}${directUsable(m.id, state.native) ? '' : ' · <b>samo u Mac aplikaciji</b>'}</div></div></label>`).join('');
   const hrs = Math.max(1, Math.round((win.t1 - win.t0) / 3600000));
-  const mb = (settings.directModels || []).reduce((a, id) => a + (id === 'dir_icon_d2' ? Math.min(hrs, 48) * 3 * 1.1 : id === 'dir_icon_eu' ? Math.min(hrs, 120) * 3 * 1.0 : id === 'dir_ecmwf' ? Math.ceil(hrs / 3) * 2.1 : Math.ceil(hrs / 3) * 0.05), 0);
+  const mb = (settings.directModels || []).filter(id => directUsable(id, state.native)).reduce((a, id) => a + (id === 'dir_icon_d2' ? Math.min(hrs, 48) * 3 * 1.1 : id === 'dir_icon_eu' ? Math.min(hrs, 120) * 3 * 1.0 : id === 'dir_ecmwf' ? Math.ceil(hrs / 3) * 2.1 : Math.ceil(hrs / 3) * (state.native ? 0.05 : 2.8)), 0);
   const free = MODELS.map(m => {
     const g = gridFor(bb, m.step, settings.quality);
     return `<label class="check"><input type="checkbox" value="${m.id}" ${settings.dlModels.includes(m.id) ? 'checked' : ''}>
-      <div><div class="t"><span class="dot" style="background:${m.color}"></span>${m.name} <small style="color:var(--muted)">${m.res} · mreža ${(g.dlat * 60).toFixed(1)} nm</small></div><div class="d">${m.note}</div></div></label>`;
+      <div><div class="t"><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} <small style="color:var(--muted)">${m.res} · mreža ${(g.dlat * 60).toFixed(1)} nm</small></div><div class="d">${m.note}</div></div></label>`;
   }).join('');
   const paid = MM_MODELS.map(m => `<label class="check"><input type="checkbox" value="${m.id}" ${settings.dlModels.includes(m.id) ? 'checked' : ''} ${settings.mmUser ? '' : 'disabled'}>
-      <div><div class="t"><span class="dot" style="background:${m.color}"></span>${m.name} <small style="color:var(--muted)">${m.res}</small></div><div class="d">Meteomatics${settings.mmUser ? '' : ' – unesi račun ispod'}</div></div></label>`).join('');
+      <div><div class="t"><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} <small style="color:var(--muted)">${m.res}</small></div><div class="d">Meteomatics${settings.mmUser ? '' : ' – unesi račun ispod'}</div></div></label>`).join('');
   el.innerHTML = `
     <h3>Što preuzimam</h3>
     <div class="seg"><button data-mode="forecast" class="${fcMode() ? 'on' : ''}">🌬 Samo prognoza</button><button data-mode="race" class="${fcMode() ? '' : 'on'}">⛵ Za regatu</button></div>
     ${fcMode() ? `
     <div class="note">Prognoza za <b>područje koje trenutno vidiš na karti</b>, od sada unaprijed, bez staze i routinga. Pomakni ili zumiraj kartu na željeno područje (npr. cijeli srednji Jadran), pa preuzmi.</div>
-    <div class="row"><label>Područje</label><span>${bb.s.toFixed(2)}–${bb.n.toFixed(2)}°N · ${bb.w.toFixed(2)}–${bb.e.toFixed(2)}°E</span><button class="mini" id="dlUseView">osvježi</button></div>
+${AREA_UI()}
     <div class="row"><label>Dana unaprijed</label><select id="fcDays">${[1, 2, 3, 4, 5, 7, 10].map(v => `<option ${+(settings.fcDays || 3) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
     <div class="note">Visoko-rezolucijski modeli pokrivaju 2–3 dana (ICON-2I, ICON-D2, HARMONIE). ECMWF, ICON-EU i GFS idu dalje.</div>` : `
     <div class="row"><label>Start regate</label><b>${fmtTime(st)}</b><button class="mini" id="dlChgStart">promijeni</button></div>
+    ${AREA_UI()}
     <div class="row"><label>Prozor prognoze</label><span>${fmtTime(win.t0)} → ${fmtTime(win.t1)}</span></div>
     <div class="note">Prozor se automatski računa od starta i procijenjenog trajanja (${fmtDur(win.estHours)} za ${courseLength().toFixed(0)} nm) uz rezervu. Svi modeli se preuzimaju za isti, satni vremenski raspon.</div>`}
     ${s ? `<h3>Trenutna prognoza</h3>
@@ -513,12 +730,14 @@ function renderDataTab() {
       <button id="btnPackage" class="btn block">📲 Spremi paket za iPhone (AirDrop)</button>
       ${state.newRuns.length ? `<button id="btnRefreshNew" class="btn primary block">Osvježi samo nove runove: ${state.newRuns.map(n => modelById(n.id).name).join(', ')}</button>
       <div class="note">Preuzimaju se samo modeli s novim runom, isto područje i vrijeme. Štedi API pozive.</div>` : ''}` : '<div class="note">Još nema preuzete prognoze.</div>'}
-    ${state.native ? `<h3>Izvor podataka</h3>
-    <div class="seg"><button data-src="direct" class="${direct ? 'on' : ''}">🖥 Izravno preko Maca</button><button data-src="openmeteo" class="${direct ? '' : 'on'}">📡 Open-Meteo</button></div>
-    <div class="note">${direct ? 'Tvoj Mac preuzima originalne datoteke izravno od DWD-a, ECMWF-a i NOAA-e, <b>bez API limita</b>, samo kad klikneš Preuzmi. Ništa se ne skida u pozadini.' : 'Open-Meteo: 9 modela uključujući ICON-2I, s ograničenjem broja poziva.'}</div>` : ''}
+    <h3>Izvor podataka</h3>
+    <div class="seg"><button data-src="direct" class="${direct ? 'on' : ''}">📥 GRIB izravno</button><button data-src="cloud" class="${cloud ? 'on' : ''}">☁️ Paket iz oblaka</button><button data-src="openmeteo" class="${!direct && !cloud ? 'on' : ''}">📡 Open-Meteo</button></div>
+    <div class="note">${direct ? `Originalne GRIB datoteke izravno od službenih meteoroloških centara (ECMWF, NOAA${state.native ? ', DWD' : ''}), <b>bez API limita</b>, samo kad klikneš Preuzmi.${state.native ? '' : ' DWD modeli (ICON-D2/EU) rade samo u Mac aplikaciji.'}`
+      : cloud ? '<b>Bez API limita.</b> Gotov paket za cijeli Jadran (ICON-2I, ICON-D2, ICON-EU, ECMWF, GFS, valovi i struje), 5 dana unaprijed, koji tvoj GitHub sam osvježava 4× dnevno nakon novih runova. Preuzimanje ~10–15 MB.'
+      : 'Open-Meteo: 9 modela uključujući ICON-2I i HARMONIE; besplatno s dnevnim limitom po internetskoj vezi. Ako limit istekne, aplikacija se sama prebaci na paket iz oblaka.'}</div>
     <h3>Rezolucija</h3>
     <div class="row"><label>Kvaliteta</label><select id="quality">${Object.entries(QUALITY).map(([k, q]) => `<option value="${k}" ${settings.quality === k ? 'selected' : ''}>${q.name}</option>`).join('')}</select></div>
-    ${direct ? `<h3>Modeli (izravno s izvora)</h3>${dirList}
+    ${cloud ? `<h3>Paket iz oblaka</h3><div class="note">Paket sadrži sve modele odjednom za cijeli Jadran. Područje i kvaliteta se ne biraju.</div>` : direct ? `<h3>Modeli (izravno s izvora)</h3>${dirList}
     <div class="note">Procjena: ~${Math.round(mb)} MB preuzimanja za ${hrs} h (izrezuje se samo odabrano područje, na disk ide nekoliko MB). Za ICON-2I i HARMONIE prebaci na Open-Meteo.</div>` : `<h3>Besplatni modeli (Open-Meteo)</h3>${free}`}
     <label class="check"><input type="checkbox" disabled><div><div class="t">${ALADIN.name} <small style="color:var(--muted)">${ALADIN.res}</small></div><div class="d">${ALADIN.note}</div></div></label>
     <h3>Plaćeni izvori</h3>
@@ -526,12 +745,20 @@ function renderDataTab() {
     <div class="row"><input type="text" id="mmUser" class="field" style="flex:1" placeholder="Meteomatics korisnik" value="${settings.mmUser}" autocomplete="off"></div>
     <div class="row"><input type="password" id="mmPass" class="field" style="flex:1" placeholder="Meteomatics lozinka" value="${settings.mmPass}" autocomplete="off"></div>
     ${paid}
-    <div class="note">Uvoz: GRIB datoteke (PredictWind, Saildocs, LuckGrib, Expedition, NOAA…) ili <b>Clock the Wind paket (.ctw)</b> poslan s Maca AirDropom.</div>
+    <h3>Uvoz GRIB-a</h3>
+    <div class="note"><b>Datoteka:</b> GRIB1/GRIB2 iz PredictWinda, Saildocsa, LuckGriba, Expeditiona, qtVlm-a, NOAA-e… ili Clock the Wind paket (.ctw). Na iPhoneu: spremi GRIB u Datoteke (Files), pa ga odaberi ovdje.</div>
     <div class="row"><input type="file" id="gribFile" multiple></div>
-    <div class="note ${direct ? 'hidden' : ''}">${est.calls} API poziva · ~${est.minutes} min${settings.apiKey ? ' (komercijalni ključ)' : ' na besplatnom limitu (10 000/dan, 600/min)'}.</div>
-    <button id="btnDownload" class="btn primary block">${fcMode() ? 'Preuzmi prognozu za ovo područje i spremi offline' : 'Preuzmi prognozu za regatu i spremi offline'}</button>
-    <button id="btnAbort" class="btn block hidden">Prekini</button>
-    <div class="progress"><div id="dlBar"></div></div><div id="dlText" class="note"></div>
+    <div class="note"><b>Link:</b> zalijepi poveznicu na GRIB (npr. iz e-maila PredictWinda ili s web stranice izvora).</div>
+    <div class="row"><input type="url" id="gribUrl" class="field" style="flex:1" placeholder="https://…/prognoza.grb2" autocomplete="off"><button id="btnGribUrl" class="mini">Preuzmi</button></div>
+    <div class="note"><b>Saildocs (besplatno, e-mailom):</b> radi i preko satelitskog e-maila na moru (Iridium GO!, Starlink). Aplikacija složi zahtjev za ovo područje; odgovor s GRIB-om stiže za par minuta – privitak uvezi gore.</div>
+    <div class="row"><select id="sdModel"><option value="GFS">GFS (NOAA)</option><option value="ECMWF">ECMWF</option><option value="ICON">ICON (DWD)</option></select><button id="btnSaildocs" class="mini">✉️ Složi zahtjev</button></div>
+    <div id="sdText" class="note"></div>
+    <div class="note ${direct || cloud ? 'hidden' : ''}">${est.calls} API poziva · ~${est.minutes} min${settings.apiKey ? ' (komercijalni ključ)' : ' na besplatnom limitu (10 000/dan, 600/min)'}.</div>
+    <div class="dlbar">
+      <button id="btnDownload" class="btn primary block">⬇︎ ${cloud ? 'Preuzmi paket iz oblaka' : fcMode() ? 'Preuzmi prognozu' : 'Preuzmi prognozu za regatu'}</button>
+      <button id="btnAbort" class="btn block hidden">Prekini</button>
+      <div class="progress"><div id="dlBar"></div></div><div id="dlText" class="note"></div>
+    </div>
     <h3>Offline karta</h3>
     <div class="note">Nautička karta (dubine EMODnet ~135 m, izobate, obala) ugrađena je i radi bez interneta. Za online podloge spremi pločice za područje staze:</div>
     <button id="btnTiles" class="btn block">Spremi pločice karte (zoom 6–13)</button>
@@ -541,15 +768,21 @@ function renderDataTab() {
   });
   el.querySelector('#quality').onchange = e => { settings.quality = e.target.value; saveSettings(); renderDataTab(); };
   const cs = el.querySelector('#dlChgStart'); if (cs) cs.onclick = () => openSheet('course');
-  const uv = el.querySelector('#dlUseView'); if (uv) uv.onclick = renderDataTab;
-  const fd = el.querySelector('#fcDays'); if (fd) fd.onchange = e => { settings.fcDays = +e.target.value; saveSettings(); renderDataTab(); };
-  el.querySelectorAll('.seg [data-mode]').forEach(b => b.onclick = () => {
-    settings.mode = b.dataset.mode; saveSettings(); drawCourse();
-    routeLayer[settings.mode === 'forecast' ? 'remove' : 'addTo'](map); renderDataTab(); drawTimeline();
+  el.querySelectorAll('[data-area]').forEach(b => b.onclick = () => {
+    if (b.dataset.area === 'custom') return startAreaPick();
+    settings.areaSel = b.dataset.area; saveSettings(); drawPendingArea(); renderDataTab();
   });
+  const fd = el.querySelector('#fcDays'); if (fd) fd.onchange = e => { settings.fcDays = +e.target.value; saveSettings(); renderDataTab(); };
+  el.querySelectorAll('.seg [data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
   el.querySelector('#mmUser').onchange = e => { settings.mmUser = e.target.value.trim(); saveSettings(); renderDataTab(); };
   el.querySelector('#mmPass').onchange = e => { settings.mmPass = e.target.value; saveSettings(); };
   el.querySelector('#gribFile').onchange = e => importGribs([...e.target.files]);
+  el.querySelector('#btnGribUrl').onclick = () => importGribUrl(el.querySelector('#gribUrl').value.trim());
+  el.querySelector('#btnSaildocs').onclick = () => {
+    const r = saildocsRequest(el.querySelector('#sdModel').value);
+    el.querySelector('#sdText').innerHTML = `Pošalji na <b>query@saildocs.com</b> (naslov nebitan), tekst:<br><code class="sel">${r}</code><br><a href="mailto:query@saildocs.com?subject=grib&body=${encodeURIComponent(r)}">Otvori e-mail s ovim zahtjevom</a>`;
+    if (navigator.clipboard) navigator.clipboard.writeText(r).then(() => toast('Zahtjev kopiran – zalijepi ga u e-mail')).catch(() => {});
+  };
   el.querySelector('#btnDownload').onclick = doDownload;
   el.querySelector('#btnAbort').onclick = () => dlAbort && dlAbort.abort();
   el.querySelector('#btnTiles').onclick = cacheTiles;
@@ -577,7 +810,7 @@ function drawCoverage(cv) {
   s.models.forEach((id, i) => {
     const f = s.fields[id], m = modelById(id), y = 6 + i * 22;
     c.fillStyle = '#cfd8e3'; c.fillText(m.name, 4, y + 11);
-    c.fillStyle = m.color; c.globalAlpha = 0.85; c.fillRect(X(f.times[0]), y + 2, X(f.validUntil) - X(f.times[0]), 12); c.globalAlpha = 1;
+    c.fillStyle = mcol(m.id); c.globalAlpha = 0.85; c.fillRect(X(f.times[0]), y + 2, X(f.validUntil) - X(f.times[0]), 12); c.globalAlpha = 1;
     if (f.run) { c.fillStyle = '#0b1220'; c.fillText(fmtRun(f.run.runInit), X(f.times[0]) + 4, y + 12); }
     if (state.newRuns.some(n => n.id === id)) { c.fillStyle = '#ffb547'; c.fillText('●', 80, y + 11); }
     if (f.validUntil < end) { c.fillStyle = '#ff6b6b'; c.fillText('kratko', X(f.validUntil) + 4, y + 12); }
@@ -589,33 +822,127 @@ function drawCoverage(cv) {
   }
   c.fillStyle = '#4cd18a'; c.fillRect(X(st), 0, 2, h - 14);
 }
-async function doDownload() {
-  if (!navigator.onLine) return toast('Nema interneta – koristi se zadnja spremljena prognoza');
-  if (!settings.dlModels.length) return toast('Odaberi barem jedan model');
-  const btn = $('#btnDownload'); btn.disabled = true; $('#btnAbort').classList.remove('hidden');
-  const bar = $('#dlBar'), txt = $('#dlText');
+let dlBusy = false;
+async function doDownload(opts = {}) {
+  if (!navigator.onLine) return opts.auto ? null : toast('Nema interneta – koristi se zadnja spremljena prognoza');
+  if (!settings.dlModels.length && settings.source === 'openmeteo') return toast('Odaberi barem jedan model');
+  if (dlBusy) return;
+  dlBusy = true;
+  const dummy = { style: {}, classList: { add() {}, remove() {} }, textContent: '', innerHTML: '' };
+  const btn = $('#btnDownload') || dummy; btn.disabled = true; ($('#btnAbort') || dummy).classList.remove('hidden');
+  const bar = $('#dlBar') || dummy, txt = $('#dlText') || dummy;
+  if (opts.bbox) areaOverride = opts.bbox;
+  const base = state.set;   // what is on the map now – stays underneath every new piece
   try {
     dlAbort = new AbortController();
     const st = fcMode() ? Math.round(Date.now() / H1) * H1 : raceStart();
-    const useDirect = state.native && settings.source === 'direct';
+    const inAdriatic = b => b.s >= ADRIATIC.s - 0.3 && b.n <= ADRIATIC.n + 0.3 && b.w >= ADRIATIC.w - 0.3 && b.e <= ADRIATIC.e + 0.3;
+    let src = settings.source;
+    if (src === 'cloud' && opts.auto && !inAdriatic(dlArea())) src = 'direct';
+    if (src === 'cloud') {
+      try { await loadCloud(bar, txt, opts.auto); return; }
+      catch (e) { if (!opts.auto) throw e; src = 'direct'; }   // cloud not reachable: official GRIBs instead
+    }
+    const useDirect = src === 'direct';
     if (useDirect && !(settings.directModels || []).length) throw new Error('Odaberi barem jedan model');
-    const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: dlArea(), modelIds: useDirect ? settings.directModels : settings.dlModels, window: dlWindow(), quality: settings.quality, settings, signal: dlAbort.signal,
+    const dirIds = (settings.directModels || []).filter(id => directUsable(id, state.native));
+    const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: dlArea(), modelIds: useDirect ? (dirIds.length ? dirIds : ['dir_ecmwf', 'dir_gfs']) : settings.dlModels, window: dlWindow(), quality: settings.quality, settings, signal: dlAbort.signal, maxSeconds: opts.auto ? 60 : 150, quick: !!opts.auto, globalOnly: !!opts.auto && map.getZoom() < 6.5,   // a manual download always takes every model you chose
+      onPartial: useDirect ? p => { if (base && base.fields.marine && p.fields.marine.nx === 1) p.fields.marine = base.fields.marine; inheritCoverage(p, base); keepGribs(p, base); useSet(p, { keepView: true }); } : null,
       progress: (f, t) => { if (f != null) bar.style.width = (f * 100).toFixed(0) + '%'; if (t) txt.textContent = t; } });
-    // keep previously imported GRIB models if they overlap
-    if (state.set) for (const id of state.set.models.filter(x => x.startsWith('grib:'))) { set.fields[id] = state.set.fields[id]; set.models.push(id); }
+    keepGribs(set, base);
+    inheritCoverage(set, base);
     txt.textContent = 'Spremam za offline…';
     await saveForecast(set);
-    state.routes = {}; state.newRuns = []; drawRoutes();
-    state.time = st;
-    useSet(set);
+    if (!opts.auto) { state.routes = {}; drawRoutes(); }
+    state.newRuns = [];
+    if (pendingRect) { map.removeLayer(pendingRect); pendingRect = null; }
+    const keepT = state.time;
+    state.time = opts.auto && keepT >= set.times[0] && keepT <= set.times[set.times.length - 1] ? keepT : st;
+    useSet(set, { keepView: true });
     set.mode = settings.mode;
     txt.textContent = fcMode() ? `Gotovo: ${set.models.length} modela za odabrano područje.` : `Gotovo: ${set.models.length} modela, sinkronizirano sa startom ${fmtTime(st)}.`;
-    toast('Prognoza preuzeta i spremljena za offline');
-    renderDataTab();
-  } catch (e) { console.error(e); txt.textContent = e.name === 'AbortError' ? 'Prekinuto.' : e.message; if (e.name !== 'AbortError') toast(e.message, 5000); }
-  finally { btn.disabled = false; const a = $('#btnAbort'); a && a.classList.add('hidden'); }
+    toast(opts.auto ? '✓ Prognoza dopunjena za cijeli prozor' : 'Prognoza preuzeta i spremljena za offline');
+    if ($('#tab-data').classList.contains('on')) renderDataTab();
+  } catch (e) {
+    console.error(e);
+    if (e.daily) {
+      txt.textContent = 'Open-Meteo dnevni limit je potrošen – prebacujem na paket iz oblaka…';
+      try { await loadCloud(bar, txt); toast('Open-Meteo limit potrošen – učitan je paket iz oblaka (bez limita)', 6000); }
+      catch (e2) { txt.innerHTML = LIMIT_HELP() + `<div class="note warn">Paket iz oblaka: ${e2.message}</div>`; toast('Dnevni limit Open-Meteo je potrošen – vidi upute ispod gumba', 6000); }
+    }
+    else { txt.textContent = e.name === 'AbortError' ? 'Prekinuto.' : e.message; if (e.name !== 'AbortError') toast(e.message, 5000); }
+  }
+  finally { btn.disabled = false; const a = $('#btnAbort'); a && a.classList.add('hidden'); areaOverride = null; dlBusy = false; }
 }
+// "Fill the window": in forecast mode with area = window, panning/zooming outside the downloaded area downloads
+// the new window automatically (with a margin, so small pans do not trigger it). Never in race mode (would reset routes).
+let fillTimer = null;
+function setExtent(s) {
+  let b = null;
+  for (const id of [...((s && s.models) || []), ...((s && s.prev) || [])]) {
+    const f = s.fields[id]; if (!f || !f.nx) continue;
+    const e = { s: f.lat0, n: f.lat0 + f.dlat * (f.ny - 1), w: f.lon0, e: f.lon0 + f.dlon * (f.nx - 1) };
+    b = b ? union(b, e) : e;
+  }
+  return b;
+}
+// share of the window where the displayed wind has no value (sampled on a 32×24 grid, edges included)
+function uncoveredShare() {
+  if (!state.set || !state.wind) return 1;
+  const v = map.getBounds(), out = [];
+  let miss = 0, n = 0;
+  for (let j = 0; j <= 23; j++) for (let i = 0; i <= 31; i++) {
+    const lat = v.getSouth() + (v.getNorth() - v.getSouth()) * j / 23, lon = v.getWest() + (v.getEast() - v.getWest()) * i / 31;
+    sample(state.wind, ['u'], lat, lon, state.time, out); n++; if (out[0] !== out[0]) miss++;
+  }
+  return miss / n;
+}
+let lastFill = 0, lastFillFailed = false;
+function maybeFillWindow(delay = 1200) {
+  clearTimeout(fillTimer);
+  if (areaSel() !== 'view' || pick || !navigator.onLine) return;
+  if (dlBusy) { fillTimer = setTimeout(() => maybeFillWindow(delay), 3000); return; }   // check again when the current download ends
+  // fill when any edge is missing, or when you zoomed back in after a thinned (whole-sea) download
+  // zoomed back in after a coarse/global-only download: fetch full detail (incl. DWD) for the new window
+  const needDetail = () => { const s = state.set, v = map.getBounds(); if (!s) return false;
+    if (s.globalOnly) return map.getZoom() >= 6.5;   // came back from a far-out view: regional detail again
+    if (!s.thinned) return false;
+    const e = setExtent({ models: s.models.filter(id => !id.startsWith('grib:')), fields: s.fields }); if (!e) return false;
+    return (v.getEast() - v.getWest()) * (v.getNorth() - v.getSouth()) < 0.15 * (e.e - e.w) * (e.n - e.s); };
+  if (uncoveredShare() < 0.002 && !needDetail()) return;
+  const since = Date.now() - lastFill, pause = lastFillFailed ? 45000 : 3000;   // never hammer the servers
+  fillTimer = setTimeout(async () => {
+    if ((uncoveredShare() < 0.002 && !needDetail()) || dlBusy || pick) return;
+    lastFill = Date.now();
+    toast('Preuzimam prognozu za cijeli prikaz…', 2500);
+    const v = viewBBox(1.0);   // twice the window: the next zoom-out or pan is usually covered already
+    const before = state.set;
+    await doDownload({ auto: true, bbox: fcMode() || !course.marks.length ? v : union(v, courseBBox()) });
+    lastFillFailed = state.set === before;
+  }, Math.max(delay, since < pause ? pause - since : 0));
+}
+map.on('moveend', maybeFillWindow);
 // re-download only the models that have a newer run than the one stored; merge into the current set
+async function loadCloud(bar, txt, auto = false) {
+  const set = await fetchCloudPackage(settings.cloudUrl || CLOUD_DEFAULT, state.native, (f, t) => { if (t && txt) txt.textContent = t; });
+  set.mode = 'forecast';
+  inheritCoverage(set, state.set);
+  await saveForecast(set);
+  if (!auto) { state.routes = {}; drawRoutes(); }
+  state.newRuns = [];
+  useSet(set);
+  if (bar) bar.style.width = '100%';
+  const runs = set.models.map(id => `${modelById(id).name} ${set.fields[id].run ? fmtRun(set.fields[id].run.runInit) : ''}`).join(', ');
+  if (txt) txt.textContent = `Paket iz oblaka učitan (izrađen ${fmtTime(set.created)}): ${runs}.`;
+  renderDataTab();
+}
+const LIMIT_HELP = () => `<div class="limitbox"><b>Besplatni dnevni limit Open-Meteo je potrošen za ovu internetsku vezu.</b> Obnavlja se sutra. Do tada:
+  <ol><li><b>iPhone/iPad:</b> isključi WiFi i preuzmi preko <b>mobilnih podataka</b> (druga veza = nova kvota).</li>
+  <li><b>Mac:</b> aplikacija Clock the Wind → Prognoza → <b>🖥 Izravno preko Maca</b> → Preuzmi (bez limita) → <b>📲 Spremi paket za iPhone</b> → AirDrop → ovdje <b>Uvoz</b>.</li>
+  <li>Već preuzeta prognoza ostaje i radi offline.</li>
+  <li><b>☁️ Paket iz oblaka</b> (izvor gore) – bez limita, radi i na iPhoneu.</li>
+  <li>Trajno bez limita: Open-Meteo API ključ (Postavke → Izvori).</li></ol>
+  Savjet: kvaliteta <b>Standard</b> i 2–3 modela troše 3–4× manje poziva od HD-a.</div>`;
 async function refreshNewRuns() {
   const s = state.set; if (!s) return;
   const ids = state.newRuns.map(n => n.id).filter(id => !id.startsWith('grib:'));
@@ -633,7 +960,33 @@ async function refreshNewRuns() {
     await saveForecast(s);
     state.newRuns = []; useSet(s); renderDataTab();
     toast(`Osvježeno: ${fresh.models.map(id => modelById(id).name).join(', ')}`);
-  } catch (e) { if (txt) txt.textContent = e.message; toast(e.message, 5000); }
+  } catch (e) { if (txt) { if (e.daily) txt.innerHTML = LIMIT_HELP(); else txt.textContent = e.message; } toast(e.daily ? 'Dnevni limit Open-Meteo je potrošen' : e.message, 5000); }
+}
+// Saildocs GRIB request for the current download area and window (format: model:N,S,W,E|dlat,dlon|hours|params)
+function saildocsRequest(model) {
+  const b = dlArea(), w = dlWindow();
+  const N = Math.ceil(b.n), S = Math.floor(b.s), W = Math.floor(b.w), E = Math.ceil(b.e);   // whole degrees: Saildocs standard
+  const res = model === 'ICON' ? '0.125,0.125' : model === 'ECMWF' ? '0.25,0.25' : '0.25,0.25';
+  const h0 = Math.max(0, Math.floor((w.t0 - Date.now()) / 3600000 / 3) * 3), h1 = Math.min(model === 'ECMWF' ? 144 : 120, Math.ceil((w.t1 - Date.now()) / 3600000 / 3) * 3 + 6);
+  const ll = (v, p, n) => `${Math.abs(v)}${v >= 0 ? p : n}`;
+  return `send ${model}:${ll(N, 'N', 'S')},${ll(S, 'N', 'S')},${ll(W, 'E', 'W')},${ll(E, 'E', 'W')}|${res}|${h0},3..${Math.max(h1, h0 + 3)}|WIND,GUST,MSLP`;
+}
+// GRIB from a link: straight if the server allows it (CORS), otherwise through the Mac app
+async function importGribUrl(url) {
+  const txt = $('#dlText');
+  if (!/^https?:\/\//i.test(url)) return toast('Zalijepi cijelu poveznicu (https://…)');
+  txt.textContent = 'Preuzimam GRIB s linka…';
+  let buf = null, err = '';
+  try { const r = await fetch(url, { cache: 'no-store' }); if (r.ok) buf = await r.arrayBuffer(); else err = 'HTTP ' + r.status; } catch (e) { err = 'poslužitelj ne dopušta izravno preuzimanje'; }
+  if (!buf && state.native) {
+    try { const r = await fetch(`/proxy?u=${encodeURIComponent(url)}&user=1`); if (r.ok) buf = await r.arrayBuffer(); else err = 'HTTP ' + r.status; } catch (e) { err = e.message; }
+  }
+  if (!buf || buf.byteLength < 20) {
+    txt.innerHTML = `Nije uspjelo (${err || 'prazno'}). ${state.native ? '' : 'Ovaj poslužitelj ne dopušta preuzimanje iz preglednika – otvori link u Safariju, spremi datoteku u Datoteke (Files) i uvezi je gumbom iznad, ili koristi Mac aplikaciju.'}`;
+    return toast('GRIB s linka nije preuzet', 4000);
+  }
+  const name = decodeURIComponent(url.split('?')[0].split('/').pop() || 'grib').slice(0, 40) || 'grib';
+  await importGribs([new File([buf], name)]);
 }
 async function importGribs(files) {
   const txt = $('#dlText');
@@ -645,6 +998,7 @@ async function importGribs(files) {
       if (head[0] === 0x1f && head[1] === 0x8b) buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
       if (isPackage(buf)) {
         const set = importPackage(buf);
+        inheritCoverage(set, state.set);
         await saveForecast(set); state.routes = {}; drawRoutes(); useSet(set);
         if (set.bbox) map.fitBounds([[set.bbox.s, set.bbox.w], [set.bbox.n, set.bbox.e]]);
         toast(`Paket uvezen: ${set.models.length} modela, do ${fmtTime(set.times[set.times.length - 1])}`, 4000);
@@ -653,7 +1007,8 @@ async function importGribs(files) {
       }
       const msgs = decodeGrib(buf);
       const id = 'grib:' + file.name.replace(/\.\w+$/, '').slice(0, 24);
-      const f = gribToField(msgs, courseBBox(), id);
+      // crop to the window (+ course); a GRIB elsewhere is imported whole
+      let f; try { f = gribToField(msgs, course.marks.length ? union(dlArea(), courseBBox()) : dlArea(), id); } catch (e) { f = gribToField(msgs, null, id); }
       const meta = { id, name: file.name.replace(/\.\w+$/, '').slice(0, 14), res: `GRIB ${(f.dlat * 60).toFixed(1)}nm`, color: ['#ff7043', '#ab47bc', '#26a69a', '#ffca28'][Math.floor(Math.random() * 4)] };
       f.meta = meta; registerModel(meta);
       let set = state.set;
@@ -664,7 +1019,7 @@ async function importGribs(files) {
       set.fields[id] = f; if (!set.models.includes(id)) set.models.push(id);
       await saveForecast(set);
       state.modelId = id; useSet(set);
-      toast(`GRIB uvezen: ${msgs.length} poruka, ${f.times.length} vremenskih koraka, do ${fmtTime(f.validUntil)}`, 4000);
+      toast(`GRIB uvezen: ${msgs.length} poruka, ${f.times.length} vremenskih koraka, do ${fmtTime(f.validUntil)}${msgs.skipped && msgs.skipped.length ? ` (preskočeno ${msgs.skipped.length} nepodržanih poruka)` : ''}`, 4500);
       txt.textContent = `${file.name}: OK (${f.nx}×${f.ny}, ${fmtTime(f.times[0])} → ${fmtTime(f.validUntil)})`;
     } catch (e) { console.error(e); txt.textContent = `${file.name}: ${e.message}`; toast(e.message, 5000); }
   }
@@ -723,7 +1078,7 @@ function renderRoutingTab() {
     ${stale ? '<div class="note warn">Staza, start ili brod su promijenjeni nakon zadnjeg izračuna – ponovi routing.</div>' : ''}
     <h3>Modeli za routing</h3>
     ${s ? s.models.map(id => { const m = modelById(id), f = s.fields[id], ok = routable.includes(id); return `<label class="check"><input type="checkbox" value="${id}" ${ok && state.routeModels.includes(id) ? 'checked' : ''} ${ok ? '' : 'disabled'}>
-      <div><div class="t"><span class="dot" style="background:${m.color}"></span>${m.name}${f.run ? ` <small style="color:var(--muted)">run ${fmtRun(f.run.runInit)}</small>` : ''}</div><div class="d">${ok ? 'pokriva start, vrijedi do ' + fmtTime(f.validUntil) : 'ne pokriva vrijeme starta – preuzmi prognozu za ovaj start'}</div></div></label>`; }).join('') : '<div class="note warn">Prvo preuzmi prognozu (kartica Prognoza).</div>'}
+      <div><div class="t"><span class="dot" style="background:${mcol(m.id)}"></span>${m.name}${f.run ? ` <small style="color:var(--muted)">run ${fmtRun(f.run.runInit)}</small>` : ''}</div><div class="d">${ok ? 'pokriva start, vrijedi do ' + fmtTime(f.validUntil) : 'ne pokriva vrijeme starta – preuzmi prognozu za ovaj start'}</div></div></label>`; }).join('') : '<div class="note warn">Prvo preuzmi prognozu (kartica Prognoza).</div>'}
     <h3>Opcije</h3>
     <div class="row"><label>Penal za okret kroz vjetar (s)</label><input type="number" id="tackP" value="${settings.tackPenaltySec}"></div>
     <div class="row"><label>Penal za kroz-krmu (s)</label><input type="number" id="gybeP" value="${settings.gybePenaltySec}"></div>
@@ -760,11 +1115,13 @@ function renderRoutingTab() {
 }
 async function runRouting(ids, override = {}) {
   if (!ids.length) return toast('Odaberi barem jedan model');
+  if ((override.marks || course.marks).length < 2) return toast('Staza nema start i cilj (in-port etapa?) – odaberi etapu sa stazom', 4000);
   if (!state.mask) toast('Upozorenje: maska kopna nije učitana');
   const startTime = override.startTime || raceStart();
   const marks = override.marks || course.marks;
+  if (!$('#runStatus')) openSheet('routing');   // progress lives in the routing tab – make sure it exists
   const st = $('#runStatus');
-  st.innerHTML = ids.map(id => `<div class="note"><span class="dot" style="background:${modelById(id).color}"></span>${modelById(id).name}: <span id="rs-${id.replace(/[^\w-]/g, '_')}">čeka…</span><div class="progress"><div id="rp-${id.replace(/[^\w-]/g, '_')}"></div></div></div>`).join('');
+  st.innerHTML = ids.map(id => `<div class="note"><span class="dot" style="background:${mcol(id)}"></span>${modelById(id).name}: <span id="rs-${id.replace(/[^\w-]/g, '_')}">čeka…</span><div class="progress"><div id="rp-${id.replace(/[^\w-]/g, '_')}"></div></div></div>`).join('');
   const key = id => id.replace(/[^\w-]/g, '_');
   const ws = getWorkers();
   const opts = { efficiency: settings.efficiency / 100, tackPenaltySec: settings.tackPenaltySec, gybePenaltySec: settings.gybePenaltySec, dtMin: settings.dtMin, useCurrents: settings.useCurrents, wavePenalty: settings.wavePenalty, sails: state.boat.sails === 'melges40' };
@@ -774,7 +1131,8 @@ async function runRouting(ids, override = {}) {
   await Promise.all(ws.map(w => (async () => {
     while (next < ids.length) {
       const id = ids[next++];
-      $('#rs-' + key(id)).textContent = 'računam…';
+      const rsEl = () => $('#rs-' + key(id));
+      if (rsEl()) rsEl().textContent = 'računam…';
       const res = await new Promise(resolve => {
         const msgId = Math.random();
         const onMsg = e => {
@@ -788,7 +1146,7 @@ async function runRouting(ids, override = {}) {
       res.model = id; res.boat = state.boat.name; res.live = !!override.marks;
       state.routes[id] = res;
       const b = $('#rp-' + key(id)); if (b) b.style.width = '100%';
-      $('#rs-' + key(id)).textContent = res.ok ? `ETA ${fmtTime(res.eta)} (${fmtDur(res.stats.hours)})` : '✕ ' + res.error;
+      if (rsEl()) rsEl().textContent = res.ok ? `ETA ${fmtTime(res.eta)} (${fmtDur(res.stats.hours)})` : '✕ ' + res.error;
       drawRoutes();
     }
   })()));
@@ -806,22 +1164,85 @@ async function runRouting(ids, override = {}) {
 // ---------------- routes on the map ----------------
 const routeLayer = L.layerGroup().addTo(map);
 let boatMarkers = {};
+const okRoutes = () => Object.values(state.routes).filter(r => r && r.ok).sort((a, b) => a.eta - b.eta);
+const idealId = () => { const o = okRoutes(); return o.length ? o[0].model : null; };   // fastest route of all models = theoretical ideal
+// tack / gybe points (twa changes side); same rule as router stats()
+function manoeuvres(r) {
+  if (r._man) return r._man;
+  const out = [], tr = r.track;
+  for (let i = 1; i < tr.length - 1; i++) {
+    const a = tr[i - 1], b = tr[i];
+    if (Math.sign(a.twa) !== Math.sign(b.twa) && a.twa && b.twa) out.push({ ...b, kind: Math.abs(b.twa) < 90 ? 'tack' : 'gybe' });
+  }
+  return (r._man = out);
+}
+// how far a route strays from the ideal one: max and mean cross-track distance (nm)
+function deviation(r, ideal) {
+  if (!ideal || r === ideal) return { max: 0, mean: 0 };
+  if (r._dev && r._dev.id === ideal.model && r._dev.eta === ideal.eta) return r._dev;
+  const it = ideal.track, k = Math.cos(it[0].lat * Math.PI / 180);
+  const xy = p => [p.lon * 60 * k, p.lat * 60];
+  const I = it.map(xy);
+  let max = 0, sum = 0;
+  for (const p of r.track) {
+    const [px, py] = xy(p); let best = Infinity;
+    for (let j = 1; j < I.length; j++) {
+      const [ax, ay] = I[j - 1], [bx, by] = I[j], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1e-9;
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2));
+      const d = Math.hypot(px - ax - t * dx, py - ay - t * dy); if (d < best) best = d;
+    }
+    max = Math.max(max, best); sum += best;
+  }
+  return (r._dev = { id: ideal.model, eta: ideal.eta, max, mean: sum / r.track.length });
+}
+const boatHtml = (col, ideal) => `<svg viewBox="-14 -14 28 28"><circle r="11.5" fill="none" stroke="${col}" stroke-width="2.6"/><path d="M0-10 5.5 7 0 3.6-5.5 7z" fill="#000" stroke="#fff" stroke-width="0.9"/></svg><div class="boatlbl" style="border-color:${col}"></div>${ideal ? '<div class="boatstar">★</div>' : ''}`;
+// time on route r closest to a map position (projected onto the track in screen pixels)
+function nearestOnRoute(r, latlng) {
+  const P = map.latLngToLayerPoint(latlng), tr = r.track;
+  let best = Infinity, bt = tr[0].t;
+  let A = map.latLngToLayerPoint([tr[0].lat, tr[0].lon]);
+  for (let i = 1; i < tr.length; i++) {
+    const B = map.latLngToLayerPoint([tr[i].lat, tr[i].lon]);
+    const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy || 1e-9;
+    const f = Math.max(0, Math.min(1, ((P.x - A.x) * dx + (P.y - A.y) * dy) / L2));
+    const d = Math.hypot(P.x - A.x - f * dx, P.y - A.y - f * dy);
+    if (d < best) { best = d; bt = tr[i - 1].t + f * (tr[i].t - tr[i - 1].t); }
+    A = B;
+  }
+  return bt;
+}
+function routePointHtml(id, t) {
+  const r = state.routes[id], p = routeAt(r, t), m = modelById(id), rel = (t - r.startTime) / 3600000;
+  return `<div class="rt"><b><span class="dot" style="background:${mcol(id)}"></span>${id === idealId() ? '★ ' : ''}${m.name} · ${fmtTime(t, false)}</b> <small>${fmtDur(rel)} od starta</small><br>
+    Vjetar <b>${Math.round(p.twd)}° ${p.tws.toFixed(1)} kn</b> · Kurs <b>${Math.round(p.hdg)}°</b> · <b>${p.bsp.toFixed(1)} kn</b><br>
+    TWA <b>${Math.round(Math.abs(p.twa))}° ${p.twa < 0 ? 'L' : 'D'}</b> · ${p.sail} · <span class="muted">dodir = svi brodići na ovaj trenutak</span></div>`;
+}
 function drawRoutes() {
   routeLayer.clearLayers(); boatMarkers = {};
-  const entries = Object.entries(state.routes).filter(([, r]) => r.ok);
-  // selected last so it is on top
-  entries.sort(([a], [b]) => (a === state.selected) - (b === state.selected));
+  const ideal = idealId();
+  let entries = Object.entries(state.routes).filter(([, r]) => r && r.ok);
+  if (settings.routeView === 'one' && state.selected) entries = entries.filter(([id]) => id === state.selected);
+  // ideal and selected last so they are on top
+  const rank = id => (id === state.selected ? 2 : 0) + (id === ideal ? 1 : 0);
+  entries.sort(([a], [b]) => rank(a) - rank(b));
   for (const [id, r] of entries) {
-    const col = modelById(id).color, sel = id === state.selected;
+    const col = mcol(id), sel = id === state.selected, best = id === ideal;
     const ll = r.track.map(p => [p.lat, p.lon]);
+    if (sel && state.showIso !== false) r.isochrones.forEach(iso => L.polyline(iso, { pane: 'routes', color: col, weight: 0.8, opacity: 0.35, interactive: false }).addTo(routeLayer));
+    const w = best ? 5.5 : sel ? 4.5 : 3;
+    if (best) L.polyline(ll, { pane: 'routes', color: '#ffd400', weight: w + 14, opacity: 0.38, interactive: false }).addTo(routeLayer);   // golden glow = fastest
+    // dark casing keeps every model colour readable over any wind colour
+    L.polyline(ll, { pane: 'routes', color: col === '#111111' ? '#fff' : '#000', weight: w + 3.5, opacity: sel ? 0.85 : 0.7, interactive: false }).addTo(routeLayer);
+    const pl = L.polyline(ll, { pane: 'routes', color: col, weight: w, opacity: 1 }).addTo(routeLayer);
+    // a wide invisible line on top makes the route easy to hit with a finger or the mouse
+    const hit = L.polyline(ll, { pane: 'routes', color: '#000', weight: 18, opacity: 0.001 }).addTo(routeLayer);
+    hit.bindTooltip('', { sticky: true, className: 'rtip', direction: 'top', offset: [0, -10] });
+    hit.on('mousemove', e => hit.setTooltipContent(routePointHtml(id, nearestOnRoute(r, e.latlng))));
+    hit.on('mouseover', e => hit.setTooltipContent(routePointHtml(id, nearestOnRoute(r, e.latlng))));
+    // click / tap: every boat jumps to that moment – you see where each model's boat is at the same time
+    hit.on('click', e => { L.DomEvent.stopPropagation(e); replayPause(); const t = nearestOnRoute(r, e.latlng); state.selected = id; drawRoutes(); setTime(t); showBoatInfo(id); });
     if (sel) {
-      if (state.showIso !== false) r.isochrones.forEach(iso => L.polyline(iso, { pane: 'routes', color: col, weight: 0.8, opacity: 0.35, interactive: false }).addTo(routeLayer));
-      L.polyline(ll, { pane: 'routes', color: '#000', weight: 7, opacity: 0.45, interactive: false }).addTo(routeLayer);
-    }
-    L.polyline(ll, { pane: 'routes', color: col, weight: sel ? 4 : 2.2, opacity: sel ? 1 : 0.8 })
-      .on('click', e => { L.DomEvent.stopPropagation(e); state.selected = id; drawRoutes(); openSheet('compare'); }).addTo(routeLayer);
-    if (sel) {
-      // hourly ticks with sail label
+      // hourly ticks with sail colour
       let lastH = -1;
       r.track.forEach(p => {
         const h = Math.floor(p.t / 3600000);
@@ -829,11 +1250,22 @@ function drawRoutes() {
           .bindTooltip(`${fmtTime(p.t)} · ${p.tws.toFixed(1)} kn ${Math.round(p.twd)}° · TWA ${Math.round(p.twa)}° · ${p.bsp.toFixed(1)} kn · ${p.sail}`).addTo(routeLayer); }
       });
     }
-    const mk = L.marker(ll[0], { pane: 'routes', interactive: false, icon: L.divIcon({ className: 'boat', html: `<svg viewBox="-14 -14 28 28"><path d="M0-11 6 8 0 4-6 8z" fill="${col}" stroke="#000" stroke-width="1.2"/></svg><div class="boatlbl" style="border-color:${col}"></div>`, iconSize: [0, 0] }) }).addTo(routeLayer);
+    // tack (T) and gybe (G) points
+    if (sel || best) manoeuvres(r).forEach(p => L.marker([p.lat, p.lon], { pane: 'routes',
+      icon: L.divIcon({ className: 'man ' + p.kind, html: `<span style="border-color:${col}">${p.kind === 'tack' ? 'T' : 'G'}</span>`, iconSize: [0, 0] }) })
+      .bindTooltip(`${p.kind === 'tack' ? 'Okret kroz vjetar (tack)' : 'Kroz krmu (gybe)'} · ${modelById(id).name} · ${fmtTime(p.t, false)} · TWS ${p.tws.toFixed(0)} kn`).addTo(routeLayer));
+    const mk = L.marker(ll[0], { pane: 'routes', zIndexOffset: 1000, icon: L.divIcon({ className: 'boat', html: boatHtml(col, best), iconSize: [0, 0] }) })
+      .on('click', e => { L.DomEvent.stopPropagation(e); replayPause(); showBoatInfo(id); }).addTo(routeLayer);
     boatMarkers[id] = mk;
+    if (best && entries.length > 1) {
+      const p = r.track[Math.floor(r.track.length * 0.42)];
+      L.marker([p.lat, p.lon], { pane: 'routes', interactive: false, icon: L.divIcon({ className: 'idealtag', iconSize: [0, 0],
+        html: `<div><span class="dot" style="background:${col}"></span>★ NAJBRŽA · ${modelById(id).name} <span class="w">· cilj</span> ${fmtTime(r.eta, false)}</div>` }) }).addTo(routeLayer);
+    }
   }
   updateBoats();
   drawTimeline();
+  renderReplayBar();
 }
 function routeAt(r, t) {
   const tr = r.track;
@@ -844,15 +1276,90 @@ function routeAt(r, t) {
   return { ...a, lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
 }
 function updateBoats() {
+  const n = Object.keys(boatMarkers).length;
   for (const [id, mk] of Object.entries(boatMarkers)) {
     const r = state.routes[id]; const p = routeAt(r, state.time);
     mk.setLatLng([p.lat, p.lon]);
     const el = mk.getElement(); if (!el) continue;
     el.querySelector('svg').style.transform = `translate(-14px,-14px) rotate(${p.hdg || 0}deg)`;
     const done = state.time >= r.eta;
-    el.querySelector('.boatlbl').textContent = done ? `${modelById(id).name} ✓ ${fmtTime(r.eta, false)}` : `${modelById(id).name} ${p.bsp ? p.bsp.toFixed(1) : ''} kn · ${p.sail || ''}`;
-    el.querySelector('.boatlbl').style.display = id === state.selected || Object.keys(boatMarkers).length <= 3 ? '' : 'none';
+    const lbl = el.querySelector('.boatlbl');
+    lbl.textContent = done ? `${modelById(id).name} 🏁 ${fmtTime(r.eta, false)}` : `${modelById(id).name} ${p.bsp ? p.bsp.toFixed(1) + ' kn' : ''}`;
+    lbl.style.display = id === state.selected || (n <= 4 && innerWidth > 700) ? '' : 'none';   // phone: only the selected boat is labelled
   }
+  if (boatPopup && boatPopup.isOpen()) showBoatInfo(boatPopup._ctwId, true);
+  updateReplayRank();
+}
+// small, unobtrusive info box for a boat
+let boatPopup = null;
+function showBoatInfo(id, refresh = false) {
+  const r = state.routes[id]; if (!r || !r.ok) return;
+  const p = routeAt(r, state.time), m = modelById(id), done = state.time >= r.eta;
+  const html = `<div class="bi"><div class="bih"><span class="dot" style="background:${mcol(m.id)}"></span><b>${m.name}</b>${id === idealId() ? ' ★' : ''}<span class="bit">${fmtTime(state.time, false)}</span></div>
+    ${done ? `<div>🏁 U cilju ${fmtTime(r.eta, false)}</div>` : `<div class="big"><span>Vjetar <b>${Math.round(p.twd)}° · ${p.tws.toFixed(1)} kn</b></span><span>Kurs <b>${Math.round(p.hdg)}°</b></span>
+    <span>Brzina <b>${p.bsp.toFixed(1)} kn</b></span><span>TWA <b>${Math.round(Math.abs(p.twa))}° ${p.twa < 0 ? 'L' : 'D'}</b></span></div><div class="bis"><span class="dot" style="background:${p.sailColor}"></span>${p.sail}</div>`}</div>`;
+  if (refresh) { boatPopup.setLatLng([p.lat, p.lon]).setContent(html); return; }
+  if (boatPopup) map.closePopup(boatPopup);
+  boatPopup = L.popup({ className: 'boatpop', closeButton: true, autoPan: false, offset: [0, -12], maxWidth: 220 }).setLatLng([p.lat, p.lon]).setContent(html).openOn(map);
+  boatPopup._ctwId = id;
+}
+
+// ---------------- race replay (PredictWind-style) ----------------
+const REPLAY_SPEEDS = [60, 120, 300, 600, 1200];   // × real time (1–20 min of race per second)
+const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? settings.replaySpeed : 300;
+const rp = { on: false, raf: 0, last: 0, lastFull: 0 };
+function replayRange() {
+  const o = okRoutes(); if (!o.length) return null;
+  return { t0: Math.min(...o.map(r => r.startTime || r.track[0].t)), t1: Math.max(...o.map(r => r.eta)) };
+}
+function replayPause() { if (!rp.on) return; rp.on = false; clearInterval(rp.raf); setTime(state.time); renderReplayBar(); }
+function replayPlay() {
+  const R = replayRange(); if (!R) return;
+  if (boatPopup) map.closePopup(boatPopup);
+  if (state.time >= R.t1 || state.time < R.t0) setTime(R.t0);
+  rp.on = true; rp.last = performance.now(); rp.lastFull = 0;
+  clearInterval(rp.raf);
+  const tick = () => {
+    const now = performance.now();
+    if (!rp.on) return clearInterval(rp.raf);
+    const dt = Math.min(100, now - rp.last); rp.last = now;
+    const t = Math.min(R.t1, state.time + dt * replaySpeed());
+    if (now - rp.lastFull > 250 || t >= R.t1) { rp.lastFull = now; setTime(t); }   // full redraw (wind field) ~4×/s
+    else { state.time = t; updateBoats(); }                                       // boats every frame
+    if (t >= R.t1) { rp.on = false; clearInterval(rp.raf); renderReplayBar(); }
+  };
+  rp.raf = setInterval(tick, 33);   // timer (not rAF) so the race keeps running in a background window too
+  renderReplayBar();
+}
+function renderReplayBar() {
+  const el = $('#replayBar'); if (!el) return;
+  const o = okRoutes();
+  if (settings.mode !== 'race' || !o.length) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const sp = replaySpeed();
+  el.innerHTML = `<button id="rpPlay" class="rpbtn" title="${rp.on ? 'Pauza' : 'Pokreni utrku'}">${rp.on ? '⏸' : '▶'}</button>
+    <select id="rpSpeed" title="Brzina replaya">${REPLAY_SPEEDS.map(v => `<option value="${v}" ${v === sp ? 'selected' : ''}>${v / 60} min/s</option>`).join('')}</select>
+    <div id="rpRank" class="rprank"></div>
+    ${o.length > 1 ? `<button id="rpView" class="rpbtn small" title="Prikaz ruta">${settings.routeView === 'one' ? '1 ruta' : 'Sve'}</button>` : ''}`;
+  el.querySelector('#rpPlay').onclick = () => rp.on ? replayPause() : replayPlay();
+  el.querySelector('#rpSpeed').onchange = e => { settings.replaySpeed = +e.target.value; saveSettings(); };
+  const v = el.querySelector('#rpView'); if (v) v.onclick = () => setRouteView(settings.routeView === 'one' ? 'all' : 'one');
+  updateReplayRank();
+}
+function setRouteView(v) {
+  settings.routeView = v; saveSettings(); drawRoutes();
+  if (!$('#sheet').classList.contains('hidden') && $('.tabs [data-tab=compare].on')) renderCompareTab();
+  toast(v === 'one' ? 'Prikazana samo odabrana ruta' : 'Prikazane sve rute');
+}
+// live order: boats already finished by arrival, the rest by predicted arrival (= who is ahead on time)
+function updateReplayRank() {
+  const el = $('#rpRank'); if (!el) return;
+  const vis = Object.keys(boatMarkers);
+  const o = okRoutes().filter(r => vis.includes(r.model));
+  const best = okRoutes()[0];
+  el.innerHTML = o.slice(0, 4).map((r, i) => `<span class="rk ${r === best ? 'best' : ''} ${state.time >= r.eta ? 'done' : ''}" data-id="${r.model}"><i style="background:${mcol(r.model)}"></i>${r === best ? '★ ' : (i + 1) + '. '}${modelById(r.model).name} <em>${r === best ? '<span class="w">cilj </span>' + fmtTime(r.eta, false) : '+' + fmtDur((r.eta - best.eta) / 3600000)}</em>${state.time >= r.eta ? ' 🏁' : ''}</span>`).join('')
+    + (o.length > 4 ? `<span class="rk">+${o.length - 4}</span>` : '');
+  el.querySelectorAll('.rk[data-id]').forEach(s => s.onclick = () => { state.selected = s.dataset.id; drawRoutes(); showBoatInfo(s.dataset.id); });
 }
 
 // ---------------- compare tab ----------------
@@ -860,22 +1367,26 @@ function renderCompareTab() {
   const el = $('#tab-compare');
   const rs = Object.values(state.routes);
   if (!rs.length) { el.innerHTML = '<div class="note">Još nema izračunatih ruta. Otvori karticu Routing.</div>'; return; }
-  const ok = rs.filter(r => r.ok).sort((a, b) => a.eta - b.eta);
-  const bestEta = ok.length ? ok[0].eta : 0;
+  const ok = okRoutes();
+  const ideal = ok[0], bestEta = ideal ? ideal.eta : 0;
   const spread = ok.length > 1 ? (ok[ok.length - 1].eta - ok[0].eta) / 3600000 : 0;
   el.innerHTML = `
-    <h3>Usporedba modela</h3>
-    <table class="cmp"><tr><th>Model</th><th>ETA</th><th>Trajanje</th><th>nm</th><th>Ø kn</th><th>Max/udar</th><th>Kroz/Bočno/Krma</th></tr>
-    ${ok.map(r => { const m = modelById(r.model), s = r.stats; return `<tr data-id="${r.model}" class="${r.model === state.selected ? 'sel' : ''}">
-      <td><span class="dot" style="background:${m.color}"></span>${m.name}</td><td class="${r.eta === bestEta ? 'best' : ''}">${fmtTime(r.eta, false)}</td><td>${fmtDur(s.hours)}${r.eta !== bestEta ? `<br><small style="color:var(--muted)">+${fmtDur((r.eta - bestEta) / 3600000)}</small>` : ''}</td>
-      <td>${s.dist.toFixed(1)}</td><td>${s.avgSog.toFixed(1)}</td><td>${s.maxTws.toFixed(0)}/${s.maxGust === s.maxGust ? s.maxGust.toFixed(0) : '–'}</td>
-      <td><div class="bars"><div style="width:${s.pctUp * 100}%;background:#ef6a24"></div><div style="width:${s.pctReach * 100}%;background:#f2d930"></div><div style="width:${s.pctDown * 100}%;background:#3ec7ff"></div></div></td></tr>`; }).join('')}
-    ${rs.filter(r => !r.ok).map(r => `<tr><td><span class="dot" style="background:${modelById(r.model).color}"></span>${modelById(r.model).name}</td><td colspan="6" style="text-align:left;color:var(--bad);white-space:normal">${r.error}</td></tr>`).join('')}
+    ${ideal ? `<div class="ideal"><span class="dot" style="background:${mcol(ideal.model)}"></span><div><b>★ Idealna ruta: ${modelById(ideal.model).name}</b><br><small>najbrža od svih modela · ${fmtDur(ideal.stats.hours)} · cilj ${fmtTime(ideal.eta, false)}</small></div></div>` : ''}
+    ${ok.length > 1 ? `<div class="seg"><button data-rv="all" class="${settings.routeView !== 'one' ? 'on' : ''}">Sve rute</button><button data-rv="one" class="${settings.routeView === 'one' ? 'on' : ''}">Samo odabrana</button></div>` : ''}
+    <table class="cmp"><tr><th>Model</th><th>Cilj</th><th>Zaostatak</th><th>Odstup.</th><th>nm</th><th>Ø kn</th><th>T/G</th></tr>
+    ${ok.map(r => { const m = modelById(r.model), s = r.stats, d = deviation(r, ideal); return `<tr data-id="${r.model}" class="${r.model === state.selected ? 'sel' : ''}">
+      <td><span class="dot" style="background:${mcol(m.id)}"></span>${r === ideal ? '★ ' : ''}${m.name}</td><td class="${r === ideal ? 'best' : ''}">${fmtTime(r.eta, false)}</td>
+      <td>${r === ideal ? '<b>idealna</b>' : '+' + fmtDur((r.eta - bestEta) / 3600000)}</td>
+      <td>${r === ideal ? '–' : `do ${d.max.toFixed(1)} nm<br><small style="color:var(--muted)">Ø ${d.mean.toFixed(1)}</small>`}</td>
+      <td>${s.dist.toFixed(1)}</td><td>${s.avgSog.toFixed(1)}</td><td>${s.tacks}/${s.gybes}</td></tr>`; }).join('')}
+    ${rs.filter(r => !r.ok).map(r => `<tr><td><span class="dot" style="background:${mcol(r.model)}"></span>${modelById(r.model).name}</td><td colspan="6" style="text-align:left;color:var(--bad);white-space:normal">${r.error}</td></tr>`).join('')}
     </table>
-    ${ok.length > 1 ? `<p class="note">Raspon ETA između modela: <b>${fmtDur(spread)}</b>. ${spread > 2 ? 'Modeli se znatno razilaze – prati razvoj i plan B.' : 'Modeli se dobro slažu.'}</p>` : ''}
+    <p class="note">Dodirni red za odabir rute. <b>Odstupanje</b> = koliko daleko ruta ide od idealne (najveće / prosječno). <b>T/G</b> = broj okreta kroz vjetar / kroz krmu. ▶ na karti pokreće utrku brodića.</p>
+    ${ok.length > 1 ? `<p class="note">Raspon dolaska između modela: <b>${fmtDur(spread)}</b>. ${spread > 2 ? 'Modeli se znatno razilaze – prati razvoj i plan B.' : 'Modeli se dobro slažu.'}</p>` : ''}
     <div class="row"><label>Prikaži izokrone odabrane rute</label><input type="checkbox" id="isoT" ${state.showIso !== false ? 'checked' : ''}></div>
     <div id="routeDetail"></div>`;
   el.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { state.selected = tr.dataset.id; drawRoutes(); renderCompareTab(); });
+  el.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => setRouteView(b.dataset.rv));
   el.querySelector('#isoT').onchange = e => { state.showIso = e.target.checked; drawRoutes(); };
   renderRouteDetail();
 }
@@ -885,7 +1396,7 @@ function renderRouteDetail() {
   const s = r.stats, m = modelById(r.model);
   const sails = Object.entries(s.sails).sort((a, b) => b[1] - a[1]).map(([k, h]) => `<span class="dot" style="background:${(SAILS[k] || {}).color || '#888'}"></span>${k} ${fmtDur(h)}`).join(' &nbsp; ');
   el.innerHTML = `
-    <h3><span class="dot" style="background:${m.color}"></span>${m.name} – detalji</h3>
+    <h3><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} – detalji</h3>
     <div class="kv">
       <div><b>${fmtDur(s.hours)}</b><span>trajanje</span></div><div><b>${s.dist.toFixed(1)} nm</b><span>prijeđeno</span></div><div><b>${s.avgSog.toFixed(1)} kn</b><span>prosj. SOG</span></div>
       <div><b>${s.tacks}</b><span>okreta kroz vjetar</span></div><div><b>${s.gybes}</b><span>kroz krmu</span></div><div><b>${s.sailChanges}</b><span>promjena jedara</span></div>
@@ -967,11 +1478,13 @@ function renderSettingsTab() {
     <h3>Izvori podataka</h3>
     <div class="row"><label>Open-Meteo komercijalni API ključ</label></div>
     <div class="row"><input type="password" id="apikey" class="field" style="flex:1" placeholder="prazno = besplatni limit" value="${settings.apiKey}" autocomplete="off"></div>
+    <div class="row"><label>Adresa paketa iz oblaka</label></div>
+    <div class="row"><input type="text" id="cloudUrl" class="field" style="flex:1" value="${settings.cloudUrl || CLOUD_DEFAULT}"></div>
     <div class="note">Meteomatics račun i GRIB uvoz su u kartici Prognoza. ALADIN-HR: čim DHMZ odobri pristup, dodaje se kao izvor.</div>
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 0.5 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.0 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
@@ -981,6 +1494,7 @@ function renderSettingsTab() {
   el.querySelector('#opac').oninput = e => { state.opacity = settings.opacity = +e.target.value; saveSettings(); wxLayer.draw(); };
   el.querySelector('#pden').onchange = e => { settings.particleDensity = state.particleDensity = +e.target.value; saveSettings(); particleLayer.seed(); };
   el.querySelector('#apikey').onchange = e => { settings.apiKey = e.target.value.trim(); saveSettings(); };
+  el.querySelector('#cloudUrl').onchange = e => { settings.cloudUrl = e.target.value.trim(); saveSettings(); };
   el.querySelectorAll('input[name=boat]').forEach(r => r.onchange = () => { selectBoat(r.value); renderSettingsTab(); });
   el.querySelectorAll('[data-delboat]').forEach(b => b.onclick = async () => { boats = boats.filter(x => x.id !== b.dataset.delboat); await saveBoats(); selectBoat('melges40'); renderSettingsTab(); });
   el.querySelector('#polarFile').onchange = async e => {
@@ -1040,28 +1554,36 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   drawCourse();
   renderLegend();
   state.native = await nativeAvailable();
+  settings._native = state.native;
+  // v1.5: the forecast area follows the map window by default (an old 'Cijeli Jadran' choice is reset once)
+  if (!localStorage.getItem('ctw.v15area')) { if (settings.areaSel !== 'custom') settings.areaSel = 'view'; localStorage.setItem('ctw.v15area', '1'); }
+  if (!settings.source) settings.source = state.native ? 'direct' : 'cloud';
   if (state.native) {
     if (!settings.source) settings.source = 'direct';
     if (!settings.directModels) settings.directModels = DIRECT.map(m => m.id);
-    saveSettings();
   }
+  if (!settings.directModels) settings.directModels = ['dir_ecmwf', 'dir_gfs'];   // iPhone/Safari: the two official sources with CORS
+  saveSettings();
   await loadStatic();
   workers.forEach(w => w.postMessage({ cmd: 'mask', mask: state.mask }));
   const set = await loadForecast().catch(() => null);
   const saved = await kv.get('routes:latest').catch(() => null);
-  if (set) useSet(set); else { renderChips(); setTimeout(() => openSheet('data'), 400); }
+  if (set) useSet(set); else renderChips();
   if (saved && set) { state.routes = saved.routes || {}; const ok = Object.values(state.routes).filter(r => r.ok); if (ok.length) state.selected = ok.sort((a, b) => a.eta - b.eta)[0].model; drawRoutes(); }
   particleLayer.start();
   map.invalidateSize();
+  if (settings.mode !== 'race') routeLayer.remove();
+  updateModePill();
   const home = () => { const b = state.set && state.set.bbox; if (settings.mode === 'forecast' && b) map.fitBounds([[b.s, b.w], [b.n, b.e]]); else zoomCourse(); };
   home();
-  if (settings.mode === 'forecast') routeLayer.remove();
   wxLayer.draw();
-  setTimeout(() => { map.invalidateSize(); if (map.getZoom() < 7) home(); }, 600);
+  setTimeout(() => { map.invalidateSize(); if (map.getZoom() < 7) home(); maybeFillWindow(200); }, 600);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn('sw', e));
   // model-run watcher: tells you when a newer run is available than the one you raced with
   const watch = async () => { if (state.set && navigator.onLine) { state.newRuns = await checkNewRuns(state.set).catch(() => []); renderChips(); $('#btnRefresh').classList.toggle('badge', state.newRuns.length > 0); } };
   watch(); setInterval(watch, 20 * 60000);
   setInterval(() => state.set && setTime(state.time), 60000); // keep countdown fresh
 })();
-window.ctw = { state, settings, course, map };
+window.ctw = { state, settings, course, map,
+  fn: { busy: () => dlBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt,
+    markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer } };

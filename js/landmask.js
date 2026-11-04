@@ -41,3 +41,30 @@ export function segmentHitsLand(m, lat1, lon1, lat2, lon2) {
   }
   return false;
 }
+
+// Marks are often islets, lighthouses or harbour berths: if a point is on land/shallows, return the nearest
+// navigable point (pushed one extra cell seaward), so routing rounds the mark instead of failing.
+export function snapToSea(m, lat, lon, maxNm = 4) {
+  if (!m || !isLand(m, lat, lon)) return { lat, lon, snapped: false, nm: 0 };
+  const r0 = Math.floor((m.lat1 - lat) / m.dlat), c0 = Math.floor((lon - m.lon0) / m.dlon);
+  const kLat = m.dlat * 60, kLon = m.dlon * 60 * Math.cos(lat * Math.PI / 180);
+  const maxR = Math.ceil(maxNm / Math.min(kLat, kLon));
+  let best = null;
+  for (let R = 1; R <= maxR && !best; R++) {
+    for (let dr = -R; dr <= R; dr++) for (let dc = -R; dc <= R; dc++) {
+      if (Math.max(Math.abs(dr), Math.abs(dc)) !== R) continue;
+      const r = r0 + dr, c = c0 + dc;
+      if (r < 0 || c < 0 || r >= m.NR || c >= m.NC || m.data[r * m.NC + c]) continue;
+      const d = Math.hypot(dr * kLat, dc * kLon);
+      if (!best || d < best.d) best = { r, c, dr, dc, d };
+    }
+  }
+  if (!best) return { lat, lon, snapped: false, nm: 0, fail: true };
+  // one more cell away from the mark, if that is also water (keeps a small safety margin)
+  const len = Math.hypot(best.dr, best.dc) || 1;
+  let r = best.r, c = best.c;
+  const r2 = Math.round(best.r + best.dr / len), c2 = Math.round(best.c + best.dc / len);
+  if (r2 >= 0 && c2 >= 0 && r2 < m.NR && c2 < m.NC && !m.data[r2 * m.NC + c2]) { r = r2; c = c2; }
+  const la = m.lat1 - (r + 0.5) * m.dlat, lo = m.lon0 + (c + 0.5) * m.dlon;
+  return { lat: la, lon: lo, snapped: true, nm: Math.hypot((la - lat) * 60, (lo - lon) * 60 * Math.cos(lat * Math.PI / 180)) };
+}

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Clock the Wind</title>
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Clock the Wind">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-180.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="map"></div>
+
+<!-- top bar -->
+<header id="topbar" class="glass">
+  <button id="btnMenu" class="iconbtn" aria-label="Izbornik">
+    <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <div class="brand"><span class="logo"></span><b>Clock</b>&nbsp;the Wind</div>
+  <div id="modelChips" class="chips" role="tablist" aria-label="Model prognoze"></div>
+  <div class="spacer"></div>
+  <span id="netPill" class="pill">online</span>
+  <button id="btnRefresh" class="iconbtn" aria-label="Preuzmi prognozu" title="Preuzmi prognozu">
+    <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>
+  </button>
+</header>
+
+<!-- layer bar (Windy-style) -->
+<nav id="layerbar" class="glass" aria-label="Slojevi">
+  <button data-layer="wind" class="on"><svg viewBox="0 0 24 24"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h8"/></svg><span>Vjetar</span></button>
+  <button data-layer="gust"><svg viewBox="0 0 24 24"><path d="M3 9h9M3 13h13M3 17h6M15 5l4 4-4 4"/></svg><span>Udari</span></button>
+  <button data-layer="waves"><svg viewBox="0 0 24 24"><path d="M2 14c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3M2 19c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3"/></svg><span>Valovi</span></button>
+  <button data-layer="current"><svg viewBox="0 0 24 24"><path d="M4 12h13M13 7l5 5-5 5M4 6h6M4 18h6"/></svg><span>Struje</span></button>
+  <button data-layer="rain"><svg viewBox="0 0 24 24"><path d="M7 15a4 4 0 0 1 .5-8A5.5 5.5 0 0 1 18 8a3.5 3.5 0 0 1 0 7H7zM8 18l-1 3M12 18l-1 3M16 18l-1 3"/></svg><span>Kiša</span></button>
+  <button data-layer="storm"><svg viewBox="0 0 24 24"><path d="M13 2 5 14h6l-1 8 8-12h-6z"/></svg><span>Oluje</span></button>
+  <hr>
+  <button id="tglParticles" class="tgl on"><svg viewBox="0 0 24 24"><path d="M3 7c4-3 8 3 12 0s4-2 6-1M3 13c4-3 8 3 12 0s4-2 6-1M3 19c4-3 8 3 12 0"/></svg><span>Čestice</span></button>
+  <button id="tglArrows" class="tgl on"><svg viewBox="0 0 24 24"><path d="M12 20V5M6 11l6-6 6 6"/></svg><span id="arrowsLbl">Strelice</span></button>
+  <button id="tglNumbers" class="tgl"><svg viewBox="0 0 24 24"><path d="M5 18V6l-2 2M10 8a2.5 2.5 0 1 1 4 2L10 18h5M17 7h4l-2.5 4a2.5 2.5 0 1 1-2 4"/></svg><span>Brojke</span></button>
+ <button id="tglColors" class="tgl" title="Boje vjetra/valova na karti uključi/isključi"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5S14 15 15.5 15H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/></svg><span>Boje</span></button>
+  <hr>
+  <button id="ovDepth" class="tgl ov" title="Dubine mora i izobate iznad svih slojeva"><svg viewBox="0 0 24 24"><path d="M3 6c3 2 6-2 9 0s6 2 9 0M3 12c3 2 6-2 9 0s6 2 9 0M12 15v6M9 18l3 3 3-3"/></svg><span>+ Dubine</span></button>
+  <button id="ovWaves" class="tgl ov" title="Strelice valova preko bilo kojeg sloja"><svg viewBox="0 0 24 24"><path d="M2 15c2.5 0 2.5-3 5-3s2.5 3 5 3 2.5-3 5-3 2.5 3 5 3M12 3v7M9 7l3 3 3-3"/></svg><span>+ Valovi</span></button>
+  <button id="ovCurrents" class="tgl ov" title="Strelice struja preko bilo kojeg sloja"><svg viewBox="0 0 24 24"><path d="M3 12h14M13 7l5 5-5 5M3 6c3 0 3 2 6 2M3 18c3 0 3-2 6-2"/></svg><span>+ Struje</span></button>
+  <button id="ovRain" class="tgl ov" title="Kiša preko bilo kojeg sloja"><svg viewBox="0 0 24 24"><path d="M7 14a4 4 0 0 1 .5-8A5.5 5.5 0 0 1 18 7a3.5 3.5 0 0 1 0 7H7zM8 17l-1 3M12 17l-1 3M16 17l-1 3"/></svg><span>+ Kiša</span></button>
+</nav>
+
+<!-- legend -->
+<div id="legend" class="glass"></div>
+
+<!-- floating actions -->
+<div id="fabs">
+  <button id="fabCourse" class="fab"><svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>Staza</button>
+  <button id="fabRoute" class="fab primary"><svg viewBox="0 0 24 24"><path d="M4 19c4 0 3-7 8-7s4-7 8-7"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="5" r="2"/></svg>Routing</button>
+</div>
+
+<!-- timeline (PredictWind-style) -->
+<footer id="timeline" class="glass">
+  <button id="btnPlay" class="iconbtn big" aria-label="Pokreni animaciju"><svg viewBox="0 0 24 24"><path id="playIcon" d="M7 5v14l12-7z"/></svg></button>
+  <div class="tl-main">
+    <div class="tl-head">
+      <div id="tlTime" class="tl-time">—</div>
+      <div id="tlInfo" class="tl-info"></div>
+      <div class="tl-steps">
+        <button id="btnPrev" class="mini">−1h</button>
+        <button id="btnNow" class="mini">Sada</button>
+        <button id="btnNext" class="mini">+1h</button>
+      </div>
+    </div>
+    <div id="tlTrack">
+      <canvas id="tlCanvas"></canvas>
+      <input id="tlSlider" type="range" min="0" max="1" step="1" value="0" aria-label="Vrijeme">
+    </div>
+  </div>
+</footer>
+
+<!-- side sheet -->
+<aside id="sheet" class="glass hidden" aria-label="Panel">
+  <div class="grab"></div>
+  <div class="tabs" role="tablist">
+    <button data-tab="course">Staza</button>
+    <button data-tab="routing">Routing</button>
+    <button data-tab="compare">Usporedba</button>
+    <button data-tab="data">Prognoza</button>
+    <button data-tab="settings">Postavke</button>
+    <button id="sheetClose" class="close" aria-label="Zatvori">✕</button>
+  </div>
+  <div class="tabbody" id="tab-course"></div>
+  <div class="tabbody" id="tab-routing"></div>
+  <div class="tabbody" id="tab-compare"></div>
+  <div class="tabbody" id="tab-data"></div>
+  <div class="tabbody" id="tab-settings"></div>
+</aside>
+
+<!-- point forecast card -->
+<div id="pointCard" class="glass hidden"></div>
+<div id="toast" class="hidden"></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+# Clock the Wind – builds the Adriatic forecast package (no API limits) and publishes the app + package.
+# Runs 4× a day shortly after the main model runs, on every upload, and on demand (Actions → Prognoza → Run workflow).
+name: Prognoza
+on:
+  schedule:
+    - cron: '35 3,9,15,21 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Izradi paket prognoze
+        run: node tools/cloud/build_package.mjs data/latest.ctw
+        env:
+          OPEN_METEO_KEY: ${{ secrets.OPEN_METEO_KEY }}
+        continue-on-error: true
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

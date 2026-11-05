@@ -153,10 +153,11 @@ export async function fetchOpenMeteoMarine({ grid, times, settings, signal, prog
   const make = () => new Float32Array(T * N).fill(NaN);
   const M = { wave: make(), waveDir: make(), wavePer: make(), cu: make(), cv: make() };
   const key = settings.apiKey ? `&apikey=${encodeURIComponent(settings.apiKey.trim())}` : '';
+  let ok = 0, lastErr = null;
   for (let s = 0; s < N; s += BATCH) {
     const e = Math.min(N, s + BATCH);
     const url = `${apiBase('marine', settings)}?latitude=${lats.slice(s, e).join(',')}&longitude=${lons.slice(s, e).join(',')}&hourly=${MARINE_VARS.join(',')}&start_hour=${isoHour(times[0])}&end_hour=${isoHour(times[T - 1])}&timeformat=unixtime&timezone=GMT&cell_selection=sea${key}`;
-    let res; try { res = await fetchJSON(url, signal, progress); } catch (err) { console.warn('marine', err); continue; }
+    let res; try { res = await fetchJSON(url, signal, progress); ok++; } catch (err) { console.warn('marine', err); lastErr = err; if (err.name === 'AbortError' || err.daily) break; continue; }
     if (!Array.isArray(res)) res = [res];
     res.forEach((loc, k) => {
       const p = s + k, h = loc.hourly;
@@ -172,6 +173,7 @@ export async function fetchOpenMeteoMarine({ grid, times, settings, signal, prog
     });
     progress(e / N, `Valovi i struje: ${e}/${N} točaka`);
   }
+  if (!ok) throw lastErr || new Error('valovi/struje nisu dostupni');   // nothing came back: say so instead of an empty grid
   return { ...grid, model: 'marine', times, vars: M };
 }
 
@@ -237,7 +239,12 @@ export async function downloadForecast({ bbox, modelIds, window, quality, settin
     }
     progress(++done / jobs, `${m.name} gotov`);
   }
-  fields.marine = await fetchOpenMeteoMarine({ grid: gridFor(bbox, MARINE_STEP, quality), times, settings, signal, progress: sub });
+  try { fields.marine = await fetchOpenMeteoMarine({ grid: gridFor(bbox, MARINE_STEP, quality), times, settings, signal, progress: sub }); }
+  catch (err) {   // the wind still counts: waves/currents are reported as missing, the map keeps the ones already shown
+    if (err.name === 'AbortError') throw err;
+    errors.push('Valovi/struje: ' + (err.daily ? 'Open-Meteo dnevni limit' : err.message));
+    fields.marine = { lat0: bbox.s, lon0: bbox.w, dlat: 1, dlon: 1, nx: 1, ny: 1, times, vars: Object.fromEntries(['wave', 'waveDir', 'wavePer', 'cu', 'cv'].map(k => [k, new Float32Array(times.length).fill(NaN)])) };
+  }
   progress(1, 'Gotovo');
   const models = modelIds.filter(id => fields[id]);
   if (!models.length) throw new Error('Nijedan model nije vratio podatke. ' + errors.join(' · '));

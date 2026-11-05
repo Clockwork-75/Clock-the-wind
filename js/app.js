@@ -44,6 +44,59 @@ if (!localStorage.getItem('ctw.v10course')) {
   localStorage.setItem('ctw.course', JSON.stringify(course)); localStorage.setItem('ctw.v10course', '1');
 }
 const saveCourse = () => { localStorage.setItem('ctw.course', JSON.stringify(course)); markStale(); };
+// remove calculated routes (map, replay, saved copy)
+// Saved routes are kept per regatta/stage (or per own course): { key: { routes, course, savedAt } }.
+// They appear whenever that regatta is open, until you delete them; nothing is saved without "Spremi rute".
+const courseKey = c => c.regattaId ? `${c.regattaId}#${c.stage || 0}` : 'own:' + c.marks.map(m => m.lat.toFixed(3) + ',' + m.lon.toFixed(3)).join(';');
+async function savedMap() { const m = await kv.get('routes:savedByCourse').catch(() => null); return m && typeof m === 'object' ? m : {}; }
+const sameMarks = (a, b) => a && b && a.length === b.length && a.every((m, i) => Math.abs(m.lat - b[i].lat) < 1e-6 && Math.abs(m.lon - b[i].lon) < 1e-6);
+async function showSavedRoutes() {
+  if (!course.marks.length) return false;
+  const e = (await savedMap())[courseKey(course)];
+  if (!e || !e.routes) return false;
+  state.routes = e.routes; state.routesSaved = true;
+  const ok = Object.values(state.routes).filter(r => r.ok); state.selected = ok.length ? ok.sort((a, b) => a.eta - b.eta)[0].model : null;
+  if (!sameMarks(e.course && e.course.marks, course.marks)) markStale();   // buoys moved since saving
+  drawRoutes(); return true;
+}
+async function clearRoutes(keepSaved = false) {
+  replayPause && replayPause();
+  state.routes = {}; state.selected = null;
+  if (!keepSaved) {   // "Obriši": this course's routes are gone for good (other regattas keep theirs)
+    const m = await savedMap(); delete m[courseKey(course)]; await kv.set('routes:savedByCourse', m).catch(() => {});
+  }
+  state.routesSaved = false;
+  drawRoutes();
+  if (!$('#sheet').classList.contains('hidden') && $('.tabs [data-tab=compare].on')) renderCompareTab();
+}
+// keep the routes after the app closes – only when the user asks for it
+async function saveRoutes() {
+  const ok = Object.fromEntries(Object.entries(state.routes).filter(([, r]) => r && r.ok));
+  if (!Object.keys(ok).length) return toast('Nema izračunatih ruta za spremanje');
+  const m = await savedMap();
+  m[courseKey(course)] = { routes: ok, course: JSON.parse(JSON.stringify(course)), savedAt: Date.now() };
+  await kv.set('routes:savedByCourse', m);
+  state.routesSaved = true; toast(`Rute su spremljene za „${course.name}“ – ostaju dok ih ne obrišeš`);
+}
+// remove the whole course (marks, name, start) and its routes; built-in regattas stay available in the list
+async function clearCourse() {
+  setEditing(false);
+  await clearRoutes();   // this course's routes, saved ones included
+  Object.assign(course, { regattaId: '', stage: 0, name: 'Moja regata', start: null });
+  course.marks.length = 0;
+  saveCourse(); drawCourse(); updateModePill();
+}
+// two taps: the first arms the button for 4 s, the second deletes (no system dialog needed)
+function armDelete(btn, label, action) {
+  btn.onclick = async () => {
+    if (!btn.classList.contains('armed')) {
+      btn.classList.add('armed'); const t = btn.textContent; btn.textContent = 'Dodirni ponovno za brisanje';
+      clearTimeout(btn._t); btn._t = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = t; }, 4000);
+      return;
+    }
+    clearTimeout(btn._t); await action(); toast(label);
+  };
+}
 
 const state = {
   layer: settings.layer, time: Date.now(), wind: null, marine: null, mask: null, bathy: null, coast: null, places: PLACES,
@@ -104,10 +157,20 @@ const fmtRun = t => { const d = new Date(t); return `${String(d.getUTCDate()).pa
 const raceStart = () => course.start || defaultStart();
 // Model colours on the map: each model in the current forecast gets its own slot from a palette chosen to stand out
 // against the wind colours (no blues/greens) and against each other. Used everywhere (chips, routes, boats, tables).
-const ROUTE_PALETTE = ['#ff1744', '#ffffff', '#e040fb', '#ff9100', '#111111', '#ffee00', '#ff80ab', '#8d6e63', '#9e9e9e', '#ff6e40', '#7c4dff', '#f8bbd0'];
+// Every model keeps the SAME colour everywhere and always (tabs, routes, boats, tables) – also after a refill or a
+// new download. Strong colours that stand out against the wind colours: no blues or greens.
+const MODEL_COLORS = {
+  italia_meteo_arpae_icon_2i: '#ff1744', icon_d2: '#ff9100', icon_eu: '#ffffff', ecmwf_ifs: '#e040fb', ecmwf: '#e040fb',
+  gfs_seamless: '#ffee00', gfs: '#ffee00', knmi_harmonie_arome_europe: '#111111', meteofrance_arpege_europe: '#ff80ab',
+  ukmo_global_deterministic_10km: '#8d6e63', ecmwf_aifs025_single: '#9e9e9e',
+  'mm:mix': '#ff6e40', 'mm:ecmwf-ifs': '#7c4dff', 'mm:mm-swiss1k': '#f8bbd0',
+};
+const EXTRA_COLORS = ['#ff6e40', '#7c4dff', '#f8bbd0', '#ffab40', '#b71c1c', '#ce93d8'];   // imported GRIB files
 function mcol(id) {
-  const s = state && state.set, i = s ? s.models.indexOf(id) : -1;
-  return i >= 0 && i < ROUTE_PALETTE.length ? ROUTE_PALETTE[i] : modelById(id).color;
+  const k = String(id).replace(/^dir_/, '');
+  if (MODEL_COLORS[k]) return MODEL_COLORS[k];
+  let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return EXTRA_COLORS[h % EXTRA_COLORS.length];
 }
 function markStale() { if (state && state.routes) Object.values(state.routes).forEach(r => { r.stale = true; }); }
 const fmtDur = h => { const t = Math.round(h * 60), hh = Math.floor(t / 60), mm = t % 60; return `${hh}h ${String(mm).padStart(2, '0')}m`; };
@@ -469,20 +532,25 @@ function renderCourseTab() {
     <h3>Start</h3>
     <div class="row"><label>Vrijeme starta (lokalno)</label><input type="datetime-local" id="startTime" value="${localInputValue(startT)}"></div>
     <button id="btnZoomCourse" class="btn block">Prikaži stazu na karti</button>
-    <button id="btnGoRoute" class="btn primary block">Dalje: Routing →</button>`}`;
+    <button id="btnGoRoute" class="btn primary block">Dalje: Routing →</button>`}
+    <h3>Brisanje</h3>
+    <button id="btnClearCourse" class="btn block danger">🗑 Obriši stazu i rute</button>
+    <div class="note">Briše sve oznake, ime, start i izračunate rute. Gotove regate ostaju u popisu gore – možeš ih ponovno odabrati.</div>`;
   const loadStage = () => {
     const r = REGATTAS.find(x => x.id === course.regattaId), st = r && r.stages[course.stage || 0];
     course.marks = st && !st.inport ? st.marks.map(m => ({ ...m })) : [];
+    clearRoutes(true).then(showSavedRoutes);   // hide the previous regatta's routes, show this one's saved routes (if any)
     saveCourse(); drawCourse(); renderCourseTab(); if (course.marks.length) zoomCourse(); updateModePill();
   };
   el.querySelector('[data-cmode=forecast]').onclick = () => { setEditing(false); setMode('forecast'); $('#sheet').classList.add('hidden'); toast('Bez regate – bove i rute su skrivene, staza je sačuvana'); };
   el.querySelector('#regSel').onchange = e => {
     const r = REGATTAS.find(x => x.id === e.target.value);
     if (r) { course.regattaId = r.id; course.stage = r.stages.findIndex(s => !s.inport); course.name = r.name; loadStage(); }
-    else { course.regattaId = ''; course.stage = 0; course.name = 'Moja regata'; saveCourse(); renderCourseTab(); updateModePill(); }
+    else { course.regattaId = ''; course.stage = 0; course.name = 'Moja regata'; course.marks.length = 0; if (Object.keys(state.routes).length) clearRoutes(true); saveCourse(); drawCourse(); renderCourseTab(); updateModePill(); setEditing(true); toast('Dodiruj kartu: prvi dodir je start, zadnji cilj', 4000); }
   };
   const ss = el.querySelector('#stageSel'); if (ss) ss.onchange = e => { course.stage = +e.target.value; loadStage(); };
   el.querySelector('#regName').onchange = e => { course.name = e.target.value.trim() || 'Regata'; saveCourse(); updateModePill(); };
+  armDelete(el.querySelector('#btnClearCourse'), 'Staza i rute su obrisane', async () => { await clearCourse(); renderCourseTab(); });
   if (stage && stage.inport) return;
   el.querySelectorAll('.mname').forEach(i => i.onchange = () => { course.marks[i.dataset.i].name = i.value.trim() || 'Oznaka'; saveCourse(); drawCourse(); });
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (course.marks.length <= 2) return toast('Staza treba barem start i cilj'); course.marks.splice(+b.dataset.del, 1); saveCourse(); drawCourse(); renderCourseTab(); });
@@ -555,7 +623,8 @@ map.on('click', e => {
   if (state.editing) {
     const m = { name: `Oznaka ${course.marks.length}`, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) };
     if (state.landAt && state.landAt(m.lat, m.lon)) return toast('Ta točka je na kopnu');
-    course.marks.splice(course.marks.length - 1, 0, m); // insert before finish
+    if (course.marks.length < 2) course.marks.push(m); else course.marks.splice(course.marks.length - 1, 0, m); // insert before finish
+    if (course.marks.length === 1) m.name = 'Start'; else if (course.marks.length === 2 && !course.regattaId) m.name = 'Cilj';
     saveCourse(); drawCourse(); renderCourseTab();
     return;
   }
@@ -671,9 +740,7 @@ const ADRIATIC = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 };
 const union = (a, b) => ({ s: Math.min(a.s, b.s), n: Math.max(a.n, b.n), w: Math.min(a.w, b.w), e: Math.max(a.e, b.e) });
 const areaSel = () => settings.areaSel === 'custom' && settings.customBBox ? 'custom' : settings.areaSel === 'adriatic' ? 'adriatic' : 'view';
 // forecast: what you see (default) / your rectangle / Adriatic. Race: the same, always including the whole course.
-let areaOverride = null;   // set while the map-follow download runs
 function dlArea() {
-  if (areaOverride) return areaOverride;
   const a = areaSel(), base = a === 'custom' ? settings.customBBox : a === 'adriatic' ? ADRIATIC : viewBBox();
   return fcMode() || !course.marks.length ? base : union(base, courseBBox());
 }
@@ -831,14 +898,20 @@ async function doDownload(opts = {}) {
   const dummy = { style: {}, classList: { add() {}, remove() {} }, textContent: '', innerHTML: '' };
   const btn = $('#btnDownload') || dummy; btn.disabled = true; ($('#btnAbort') || dummy).classList.remove('hidden');
   const bar = $('#dlBar') || dummy, txt = $('#dlText') || dummy;
-  if (opts.bbox) areaOverride = opts.bbox;
-  const base = state.set;   // what is on the map now – stays underneath every new piece
+  const area = opts.bbox || dlArea();   // the area of THIS download (the panel always shows the current window)
+  // every arriving piece builds on what is on the map AT THAT MOMENT (another download may have finished meanwhile)
+  const settle = p => {
+    const cur = state.set;
+    const empty = m => { if (!m || m.nx === 1 || !m.vars || !m.vars.wave) return true; const a = m.vars.wave; for (let i = 0; i < a.length; i += 7) if (a[i] === a[i]) return false; return true; };
+    if (cur && empty(p.fields.marine) && !empty(cur.fields.marine)) p.fields.marine = cur.fields.marine;   // never lose waves/currents
+    keepGribs(p, cur); inheritCoverage(p, cur);
+  };
   try {
     dlAbort = new AbortController();
     const st = fcMode() ? Math.round(Date.now() / H1) * H1 : raceStart();
     const inAdriatic = b => b.s >= ADRIATIC.s - 0.3 && b.n <= ADRIATIC.n + 0.3 && b.w >= ADRIATIC.w - 0.3 && b.e <= ADRIATIC.e + 0.3;
     let src = settings.source;
-    if (src === 'cloud' && opts.auto && !inAdriatic(dlArea())) src = 'direct';
+    if (src === 'cloud' && opts.auto && !inAdriatic(area)) src = 'direct';
     if (src === 'cloud') {
       try { await loadCloud(bar, txt, opts.auto); return; }
       catch (e) { if (!opts.auto) throw e; src = 'direct'; }   // cloud not reachable: official GRIBs instead
@@ -846,11 +919,14 @@ async function doDownload(opts = {}) {
     const useDirect = src === 'direct';
     if (useDirect && !(settings.directModels || []).length) throw new Error('Odaberi barem jedan model');
     const dirIds = (settings.directModels || []).filter(id => directUsable(id, state.native));
-    const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: dlArea(), modelIds: useDirect ? (dirIds.length ? dirIds : ['dir_ecmwf', 'dir_gfs']) : settings.dlModels, window: dlWindow(), quality: settings.quality, settings, signal: dlAbort.signal, maxSeconds: opts.auto ? 60 : 150, quick: !!opts.auto, globalOnly: !!opts.auto && map.getZoom() < 6.5,   // a manual download always takes every model you chose
-      onPartial: useDirect ? p => { if (base && base.fields.marine && p.fields.marine.nx === 1) p.fields.marine = base.fields.marine; inheritCoverage(p, base); keepGribs(p, base); useSet(p, { keepView: true }); } : null,
+    let win = dlWindow();
+    if (opts.auto && state.set && state.set.times && state.set.times.length) {   // a refill keeps (at least) the time span already on screen
+      const T = state.set.times; win = { ...win, t0: Math.min(win.t0, Math.max(T[0], Date.now() - 6 * 3600000)), t1: Math.min(Math.max(win.t1, T[T.length - 1]), Date.now() + 5 * 24 * 3600000) };
+    }
+    const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: area, modelIds: useDirect ? (dirIds.length ? dirIds : ['dir_ecmwf', 'dir_gfs']) : settings.dlModels, window: win, quality: settings.quality, settings, signal: dlAbort.signal, maxSeconds: 150,   // the map is coloured as soon as the first model arrives; the rest may take its time (never cut short) quick: !!opts.auto, globalOnly: !!opts.auto && map.getZoom() < 6.5,   // a manual download always takes every model you chose
+      onPartial: useDirect ? p => { settle(p); useSet(p, { keepView: true }); } : null,
       progress: (f, t) => { if (f != null) bar.style.width = (f * 100).toFixed(0) + '%'; if (t) txt.textContent = t; } });
-    keepGribs(set, base);
-    inheritCoverage(set, base);
+    settle(set);
     txt.textContent = 'Spremam za offline…';
     await saveForecast(set);
     if (!opts.auto) { state.routes = {}; drawRoutes(); }
@@ -872,7 +948,7 @@ async function doDownload(opts = {}) {
     }
     else { txt.textContent = e.name === 'AbortError' ? 'Prekinuto.' : e.message; if (e.name !== 'AbortError') toast(e.message, 5000); }
   }
-  finally { btn.disabled = false; const a = $('#btnAbort'); a && a.classList.add('hidden'); areaOverride = null; dlBusy = false; }
+  finally { btn.disabled = false; const a = $('#btnAbort'); a && a.classList.add('hidden'); dlBusy = false; }
 }
 // "Fill the window": in forecast mode with area = window, panning/zooming outside the downloaded area downloads
 // the new window automatically (with a margin, so small pans do not trigger it). Never in race mode (would reset routes).
@@ -926,7 +1002,9 @@ map.on('moveend', maybeFillWindow);
 async function loadCloud(bar, txt, auto = false) {
   const set = await fetchCloudPackage(settings.cloudUrl || CLOUD_DEFAULT, state.native, (f, t) => { if (t && txt) txt.textContent = t; });
   set.mode = 'forecast';
-  inheritCoverage(set, state.set);
+  const hasWaves = m => { if (!m || m.nx === 1 || !m.vars || !m.vars.wave) return false; const a = m.vars.wave; for (let i = 0; i < a.length; i += 7) if (a[i] === a[i]) return true; return false; };
+  if (state.set && !hasWaves(set.fields.marine) && hasWaves(state.set.fields.marine)) set.fields.marine = state.set.fields.marine;
+  keepGribs(set, state.set); inheritCoverage(set, state.set);
   await saveForecast(set);
   if (!auto) { state.routes = {}; drawRoutes(); }
   state.newRuns = [];
@@ -1090,6 +1168,7 @@ function renderRoutingTab() {
     <div class="row"><label>Sljedeća oznaka</label><select id="nextMark">${course.marks.slice(1).map((m, i) => `<option value="${i + 1}">${m.name}</option>`).join('')}</select></div>
     <button id="btnGps" class="btn block" ${s ? '' : 'disabled'}>📍 Ruta od moje pozicije, sada</button>
     <div id="runStatus"></div>
+    ${Object.keys(state.routes).length ? '<button id="btnClearRoutes" class="btn block danger">🗑 Obriši rute (zauvijek)</button>' : ''}
     <p class="note">Ruta izbjegava kopno, otoke i plićine (EMODnet batimetrija ~135 m). Uvijek provjeri hridi, zabranjene zone i upute za jedrenje na službenoj karti.</p>`;
   const num = (id, key, after) => el.querySelector(id).onchange = e => { settings[key] = +e.target.value; saveSettings(); after && after(); };
   num('#eff', 'efficiency', markStale); num('#tackP', 'tackPenaltySec'); num('#gybeP', 'gybePenaltySec'); num('#dtMin', 'dtMin');
@@ -1101,6 +1180,7 @@ function renderRoutingTab() {
   el.querySelector('#chgStart').onclick = () => openSheet('course');
   el.querySelectorAll('.check input').forEach(i => i.onchange = () => { state.routeModels = [...el.querySelectorAll('.check input:checked')].map(x => x.value); renderRoutingTab(); });
   el.querySelector('#btnRun').onclick = () => runRouting(state.routeModels.filter(x => routable.includes(x)));
+  const cr1 = el.querySelector('#btnClearRoutes'); if (cr1) armDelete(cr1, 'Rute su obrisane (staza je ostala)', async () => { await clearRoutes(); renderRoutingTab(); });
   el.querySelector('#btnGps').onclick = () => {
     if (!navigator.geolocation) return toast('GPS nije dostupan');
     toast('Tražim GPS poziciju…');
@@ -1151,7 +1231,7 @@ async function runRouting(ids, override = {}) {
     }
   })()));
   console.log('routing took', Math.round(performance.now() - t0), 'ms');
-  await kv.set('routes:latest', { routes: state.routes, course }).catch(() => {});
+  state.routesSaved = false;   // calculated routes live only until the app closes – saved only on "Spremi rute"
   const okIds = ids.filter(id => state.routes[id].ok);
   if (okIds.length) {
     state.selected = okIds.sort((a, b) => state.routes[a].eta - state.routes[b].eta)[0];
@@ -1384,9 +1464,15 @@ function renderCompareTab() {
     <p class="note">Dodirni red za odabir rute. <b>Odstupanje</b> = koliko daleko ruta ide od idealne (najveće / prosječno). <b>T/G</b> = broj okreta kroz vjetar / kroz krmu. ▶ na karti pokreće utrku brodića.</p>
     ${ok.length > 1 ? `<p class="note">Raspon dolaska između modela: <b>${fmtDur(spread)}</b>. ${spread > 2 ? 'Modeli se znatno razilaze – prati razvoj i plan B.' : 'Modeli se dobro slažu.'}</p>` : ''}
     <div class="row"><label>Prikaži izokrone odabrane rute</label><input type="checkbox" id="isoT" ${state.showIso !== false ? 'checked' : ''}></div>
-    <div id="routeDetail"></div>`;
+    <div id="routeDetail"></div>
+    <h3>Spremanje</h3>
+    <div class="note">${state.routesSaved ? '✓ <b>Rute su spremljene</b> – ostaju i nakon zatvaranja aplikacije, dok ih ne obrišeš.' : '<b>Rute nisu spremljene</b> – nestat će kad zatvoriš aplikaciju. Spremi ih ako ih trebaš kasnije (npr. na moru).'}</div>
+    <button id="btnSaveRoutes" class="btn block" ${state.routesSaved ? 'disabled' : ''}>💾 Spremi rute</button>
+    <button id="btnClearRoutes2" class="btn block danger">🗑 Obriši rute (zauvijek)</button>`;
   el.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { state.selected = tr.dataset.id; drawRoutes(); renderCompareTab(); });
   el.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => setRouteView(b.dataset.rv));
+  armDelete(el.querySelector('#btnClearRoutes2'), 'Rute su obrisane (staza je ostala)', async () => { await clearRoutes(); renderCompareTab(); });
+  el.querySelector('#btnSaveRoutes').onclick = async () => { await saveRoutes(); renderCompareTab(); };
   el.querySelector('#isoT').onchange = e => { state.showIso = e.target.checked; drawRoutes(); };
   renderRouteDetail();
 }
@@ -1484,7 +1570,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.0 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
@@ -1510,7 +1596,7 @@ function renderSettingsTab() {
   };
   el.querySelector('#introT').onchange = e => { try { localStorage.setItem('ctw.intro', e.target.checked ? 'on' : 'off'); } catch { /* ignore */ } };
   el.querySelector('#introPlay').onclick = () => playIntro({ force: true });
-  el.querySelector('#clearData').onclick = async () => { if (!confirm('Obrisati spremljene prognoze i rute?')) return; await kv.del('forecast:latest'); await kv.del('routes:latest'); state.routes = {}; drawRoutes(); useSet(null); toast('Obrisano'); };
+  el.querySelector('#clearData').onclick = async () => { if (!confirm('Obrisati spremljene prognoze i rute?')) return; await kv.del('forecast:latest'); await kv.del('routes:savedByCourse'); await kv.del('routes:saved'); await kv.del('routes:latest'); state.routes = {}; state.routesSaved = false; drawRoutes(); useSet(null); toast('Obrisano'); };
   drawPolarChart($('#polarChart'));
   if ($('#xoverChart')) drawXover($('#xoverChart'));
 }
@@ -1567,9 +1653,12 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   await loadStatic();
   workers.forEach(w => w.postMessage({ cmd: 'mask', mask: state.mask }));
   const set = await loadForecast().catch(() => null);
-  const saved = await kv.get('routes:latest').catch(() => null);
+  await kv.del('routes:latest').catch(() => {});   // earlier versions saved every calculation automatically – gone for good
+  const one = await kv.get('routes:saved').catch(() => null);
+  if (one && one.course && one.routes) { const m = await savedMap(); m[courseKey(one.course)] = one; await kv.set('routes:savedByCourse', m); }
+  await kv.del('routes:saved').catch(() => {});
   if (set) useSet(set); else renderChips();
-  if (saved && set) { state.routes = saved.routes || {}; const ok = Object.values(state.routes).filter(r => r.ok); if (ok.length) state.selected = ok.sort((a, b) => a.eta - b.eta)[0].model; drawRoutes(); }
+  if (set) await showSavedRoutes();   // routes come back only if you saved them for this regatta
   particleLayer.start();
   map.invalidateSize();
   if (settings.mode !== 'race') routeLayer.remove();
@@ -1585,5 +1674,5 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   setInterval(() => state.set && setTime(state.time), 60000); // keep countdown fresh
 })();
 window.ctw = { state, settings, course, map,
-  fn: { busy: () => dlBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt,
+  fn: { courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt,
     markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer } };

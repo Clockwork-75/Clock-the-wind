@@ -63,12 +63,20 @@ function decodeCrop(buf, bbox, maxPts) {
       gribPool = Array.from({ length: n }, () => { const w = new Worker(new URL('./grib.worker.js', import.meta.url), { type: 'module' }); w.jobs = 0; return w; });
     } catch { gribPool = []; }
   }
-  if (!gribPool.length) { const out = []; for (const m of decodeGrib(buf)) { const c = cropMsg(m, bbox, maxPts); if (c) out.push(c); } return Promise.resolve(out); }
+  const local = b => { const out = []; for (const m of decodeGrib(b)) { const c = cropMsg(m, bbox, maxPts); if (c) out.push(c); } return out; };
+  if (!gribPool.length) return Promise.resolve(local(buf));
   const w = gribPool.reduce((a, b) => (b.jobs < a.jobs ? b : a));
   const id = ++gribSeq; w.jobs++;
+  const copy = buf.slice(0);   // kept in case the worker never answers
   return new Promise((resolve, reject) => {
-    const on = e => { if (e.data.id !== id) return; w.removeEventListener('message', on); w.jobs--; e.data.error ? reject(new Error(e.data.error)) : resolve(e.data.msgs); };
-    w.addEventListener('message', on);
+    let done = false;
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(t); w.removeEventListener('message', on); w.removeEventListener('error', err); w.jobs--; fn(v); };
+    const on = e => { if (e.data.id !== id) return; e.data.error ? finish(reject, new Error(e.data.error)) : finish(resolve, e.data.msgs); };
+    // a worker that cannot start or hangs: switch to decoding here, never wait forever
+    const fallback = () => { gribPool = []; try { finish(resolve, local(copy)); } catch (e) { finish(reject, e); } };
+    const err = () => fallback();
+    const t = setTimeout(fallback, 30000);
+    w.addEventListener('message', on); w.addEventListener('error', err);
     w.postMessage({ id, buf, bbox, maxPts }, [buf]);
   });
 }
@@ -114,7 +122,7 @@ const ecBase = (run, h) => `${EC_HOSTS[ecHost]}/${ymd(run)}/${hh(run)}z/ifs/0p25
 const ecOk = url => ecHost === 'ecmwf' ? ok(url) : okDirect(url);
 const ECMWF = {
   async latestRun() {
-    const order = native ? ['aws', 'ecmwf'] : ['aws'];
+    const order = native ? ['ecmwf', 'aws'] : ['aws'];   // Mac: ECMWF's own server first (through the local proxy), AWS as reserve
     for (const hst of order) {
       ecHost = hst;
       let t = Math.floor((Date.now() - 6 * H) / (12 * H)) * 12 * H;
@@ -124,14 +132,17 @@ const ECMWF = {
   },
   steps(run, t0, t1) { const s = []; for (let h = 0; h <= 144; h += globalEvery) { const v = run + h * H; if (v >= t0 - 3 * H - (globalEvery - 3) * H && v <= t1 + globalEvery * H) s.push(h); } return s; },
   async filesAsync(run, h) {
-    const viaProxy = ecHost === 'ecmwf';
-    const r = await fetchT(viaProxy ? P(ecBase(run, h) + '.index') : ecBase(run, h) + '.index', { cache: 'no-store' }); if (!r.ok) throw new Error(`${r.status} ECMWF index +${h}h`);
-    const idx = await r.text();
+    let viaProxy = ecHost === 'ecmwf';
+    const getIdx = async proxy => { const host = proxy ? EC_HOSTS.ecmwf : EC_HOSTS.aws, u = ecBase(run, h).replace(EC_HOSTS[ecHost], host) + '.index';
+      const r = await fetchT(proxy ? P(u) : u, { cache: 'no-store' }); if (!r.ok) throw new Error(`${r.status} ECMWF index +${h}h`); return r.text(); };
+    let idx;
+    try { idx = await getIdx(viaProxy); }
+    catch (e) { if (!native) throw e; viaProxy = !viaProxy; idx = await getIdx(viaProxy); }   // the other server has the same file
     const want = new Set(['10u', '10v', '10fg']);
     return idx.trim().split('\n').map(l => JSON.parse(l)).filter(j => want.has(j.param))
       .map(j => {
         const rg = `${j._offset}-${j._offset + j._length - 1}`, path = ecBase(run, h).replace(EC_HOSTS[ecHost], '') + '.grib2';
-        return viaProxy ? { url: EC_HOSTS.ecmwf + path, extra: '&r=' + rg }
+        return viaProxy ? { url: EC_HOSTS.ecmwf + path, extra: '&r=' + rg, alt: { url: EC_HOSTS.aws + path, extra: 'direct:' + rg } }
           : { url: EC_HOSTS.aws + path, extra: 'direct:' + rg, alt: native ? { url: EC_HOSTS.ecmwf + path, extra: '&r=' + rg } : null };
       });
   },
@@ -317,9 +328,11 @@ export const CLOUD_DEFAULT = 'https://clockwork-75.github.io/Clock-the-wind/data
 export async function fetchCloudPackage(cloudUrl, native, progress = () => {}) {
   const onPages = /github\.io$/.test(location.hostname);
   const url = onPages ? new URL('data/latest.ctw', location.href.replace(/[^/]*$/, '')).href : (cloudUrl || CLOUD_DEFAULT);
-  const req = !onPages && native ? `/proxy?u=${encodeURIComponent(url)}` : url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
   progress(null, 'Preuzimam paket iz oblaka…');
-  const r = await fetch(req, { cache: 'no-store' });
+  let r = null;
+  try { r = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' }); } catch { r = null; }
+  if ((!r || !r.ok) && !onPages && native) r = await fetch(`/proxy?u=${encodeURIComponent(url)}`, { cache: 'no-store' });
+  if (!r) throw new Error('paket iz oblaka nije dostupan');
   if (!r.ok) throw new Error(`paket iz oblaka nije dostupan (${r.status})`);
   let buf = await r.arrayBuffer();
   const h = new Uint8Array(buf, 0, 2);

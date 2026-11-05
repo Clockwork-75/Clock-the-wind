@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clock the Wind – priručnik</title>
+<style>
+:root { --bg: #f6f4ef; --card: #ffffff; --text: #1d232c; --muted: #5d6673; --line: #e3ded3; --accent: #e8731c; --accent-soft: #fdf0e4; --ok: #2e9d5b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #10151d; --card: #171e28; --text: #e8eef6; --muted: #9fb0c3; --line: #263142; --accent: #ff9a4a; --accent-soft: #2a2016; --ok: #4cd18a; } }
+:root[data-theme="dark"] { --bg: #10151d; --card: #171e28; --text: #e8eef6; --muted: #9fb0c3; --line: #263142; --accent: #ff9a4a; --accent-soft: #2a2016; --ok: #4cd18a; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+main { max-width: 800px; margin: 0 auto; padding: 24px 16px 60px; }
+.cover { text-align: center; padding: 26px 10px 10px; }
+.cover h1 { font-size: 34px; margin: 0; letter-spacing: -.01em; }
+.cover .sub { color: var(--muted); margin: 6px 0 0; }
+.toc { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin: 18px 0; columns: 2; column-gap: 24px; font-size: 15px; }
+.toc a { color: var(--text); text-decoration: none; display: block; padding: 2px 0; break-inside: avoid; }
+.toc a span { color: var(--accent); font-weight: 700; display: inline-block; width: 26px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 16px 0; }
+h2 { font-size: 21px; margin: 0 0 10px; display: flex; gap: 10px; align-items: center; }
+h2 .n { background: var(--accent); color: #fff; min-width: 30px; height: 30px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 15px; flex: none; }
+h3 { font-size: 16px; margin: 16px 0 4px; }
+p { margin: 6px 0; }
+ol, ul { margin: 6px 0; padding-left: 22px; }
+li { margin: 4px 0; }
+b.ui { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; font-weight: 600; }
+.tip, .warn { padding: 9px 13px; border-radius: 0 9px 9px 0; margin: 10px 0 4px; font-size: 15px; }
+.tip { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+.warn { background: rgba(214, 69, 65, .08); border-left: 3px solid #d64541; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; }
+.box h3 { margin-top: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; word-break: break-all; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 6px 0; }
+th { text-align: left; font-size: 13px; color: var(--muted); font-weight: 600; padding: 4px; }
+td { padding: 6px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+td:first-child { font-weight: 600; width: 34%; }
+.scale { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 6px 0 2px; }
+.scale i { flex: 1; }
+.ticks { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
+@media (max-width: 560px) { .toc { columns: 1; } }
+@media print {
+  :root, :root[data-theme="dark"] { --bg: #fff; --card: #fff; --text: #111; --muted: #555; --line: #ccc; --accent: #d9661a; --accent-soft: #fbeee2; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-size: 11pt; }
+  main { max-width: none; padding: 0; }
+  section { break-inside: auto; border: none; border-top: 2px solid var(--accent); border-radius: 0; padding: 10px 0 4px; margin: 12px 0 0; }
+  h2, h3 { break-after: avoid; page-break-after: avoid; }
+  h2 + *, h3 + * { break-before: avoid; page-break-before: avoid; }
+  li, tr, .box, .tip, .warn { break-inside: avoid; }
+  .toc { border: none; padding: 0; }
+  .cover { padding-top: 60px; }
+  .toc { break-after: page; }
+  .page { break-before: page; page-break-before: always; }
+}
+</style>
+</head>
+<body>
+<main>
+<div class="cover">
+  <h1>Clock the Wind</h1>
+  <p class="sub">Prognoza vjetra i weather routing za jadranske regate</p>
+  <p class="sub">Priručnik za korisnika · verzija 2.1 · Melges 40 „Clockwork“</p>
+</div>
+
+<nav class="toc">
+  <a href="#s1"><span>1</span>Što aplikacija radi</a>
+  <a href="#s2"><span>2</span>Instalacija i nova verzija</a>
+  <a href="#s3"><span>3</span>Zaslon na prvi pogled</a>
+  <a href="#s4"><span>4</span>Slojevi i boje</a>
+  <a href="#s5"><span>5</span>Vrijeme i animacija</a>
+  <a href="#s6"><span>6</span>Prognoza u točki</a>
+  <a href="#s7"><span>7</span>Preuzimanje prognoze</a>
+  <a href="#s8"><span>8</span>Modeli</a>
+  <a href="#s9"><span>9</span>Staza i regata</a>
+  <a href="#s10"><span>10</span>Spremanje i brisanje ruta i staze</a>
+  <a href="#s11"><span>11</span>Routing</a>
+  <a href="#s12"><span>12</span>Usporedba ruta</a>
+  <a href="#s13"><span>13</span>Replay utrke</a>
+  <a href="#s14"><span>14</span>Tijekom regate</a>
+  <a href="#s15"><span>15</span>Vlastiti GRIB i plaćeni izvori</a>
+  <a href="#s16"><span>16</span>Na moru bez signala</a>
+  <a href="#s17"><span>17</span>Postavke</a>
+  <a href="#s18"><span>18</span>Rješavanje problema</a>
+  <a href="#s19"><span>19</span>Pojmovi</a>
+</nav>
+
+<section id="s1">
+  <h2><span class="n">1</span>Što aplikacija radi</h2>
+  <ul>
+    <li>Prikazuje prognozu <b>vjetra, udara, valova, struja, kiše i grmljavine</b> za Jadran iz više meteoroloških modela odjednom.</li>
+    <li>Računa <b>najbržu rutu</b> za tvoj brod (polar Melges 40 i tablica jedara) po svakom modelu i uspoređuje ih.</li>
+    <li>Prikazuje <b>replay utrke</b>: brodići voze rute pojedinih modela, pa se vidi tko je gdje i tko prvi stiže.</li>
+    <li>Radi na <b>Macu, iPhoneu i iPadu</b>, s internetom i bez njega (na moru).</li>
+  </ul>
+  <div class="warn">Prognoza i rute pomažu pri odluci, ali ne zamjenjuju službena upozorenja, upute za jedrenje ni nautičku kartu. Hridi, zabranjene zone i oznake uvijek provjeri na službenoj karti.</div>
+</section>
+
+<section id="s2">
+  <h2><span class="n">2</span>Instalacija i nova verzija</h2>
+  <div class="grid">
+    <div class="box"><h3>Mac</h3>
+      <ol><li>U Downloads dvaput klikni <b class="ui">Clock the Wind.dmg</b>.</li>
+      <li>Povuci <b>Clock the Wind</b> u <b class="ui">Applications</b>. Ako pita, odaberi <b class="ui">Zamijeni</b>.</li>
+      <li>Pokreći je iz Applications, ne iz DMG prozora.</li></ol>
+      <p>Na Macu rade svi izvori, i njemački DWD modeli (ICON-D2, ICON-EU).</p></div>
+    <div class="box"><h3>iPhone / iPad</h3>
+      <ol><li>U Safariju otvori <code>https://clockwork-75.github.io/Clock-the-wind/</code></li>
+      <li>Dodirni <b class="ui">Dijeli</b> (kvadrat sa strelicom) → <b class="ui">Dodaj na početni zaslon</b> → <b class="ui">Dodaj</b>.</li>
+      <li>Ubuduće je otvaraj s početnog zaslona. Radi preko cijelog ekrana i bez interneta.</li></ol></div>
+  </div>
+  <h3>Kad stigne nova verzija</h3>
+  <ul>
+    <li><b>Mac:</b> novi DMG, pa ponovno povuci aplikaciju u Applications. Prognoze, staza i postavke ostaju.</li>
+    <li><b>iPhone/iPad:</b> nakon objave na GitHubu otvori aplikaciju i pričekaj 10 s. Zatim je potpuno zatvori (povuci prema gore iz popisa aplikacija) i otvori ponovno.</li>
+    <li>Verzija piše u <b class="ui">☰</b> → <b class="ui">Postavke</b>, na dnu.</li>
+  </ul>
+  <h3>Objava nove verzije na GitHubu</h3>
+  <ol>
+    <li>U Safari zalijepi <code>https://github.com/clockwork-75/Clock-the-wind/upload/main</code></li>
+    <li>Iz Downloads otvori mapu <b>„Clock the Wind za GitHub“</b>, označi sve (Cmd+A) i povuci na stranicu. Povuci sadržaj mape, ne samu mapu.</li>
+    <li>U prvo polje upiši npr. <code>Verzija 2.1</code> i klikni <b class="ui">Commit changes</b>.</li>
+    <li>Za 1–3 minute nova verzija je na tvom linku.</li>
+  </ol>
+</section>
+
+<section id="s3">
+  <h2><span class="n">3</span>Zaslon na prvi pogled</h2>
+  <table>
+    <tr><td>Gornja traka</td><td><b class="ui">☰</b> otvara panel. Tabovi modela (svaki ima svoju boju) prikazuju taj model. <b class="ui">↻</b> vodi na preuzimanje prognoze.</td></tr>
+    <tr><td>Gumb načina rada</td><td>Gore lijevo: <b class="ui">🌬 Prognoza</b> (samo vrijeme, bez bova i ruta) ili <b class="ui">⛵ ime regate</b> (staza, bove i rute). Dodir prebacuje način.</td></tr>
+    <tr><td>Desna traka</td><td>Slojevi karte (vjetar, udari, valovi, struje, kiša, oluje) i prekidači (čestice, strelice, brojke, boje, dodaci).</td></tr>
+    <tr><td>Gumbi Staza / Routing</td><td>Brzi pristup stazi i izračunu rute.</td></tr>
+    <tr><td>Legenda</td><td>Dolje lijevo: što znači koja boja (čvorovi, metri…).</td></tr>
+    <tr><td>Vremenska traka</td><td>Dolje: vrijeme prikazane prognoze, animacija i pomak po satima.</td></tr>
+    <tr><td>Panel</td><td>Kartice <b class="ui">Staza</b>, <b class="ui">Routing</b>, <b class="ui">Usporedba</b>, <b class="ui">Prognoza</b>, <b class="ui">Postavke</b>. Zatvara se s <b class="ui">✕</b>. Na mobitelu zauzima donji dio ekrana, a karta ostaje vidljiva.</td></tr>
+  </table>
+  <p>Karta se pomiče prstom ili mišem i zumira kao svaka karta. Ugrađena nautička karta (dubine, izobate, obala) radi i bez interneta.</p>
+</section>
+
+<section id="s4">
+  <h2><span class="n">4</span>Slojevi i boje</h2>
+  <table>
+    <tr><td>Vjetar</td><td>Srednja brzina vjetra na 10 m, u čvorovima.</td></tr>
+    <tr><td>Udari</td><td>Najjači udari. Važni za izbor jedra i reefanje.</td></tr>
+    <tr><td>Valovi</td><td>Značajna visina vala (m) sa smjerom.</td></tr>
+    <tr><td>Struje</td><td>Morske struje (čvorovi) sa smjerom kamo teku.</td></tr>
+    <tr><td>Kiša</td><td>Oborine po satu (mm).</td></tr>
+    <tr><td>Oluje</td><td>Potencijal grmljavine (CAPE / munje, gdje model to daje).</td></tr>
+  </table>
+  <h3>Boje vjetra</h3>
+  <div class="scale"><i style="background:#8f8fdc"></i><i style="background:#4a9be6"></i><i style="background:#38c1e0"></i><i style="background:#3ad39a"></i><i style="background:#5fd848"></i><i style="background:#c4e43c"></i><i style="background:#ffe23a"></i><i style="background:#ffb22e"></i><i style="background:#ff7a26"></i><i style="background:#f2382c"></i><i style="background:#d8256f"></i><i style="background:#b12eb7"></i></div>
+  <div class="ticks"><span>0</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span><span>35+ kn</span></div>
+  <p>Ljubičasto-plavo je slab vjetar, zeleno 12–17 čvorova, žuto-narančasto jak, a crveno i ljubičasto olujno.</p>
+  <h3>Prekidači</h3>
+  <ul>
+    <li><b class="ui">Čestice</b>: animirane linije vjetra. Brzina čestica raste s jačinom vjetra (2 čvora gotovo stoji, 15 čvorova juri).</li>
+    <li><b class="ui">Strelice</b>: smjer vjetra u mreži. <b class="ui">Brojke</b>: brzina u čvorovima uz strelice.</li>
+    <li><b class="ui">Boje</b>: pali i gasi obojenu podlogu.</li>
+    <li><b class="ui">+ Dubine</b>, <b class="ui">+ Valovi</b>, <b class="ui">+ Struje</b>, <b class="ui">+ Kiša</b>: dodaci preko bilo kojeg sloja. Npr. vjetar u bojama, a preko njega strelice valova i struja.</li>
+  </ul>
+  <p>Ako model ne pokriva cijeli prikaz (npr. ICON-D2 pokriva samo sjeverni Jadran), praznine se popune sljedećim modelom, pa karta ostaje obojana.</p>
+</section>
+
+<section id="s5">
+  <h2><span class="n">5</span>Vrijeme i animacija</h2>
+  <ul>
+    <li><b>Klizač</b> na donjoj traci bira vrijeme, u koracima od 15 minuta.</li>
+    <li><b class="ui">−1h</b> / <b class="ui">+1h</b> pomiču za sat, <b class="ui">Sada</b> vraća na trenutno vrijeme.</li>
+    <li><b class="ui">▶</b> pokreće animaciju prognoze kroz vrijeme, a ponovni dodir je zaustavlja.</li>
+    <li>Obojena traka iznad klizača pokazuje jačinu vjetra kroz dane na startu staze.</li>
+    <li>U načinu regate zeleno područje označava vrijeme regate (od starta do procijenjenog dolaska), a točkice dolaske po modelima.</li>
+  </ul>
+</section>
+
+<section id="s6">
+  <h2><span class="n">6</span>Prognoza u točki</h2>
+  <ol>
+    <li>Dodirni bilo koju točku na karti. Otvara se mala kartica s vjetrom, smjerom i udarima po svakom modelu, uz valove, struje i dubinu.</li>
+    <li>Karticu povuci za gornji rub kamo želiš.</li>
+    <li>Gumbi u kartici: <b>graf</b> kroz vrijeme (svi modeli), <b>smanji</b> na jedan red, <b>zatvori</b>.</li>
+  </ol>
+  <p>Tako odmah vidiš slažu li se modeli ili se razilaze, što je dobar znak koliko je prognoza sigurna.</p>
+</section>
+
+<section id="s7" class="page">
+  <h2><span class="n">7</span>Preuzimanje prognoze</h2>
+  <p>Otvori <b class="ui">☰</b> → kartica <b class="ui">Prognoza</b>.</p>
+  <h3>a) Što preuzimam</h3>
+  <ul>
+    <li><b class="ui">🌬 Samo prognoza</b>: za područje i broj dana unaprijed, bez staze.</li>
+    <li><b class="ui">⛵ Za regatu</b>: vrijeme se samo računa od starta i procijenjenog trajanja regate, s rezervom. Svi modeli dobiju isti vremenski raspon.</li>
+  </ul>
+  <h3>b) Izvor</h3>
+  <table>
+    <tr><td>📥 GRIB izravno</td><td>Originalne GRIB datoteke izravno od ECMWF-a i NOAA-e, a na Macu i od DWD-a (ICON-D2, ICON-EU). Bez API limita. <b>Preporučeno.</b></td></tr>
+    <tr><td>☁️ Paket iz oblaka</td><td>Gotov paket za cijeli Jadran (više modela, valovi i struje) koji tvoj GitHub sam osvježava 4× dnevno. Mora se jednom uključiti na GitHubu.</td></tr>
+    <tr><td>📡 Open-Meteo</td><td>Najviše modela (ICON-2I, HARMONIE, ARPEGE, UKMO…). Besplatno, ali s dnevnim limitom po internetskoj vezi.</td></tr>
+  </table>
+  <h3>c) Područje</h3>
+  <ul>
+    <li><b class="ui">⛶ Cijeli prozor</b> (zadano): skida se točno ono što vidiš na karti u trenutku kad stisneš Preuzmi.</li>
+    <li><b class="ui">✎ Odaberi na karti</b>: dodirni prvi ugao, pa suprotni ugao. Narančasti okvir ostaje na karti, a gumb <b class="ui">⬇︎ Preuzmi prognozu</b> zasvijetli.</li>
+    <li><b class="ui">Cijeli Jadran</b>.</li>
+  </ul>
+  <h3>d) Preuzimanje</h3>
+  <p>Stisni <b class="ui">⬇︎ Preuzmi prognozu</b> (uvijek na dnu panela). Karta se boji čim stigne prvi model, a ostali se dodaju kako stižu. Sve se sprema na uređaj za rad bez interneta.</p>
+  <div class="tip"><b>Automatsko popunjavanje:</b> kad pomakneš ili odzumiraš kartu izvan preuzetog područja, aplikacija sama skine prognozu za novi prikaz (uz internet). Prethodna prognoza ostaje ispod dok nova ne stigne, pa karta nikad ne ostane bijela. Kad zumiraš jako daleko (cijeli Mediteran), skidaju se samo globalni modeli, a detaljni se sami vrate kad zumiraš natrag.</div>
+  <h3>e) Novi runovi</h3>
+  <p><b class="ui">Provjeri nove runove modela</b> kaže ima li noviji izračun modela. Tada <b class="ui">Osvježi samo nove runove</b> skine samo ono što je novo.</p>
+</section>
+
+<section id="s8">
+  <h2><span class="n">8</span>Modeli</h2>
+  <table>
+    <tr><th>Model</th><th>Opis</th></tr>
+    <tr><td>ICON-2I (2,2 km)</td><td>Talijanska meteorološka služba. Cijeli Jadran, najviša rezolucija, 2–3 dana. Preko Open-Meteo ili paketa iz oblaka.</td></tr>
+    <tr><td>ICON-D2 (2,2 km)</td><td>DWD, sjeverni Jadran do ~43,2°N, 48 h, svaki sat. Izravno samo na Macu.</td></tr>
+    <tr><td>ICON-EU (7 km)</td><td>DWD, cijeli Jadran, do 5 dana. Izravno samo na Macu.</td></tr>
+    <tr><td>HARMONIE (5,5 km)</td><td>Sjeverni i srednji Jadran (Open-Meteo).</td></tr>
+    <tr><td>ECMWF (9 km / 0,25°)</td><td>Referentni globalni model, do 6 dana. Radi svugdje.</td></tr>
+    <tr><td>GFS (0,25°)</td><td>NOAA, globalni, do 5 dana. Radi svugdje.</td></tr>
+    <tr><td>ALADIN-HR</td><td>DHMZ ga ne nudi kao javne podatke, pa nije dostupan.</td></tr>
+  </table>
+  <p>Za kratke regate najkorisniji su visoko-rezolucijski modeli (ICON-2I, ICON-D2, HARMONIE). Za duge offshore regate i dalje dane ECMWF i GFS. Kad se modeli slažu, prognoza je pouzdanija.</p>
+</section>
+
+<section id="s9">
+  <h2><span class="n">9</span>Staza i regata</h2>
+  <ol>
+    <li>Dodirni <b class="ui">Staza</b>. Aplikacija se prebaci u način regate i prikaže bove.</li>
+    <li>U popisu odaberi regatu: <b>Viška regata</b> (JK Labud), <b>Regata Jabuka</b> (JK Tijat, Vodice), <b>Mrdujska</b>, <b>Fiumanka</b>, <b>Sušac 100×2</b>… ili <b>— vlastita regata —</b>.</li>
+    <li>Ako regata ima više dana, odaberi <b>etapu</b>. Npr. Viška: 1. dan Split → Vis, 2. dan in-port (bez routinga), 3. dan Vis → Split.</li>
+    <li><b>Imena</b> regate i svake oznake mijenjaš u poljima s <b class="ui">✏️</b>.</li>
+    <li><b>Bove povuci</b> na službene pozicije iz upute za jedrenje. Ugrađene pozicije su približne. Zeleno je start, narančasto oznake, šahovnica cilj.</li>
+    <li><b class="ui">＋ Dodaj oznaku tapom na kartu</b> dodaje oznaku prije cilja. <b class="ui">↑</b> pomiče oznaku ranije, a <b class="ui">✕</b> je briše (staza mora imati start i cilj).</li>
+    <li>Postavi <b>vrijeme starta</b>. Preuzimanje prognoze i routing ravnaju se prema njemu.</li>
+  </ol>
+  <h3>Vlastita regata</h3>
+  <p>Odaberi <b>— vlastita regata —</b> i dodiruj kartu: prvi dodir je start, svaki sljedeći oznaka, a zadnji cilj. Ime upiši u polje s <b class="ui">✏️</b>.</p>
+  <p>Ako je oznaka na otočiću ili u luci, ruta je obilazi na sigurnoj udaljenosti. Aplikacija to napiše ispod popisa oznaka.</p>
+</section>
+
+<section id="s10" class="page">
+  <h2><span class="n">10</span>Spremanje i brisanje ruta i staze</h2>
+  <h3>Rute se spremaju samo kad ti to zatražiš</h3>
+  <ul>
+    <li>Izračunate rute postoje <b>samo dok je aplikacija otvorena</b>. Kad je zatvoriš, nestaju.</li>
+    <li>Da ostanu (npr. za more), u <b class="ui">Usporedba</b> stisni <b class="ui">💾 Spremi rute</b>. Tada piše <b>„✓ Rute su spremljene“</b>.</li>
+    <li>Spremljene rute vežu se uz <b>regatu i etapu</b>. Kad odabereš drugu regatu, nestanu s ekrana, ali ostaju spremljene. Kad ponovno otvoriš tu regatu (i nakon ponovnog pokretanja aplikacije), opet su tamo.</li>
+    <li>Ostaju dok ih sam ne obrišeš.</li>
+  </ul>
+  <h3>Brisanje</h3>
+  <table>
+    <tr><td>Obriši rute (zauvijek)</td><td><b class="ui">Routing</b> ili <b class="ui">Usporedba</b> → <b class="ui">🗑 Obriši rute (zauvijek)</b>. Rute nestaju s ekrana i iz spremljenog i više se ne vraćaju. Staza ostaje.</td></tr>
+    <tr><td>Obriši stazu i rute</td><td><b class="ui">Staza</b> → dolje <b class="ui">🗑 Obriši stazu i rute</b>. Brišu se oznake, ime, start i rute, zauvijek.</td></tr>
+    <tr><td>Druga regata</td><td>Kad odabereš drugu regatu ili etapu, rute prethodne nestaju s ekrana. Spremljene ostaju i pojave se kad tu regatu ponovno otvoriš. Brisanje briše samo rute regate koja je otvorena.</td></tr>
+    <tr><td>Sve (i prognoze)</td><td><b class="ui">Postavke</b> → <b class="ui">Obriši spremljene prognoze i rute</b>.</td></tr>
+  </table>
+  <p>Brisanje traži <b>dva dodira</b>: prvi dodir pretvori gumb u crveni <b>„Dodirni ponovno za brisanje“</b>, a tek drugi briše. Ako ne dodirneš ponovno u 4 s, ništa se ne briše.</p>
+  <p>Gotove regate (Viška, Jabuka…) ostaju u popisu i nakon brisanja, pa ih možeš ponovno odabrati.</p>
+  <p><b class="ui">⛵ / 🌬</b> gumb ili <b class="ui">🌬 Bez regate</b> samo <b>sakriju</b> stazu i rute. Ne brišu ih.</p>
+</section>
+
+<section id="s11">
+  <h2><span class="n">11</span>Routing</h2>
+  <ol>
+    <li>Preuzmi prognozu koja pokriva vrijeme starta (kartica Prognoza, „Za regatu“).</li>
+    <li>Dodirni <b class="ui">Routing</b>.</li>
+    <li>Provjeri <b>brod</b> i opcije (vidi tablicu).</li>
+    <li>Označi <b>modele</b> za izračun. Sivi model ne pokriva vrijeme starta.</li>
+    <li>Stisni <b class="ui">Izračunaj rute od starta</b>. Napredak vidiš po modelu, a nakon izračuna otvara se Usporedba.</li>
+  </ol>
+  <table>
+    <tr><td>Učinkovitost (% polara)</td><td>Koliko posada izvuče od polara. 100 % = polar, 90–95 % realno za regatu.</td></tr>
+    <tr><td>Gaz broda i rezerva</td><td>Ruta izbjegava more pliće od gaza + rezerve.</td></tr>
+    <tr><td>Izbjegavaj plićine</td><td>Uključeno: ruta ne ide preko plićina.</td></tr>
+    <tr><td>Penal okreta / kroz krmu</td><td>Sekunde izgubljene po tacku ili gybeu. Veći penal daje manje manevara.</td></tr>
+    <tr><td>Vremenski korak</td><td>Manji korak (5–10 min) je precizniji, veći je brži.</td></tr>
+    <tr><td>Morske struje</td><td>Uračunava struje u brzinu preko dna.</td></tr>
+    <tr><td>Gubitak u valovima</td><td>Usporava brod u većim valovima, posebno u orci.</td></tr>
+  </table>
+  <p>Ruta zaobilazi kopno, otoke i plićine (EMODnet batimetrija, OSM obala) i bira jedro prema tablici jedara (crossover).</p>
+</section>
+
+<section id="s12">
+  <h2><span class="n">12</span>Usporedba ruta</h2>
+  <ul>
+    <li><b>★ NAJBRŽA</b> ruta je najbrža od svih modela: najdeblja linija sa zlatnim sjajem i žutom oznakom „★ NAJBRŽA · model · cilj vrijeme“.</li>
+    <li>Svaki model ima <b>svoju stalnu boju</b>, svugdje istu (tab gore, ruta, brodić, tablica): ICON-2I crvena, ICON-D2 narančasta, ICON-EU bijela, ECMWF ljubičasta, GFS žuta, HARMONIE crna, ARPEGE ružičasta. Plava i zelena se ne koriste jer bi se izgubile u bojama vjetra.</li>
+    <li><b class="ui">Sve rute</b> / <b class="ui">Samo odabrana</b>: sve usporedno ili samo jedna.</li>
+    <li><b>Prelazak mišem</b> preko rute pokazuje točno vrijeme, vjetar, kurs, brzinu, TWA i jedro. <b>Dodir</b> na rutu pomiče sve brodiće na taj trenutak.</li>
+    <li><b>T</b> (bijeli krug) je okret kroz vjetar (tack), <b>G</b> (crni kvadrat) je kroz krmu (gybe). Prikazani su na odabranoj i na najbržoj ruti.</li>
+  </ul>
+  <h3>Tablica usporedbe</h3>
+  <table>
+    <tr><td>Cilj</td><td>Procijenjeno vrijeme dolaska.</td></tr>
+    <tr><td>Zaostatak</td><td>Koliko ruta kasni za najbržom (npr. +1h 15m).</td></tr>
+    <tr><td>Odstupanje</td><td>Koliko daleko ruta ide od najbrže: najveće i prosječno, u nm.</td></tr>
+    <tr><td>nm / Ø kn</td><td>Prijeđena udaljenost i prosječna brzina.</td></tr>
+    <tr><td>T/G</td><td>Broj tackova i gybeova.</td></tr>
+  </table>
+  <p>Rute nisu spremljene dok ne stisneš <b class="ui">💾 Spremi rute</b> (vidi poglavlje 10). Dodir na red odabire tu rutu. Ispod su detalji: trajanje, manevri, jedra, graf (vjetar, udari, brzina broda, TWA), točke rute po satima i <b class="ui">Izvezi rutu (GPX)</b> za plotter. Izokrone (dokle brod stigne u vremenu) pališ ili gasiš prekidačem.</p>
+</section>
+
+<section id="s13">
+  <h2><span class="n">13</span>Replay utrke</h2>
+  <ol>
+    <li>Kad su rute izračunate, na karti se pojavi traka s <b class="ui">▶</b>.</li>
+    <li><b class="ui">▶</b> pokreće utrku: crni brodići voze po rutama u bojama svojih modela.</li>
+    <li>Brzinu biraš od <b>1 do 20 min/s</b> (minuta utrke u sekundi). Zadano je 5 min/s.</li>
+    <li><b class="ui">⏸</b> zaustavlja.</li>
+    <li>U traci je <b>poredak uživo</b>: prvi je žuti „★ model vrijeme“, ostali pokazuju zaostatak, a 🏁 znači da je brod u cilju.</li>
+    <li><b>Dodir na brodić</b> zaustavi replay i otvori mali okvir: vrijeme, vjetar (smjer i brzina), kurs, brzina broda, TWA i jedro.</li>
+  </ol>
+</section>
+
+<section id="s14">
+  <h2><span class="n">14</span>Tijekom regate</h2>
+  <ol>
+    <li><b class="ui">Routing</b> → <b>Sljedeća oznaka</b>: odaberi koju oznaku sljedeću obilaziš.</li>
+    <li>Stisni <b class="ui">📍 Ruta od moje pozicije, sada</b>. Aplikacija uzme GPS poziciju i izračuna rutu do cilja od tog trenutka.</li>
+  </ol>
+  <p>Treba spremljenu prognozu koja pokriva trenutno vrijeme. Internet nije potreban.</p>
+</section>
+
+<section id="s15">
+  <h2><span class="n">15</span>Vlastiti GRIB i plaćeni izvori</h2>
+  <p>U kartici <b class="ui">Prognoza</b>, pod <b>Uvoz GRIB-a</b>:</p>
+  <ul>
+    <li><b>Datoteka</b>: GRIB1 ili GRIB2 iz PredictWinda, Saildocsa, LuckGriba, Expeditiona, qtVlm-a ili NOAA-e. Na iPhoneu je prvo spremi u aplikaciju <b>Datoteke</b>, pa je odaberi.</li>
+    <li><b>Link</b>: zalijepi poveznicu na GRIB i stisni <b class="ui">Preuzmi</b>. Na Macu radi s bilo kojeg poslužitelja. Na iPhoneu, ako poslužitelj to ne dopušta, spremi datoteku i uvezi je.</li>
+    <li><b>Saildocs</b> (besplatno, e-mailom, radi i preko satelitskog e-maila): odaberi model i <b class="ui">✉️ Složi zahtjev</b>. Pošalji e-mail na <code>query@saildocs.com</code>, a GRIB iz odgovora uvezi kao datoteku.</li>
+  </ul>
+  <p>Uvezeni GRIB postaje model sa svojom bojom. Ulazi u routing, usporedbu i replay, i može biti najbrža ruta.</p>
+  <h3>Plaćeni izvori</h3>
+  <ul>
+    <li><b>Meteomatics</b>: korisničko ime i lozinku upiši u kartici Prognoza, pa odaberi MM modele.</li>
+    <li><b>Open-Meteo komercijalni ključ</b>: <b class="ui">Postavke</b> → Izvori podataka. Daje veće limite.</li>
+    <li><b>PredictWind</b> nema javni pristup. GRIB izvezi iz PredictWinda i uvezi ga kao datoteku ili link.</li>
+  </ul>
+</section>
+
+<section id="s16">
+  <h2><span class="n">16</span>Na moru bez signala</h2>
+  <ol>
+    <li><b>Prije polaska</b> (Wi-Fi ili 4G): odaberi regatu, postavi start i preuzmi prognozu „Za regatu“.</li>
+    <li>Izračunaj rute dok si još na internetu i <b>stisni <b class="ui">💾 Spremi rute</b></b> (Usporedba), da ostanu i nakon zatvaranja aplikacije.</li>
+    <li>Po želji na Macu: <b class="ui">📲 Spremi paket za iPhone (AirDrop)</b>. Pošalji ga AirDropom na iPhone i ondje ga uvezi u kartici Prognoza.</li>
+    <li>Na moru karta, dubine, prognoza, rute i replay rade bez interneta.</li>
+    <li>S povremenim signalom ili satelitskim e-mailom: Saildocs zahtjev za svježi GRIB.</li>
+  </ol>
+</section>
+
+<section id="s17">
+  <h2><span class="n">17</span>Postavke</h2>
+  <table>
+    <tr><td>Podloga</td><td>Nautička (dubine i izobate, offline), tamna obala (offline), EMODnet, tamna, svijetla ili satelit (online).</td></tr>
+    <tr><td>OpenSeaMap oznake</td><td>Svjetionici i plutače preko karte (online).</td></tr>
+    <tr><td>Boje i preko kopna</td><td>Isključeno: vjetar se boji samo na moru. Uključeno: i preko kopna.</td></tr>
+    <tr><td>Prozirnost, gustoća čestica, HD</td><td>Izgled i oštrina prikaza.</td></tr>
+    <tr><td>Brodovi (polari)</td><td>Dodaj polar drugog broda (ORC CSV, POL, TXT). Prikazan je i polarni dijagram.</td></tr>
+    <tr><td>Crossover jedara</td><td>Tablica koje jedro za koji TWA i TWS (North Sails za Melges 40).</td></tr>
+    <tr><td>Izvori podataka</td><td>Open-Meteo ključ i adresa paketa iz oblaka.</td></tr>
+    <tr><td>Aplikacija</td><td>Animirani logo pri pokretanju, <b class="ui">Pokaži animaciju</b>, <b class="ui">Obriši spremljene prognoze i rute</b>, broj verzije.</td></tr>
+  </table>
+</section>
+
+<section id="s18">
+  <h2><span class="n">18</span>Rješavanje problema</h2>
+  <table>
+    <tr><td>Dio mora je bijel</td><td>Pričekaj par sekundi da se prognoza dopuni (treba internet). Bez interneta vidi se samo ono što je ranije preuzeto.</td></tr>
+    <tr><td>Stara verzija</td><td>iPhone: otvori, pričekaj 10 s, zatvori do kraja i otvori. Mac: instaliraj novi DMG u Applications i pokreći je odande.</td></tr>
+    <tr><td>„Dnevni limit Open-Meteo“</td><td>Prebaci izvor na <b class="ui">📥 GRIB izravno</b> (bez limita) ili na paket iz oblaka.</td></tr>
+    <tr><td>Model je siv u Routingu</td><td>Ne pokriva vrijeme starta. Preuzmi prognozu „Za regatu“ ili promijeni start.</td></tr>
+    <tr><td>„Prognoza završava prije dolaska“</td><td>Kratki model (npr. ICON-D2, 48 h) ne doseže cilj. Koristi ECMWF ili GFS, ili pomakni start.</td></tr>
+    <tr><td>Ruta ide čudno</td><td>Provjeri pozicije bova, vrijeme starta i gaz broda.</td></tr>
+    <tr><td>Ne mogu obrisati stazu</td><td>Staza → <b class="ui">🗑 Obriši stazu i rute</b>, dva dodira.</td></tr>
+    <tr><td>Rute su nestale nakon zatvaranja</td><td>Nisu bile spremljene. Ako ih trebaš kasnije, nakon izračuna stisni <b class="ui">💾 Spremi rute</b>.</td></tr>
+    <tr><td>GRIB se ne uvozi</td><td>Mora sadržavati vjetar na 10 m (U/V). GRIB1 s „kompleksnim pakiranjem“ nije podržan, pa ga izvezi s jednostavnim pakiranjem.</td></tr>
+  </table>
+</section>
+
+<section id="s19">
+  <h2><span class="n">19</span>Pojmovi</h2>
+  <table>
+    <tr><td>TWS / TWD</td><td>Brzina / smjer pravog vjetra (odakle puše).</td></tr>
+    <tr><td>TWA</td><td>Kut pravog vjetra prema brodu. L = vjetar slijeva, D = zdesna.</td></tr>
+    <tr><td>HDG / Kurs</td><td>Smjer kojim brod plovi.</td></tr>
+    <tr><td>BSP</td><td>Brzina broda kroz vodu.</td></tr>
+    <tr><td>ETA</td><td>Procijenjeno vrijeme dolaska.</td></tr>
+    <tr><td>Polar</td><td>Tablica brzine broda za svaki TWA i TWS.</td></tr>
+    <tr><td>Izokrona</td><td>Crta dokle brod može stići u određenom vremenu.</td></tr>
+    <tr><td>Run modela</td><td>Vrijeme kad je model izračunat (npr. 12z). Noviji run je obično točniji.</td></tr>
+    <tr><td>GRIB</td><td>Standardna datoteka s prognozom (GRIB1/GRIB2).</td></tr>
+  </table>
+</section>
+
+<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 2.1</footer>
+</main>
+</body>
+</html>

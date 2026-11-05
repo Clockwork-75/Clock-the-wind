@@ -30,11 +30,25 @@ function bil(a, off, f, x0, y0, tx, ty) {
 }
 
 // sample variables at lat/lon/time. names: array of var names. returns array of values (NaN if missing)
+// A field may carry `ext`: the same model further ahead (days 4–15, coarser in time/space). Past the field's own
+// last step the extension is used; past the extension's end the last state stays (frozen, like Windy).
 export function sample(f, names, lat, lon, t, out = []) {
+  if (f.ext && t > f.times[f.times.length - 1]) {
+    own(f.ext, names, lat, lon, t, out);
+    if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);
+    return out;
+  }
+  own(f, names, lat, lon, t, out);
+  if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);
+  return out;
+}
+// last moment a field (with its extension) has data
+export const lastTime = f => f.ext ? Math.max(f.ext.validUntil || f.ext.times[f.ext.times.length - 1], f.times[f.times.length - 1]) : (f.validUntil || f.times[f.times.length - 1]);
+function own(f, names, lat, lon, t, out) {
+  if (f.ext && t > f.times[f.times.length - 1]) return own(f.ext, names, lat, lon, t, out);
   let y = (lat - f.lat0) / f.dlat, x = (lon - f.lon0) / f.dlon;
   if (y < -0.5 || x < -0.5 || y > f.ny - 0.5 || x > f.nx - 0.5) {
     for (let i = 0; i < names.length; i++) out[i] = NaN;
-    if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);
     return out;
   }
   y = Math.max(0, Math.min(f.ny - 1, y)); x = Math.max(0, Math.min(f.nx - 1, x));
@@ -50,7 +64,6 @@ export function sample(f, names, lat, lon, t, out = []) {
     const a1 = bil(a, i1 * N, f, x0, y0, tx, ty);
     out[k] = a0 === a0 && a1 === a1 ? a0 + (a1 - a0) * tt : (a0 === a0 ? a0 : a1);
   }
-  if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);
   return out;
 }
 

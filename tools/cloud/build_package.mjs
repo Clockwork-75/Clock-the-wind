@@ -7,13 +7,13 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { decodeGrib, cropMsg, gribToField } from '../../js/grib.js';
-import { exportPackage } from '../../js/direct.js';
+import { exportPackage, globalSteps } from '../../js/direct.js';
 import { downloadForecast, fetchOpenMeteoMarine, gridFor, MARINE_STEP } from '../../js/forecast.js';
 
 const OUT = process.argv[2] || 'data/latest.ctw';
 const BBOX = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 };
 const H = 3600000;
-const HOURS = +(process.env.CTW_HOURS || 120);
+const HOURS = +(process.env.CTW_HOURS || 360);   // 15 days: ECMWF to 360 h, GFS to 384 h (6-hourly after 144/120 h); ICON 48/120 h
 const t0 = Math.floor(Date.now() / H) * H - H, t1 = t0 + HOURS * H;
 const pad = (n, l) => String(n).padStart(l, '0');
 const ymd = t => { const d = new Date(t); return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1, 2)}${pad(d.getUTCDate(), 2)}`; };
@@ -61,9 +61,10 @@ async function dwd(kind) {
 // ---------------- ECMWF open data (IFS 0.25°) ----------------
 async function ecmwf() {
   const base = (run, h) => `https://data.ecmwf.int/forecasts/${ymd(run)}/${hh(run)}z/ifs/0p25/oper/${ymd(run)}${hh(run)}0000-${h}h-oper-fc`;
+  const need = r => Math.max(144, Math.min(360, Math.ceil((t1 - r) / H / 6) * 6));   // the run must be published that far
   let run = Math.floor((Date.now() - 7 * H) / (12 * H)) * 12 * H;
-  for (let k = 0; k < 3 && !(await exists(base(run, 144) + '.index')); k++) run -= 12 * H;
-  const steps = []; for (let h = 0; h <= 144; h += 3) { const v = run + h * H; if (v >= t0 - 3 * H && v <= t1) steps.push(h); }
+  for (let k = 0; k < 3 && !(await exists(base(run, need(run)) + '.index')); k++) run -= 12 * H;
+  const steps = globalSteps('ecmwf', run, t0, t1, 3);
   const msgs = [];
   await pool(steps, 6, async h => {
     const idx = await get(base(run, h) + '.index'); if (!idx) return;
@@ -82,8 +83,9 @@ async function gfs() {
   const b = BBOX;
   const url = (run, h) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&lev_10_m_above_ground=on&lev_surface=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
   let run = Math.floor((Date.now() - 4.5 * H) / (6 * H)) * 6 * H, ok = false;
-  for (let k = 0; k < 3 && !ok; k++) { const t = await get(url(run, 120), {}, 1); ok = !!(t && t.length > 100); if (!ok) run -= 6 * H; }
-  const steps = []; for (let h = 0; h <= 120; h += 3) { const v = run + h * H; if (v >= t0 - 3 * H && v <= t1) steps.push(h); }
+  const need = r => Math.max(120, Math.min(384, Math.ceil((t1 - r) / H / 6) * 6));
+  for (let k = 0; k < 3 && !ok; k++) { const t = await get(url(run, need(run)), {}, 1); ok = !!(t && t.length > 100); if (!ok) run -= 6 * H; }
+  const steps = globalSteps('gfs', run, t0, t1, 3);
   const msgs = [];
   await pool(steps, 2, async h => { const buf = await get(url(run, h)); if (buf) addMsgs(buf, msgs); });   // NOMADS asks for gentle use
   log(`GFS run ${ymd(run)} ${hh(run)}z: ${msgs.length} polja`);
@@ -106,7 +108,7 @@ try {
   log('ICON-2I + valovi/struje: OK');
 } catch (e) {
   errors.push('ICON-2I: ' + (e.daily ? 'Open-Meteo dnevni limit (dodaj OPEN_METEO_KEY tajnu za ICON-2I)' : e.message)); log('!! ICON-2I', e.message);
-  try { fields.marine = await fetchOpenMeteoMarine({ grid: gridFor(BBOX, MARINE_STEP, 'standard'), times, settings, progress: () => {} }); log('valovi/struje: OK'); }
+  try { fields.marine = await fetchOpenMeteoMarine({ grid: gridFor(BBOX, MARINE_STEP, 'standard'), times: times.filter(t => t <= t0 + 8 * 24 * H), settings, progress: () => {} }); log('valovi/struje: OK'); }
   catch (e2) { errors.push('valovi/struje: ' + e2.message); }
 }
 if (!fields.marine) fields.marine = { lat0: BBOX.s, lon0: BBOX.w, dlat: 1, dlon: 1, nx: 1, ny: 1, times, vars: { wave: new Float32Array(times.length).fill(NaN), waveDir: new Float32Array(times.length).fill(NaN), wavePer: new Float32Array(times.length).fill(NaN), cu: new Float32Array(times.length).fill(NaN), cv: new Float32Array(times.length).fill(NaN) } };

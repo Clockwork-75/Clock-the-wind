@@ -1,5 +1,5 @@
 // Clock the Wind service worker: app shell offline + cache-as-you-go map tiles.
-const SHELL = 'ctw-shell-v39';
+const SHELL = 'ctw-shell-v41';
 const TILES = 'ctw-tiles-v1';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',

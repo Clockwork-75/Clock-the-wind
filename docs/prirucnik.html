@@ -62,7 +62,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
 <div class="cover">
   <h1>Clock the Wind</h1>
   <p class="sub">Prognoza vjetra i weather routing za jadranske regate</p>
-  <p class="sub">Priručnik za korisnika · verzija 2.1 · Melges 40 „Clockwork“</p>
+  <p class="sub">Priručnik za korisnika · verzija 2.2 · Melges 40 „Clockwork“</p>
 </div>
 
 <nav class="toc">
@@ -121,7 +121,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   <ol>
     <li>U Safari zalijepi <code>https://github.com/clockwork-75/Clock-the-wind/upload/main</code></li>
     <li>Iz Downloads otvori mapu <b>„Clock the Wind za GitHub“</b>, označi sve (Cmd+A) i povuci na stranicu. Povuci sadržaj mape, ne samu mapu.</li>
-    <li>U prvo polje upiši npr. <code>Verzija 2.1</code> i klikni <b class="ui">Commit changes</b>.</li>
+    <li>U prvo polje upiši npr. <code>Verzija 2.2</code> i klikni <b class="ui">Commit changes</b>.</li>
     <li>Za 1–3 minute nova verzija je na tvom linku.</li>
   </ol>
 </section>
@@ -169,8 +169,11 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   <ul>
     <li><b>Klizač</b> na donjoj traci bira vrijeme, u koracima od 15 minuta.</li>
     <li><b class="ui">−1h</b> / <b class="ui">+1h</b> pomiču za sat, <b class="ui">Sada</b> vraća na trenutno vrijeme.</li>
-    <li><b class="ui">▶</b> pokreće animaciju prognoze kroz vrijeme, a ponovni dodir je zaustavlja.</li>
-    <li>Obojena traka iznad klizača pokazuje jačinu vjetra kroz dane na startu staze.</li>
+    <li><b class="ui">▶</b> pokreće animaciju prognoze kroz vrijeme (uvijek istom brzinom, 30 min po koraku), a ponovni dodir je zaustavlja.</li>
+    <li>Vremenska traka ide <b>do 15 dana</b>, koliko daleko seže najdulji model koji imaš (ECMWF i GFS).</li>
+    <li>Iznad klizača su <b>tanke trake u bojama modela</b>: svaka pokazuje dokle taj model ima podatke. Puni dio su detaljni prvi dani, a svjetliji dio dugoročna prognoza (svaka 3–6 sati).</li>
+    <li>Ispod njih je obojena traka jačine vjetra kroz dane na startu staze. Dio dalje od 5 dana je <b>iscrtkan i označen „trend“</b>: smjer razvoja vremena, a ne precizna prognoza za regatu.</li>
+    <li><b>Kad odabrani model završi</b> (npr. ICON-EU nakon 5 dana), na karti ostaje njegovo zadnje stanje, zatamnjeno, a gore piše npr. „⏸ ICON-EU: prognoza završava pet 12:00 – prikazano zadnje stanje“. I njegov gumb gore postane blijed. Prebaci na ECMWF ili GFS za dalje dane.</li>
     <li>U načinu regate zeleno područje označava vrijeme regate (od starta do procijenjenog dolaska), a točkice dolaske po modelima.</li>
   </ul>
 </section>
@@ -185,18 +188,18 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   <p>Tako odmah vidiš slažu li se modeli ili se razilaze, što je dobar znak koliko je prognoza sigurna.</p>
 </section>
 
-<section id="s7" class="page">
+<section id="s7">
   <h2><span class="n">7</span>Preuzimanje prognoze</h2>
   <p>Otvori <b class="ui">☰</b> → kartica <b class="ui">Prognoza</b>.</p>
   <h3>a) Što preuzimam</h3>
   <ul>
-    <li><b class="ui">🌬 Samo prognoza</b>: za područje i broj dana unaprijed, bez staze.</li>
-    <li><b class="ui">⛵ Za regatu</b>: vrijeme se samo računa od starta i procijenjenog trajanja regate, s rezervom. Svi modeli dobiju isti vremenski raspon.</li>
+    <li><b class="ui">🌬 Samo prognoza</b>: za područje i broj dana unaprijed, bez staze. Zadano je <b>15 dana – do kraja prognoze</b>. Prva 3 dana stižu u punoj rezoluciji za sve modele, a zatim se u pozadini, dok već gledaš kartu, dopuni ostatak do 15 dana za modele koji idu toliko daleko (ECMWF i GFS 15 dana, UKMO oko 6, ICON-EU 5, ARPEGE 4). To je svega nekoliko MB. Na skupom mobilnom internetu možeš odabrati 3, 5, 7 ili 10 dana.</li>
+    <li><b class="ui">⛵ Za regatu</b>: vrijeme se samo računa od starta i procijenjenog trajanja regate, s rezervom. Svi modeli dobiju isti vremenski raspon. Uz to se, kao i kod samo prognoze, dopune dani 4–15 za pregled vremena.</li>
   </ul>
   <h3>b) Izvor</h3>
   <table>
     <tr><td>📥 GRIB izravno</td><td>Originalne GRIB datoteke izravno od ECMWF-a i NOAA-e, a na Macu i od DWD-a (ICON-D2, ICON-EU). Bez API limita. <b>Preporučeno.</b></td></tr>
-    <tr><td>☁️ Paket iz oblaka</td><td>Gotov paket za cijeli Jadran (više modela, valovi i struje) koji tvoj GitHub sam osvježava 4× dnevno. Mora se jednom uključiti na GitHubu.</td></tr>
+    <tr><td>☁️ Paket iz oblaka</td><td>Ako paket nije dostupan (npr. još nije postavljen na GitHubu), aplikacija sama preuzme službene GRIB-ove. Gotov paket za cijeli Jadran (više modela, valovi i struje; ECMWF i GFS do 15 dana) koji tvoj GitHub sam osvježava 4× dnevno. Mora se jednom uključiti na GitHubu.</td></tr>
     <tr><td>📡 Open-Meteo</td><td>Najviše modela (ICON-2I, HARMONIE, ARPEGE, UKMO…). Besplatno, ali s dnevnim limitom po internetskoj vezi.</td></tr>
   </table>
   <h3>c) Područje</h3>
@@ -220,8 +223,8 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
     <tr><td>ICON-D2 (2,2 km)</td><td>DWD, sjeverni Jadran do ~43,2°N, 48 h, svaki sat. Izravno samo na Macu.</td></tr>
     <tr><td>ICON-EU (7 km)</td><td>DWD, cijeli Jadran, do 5 dana. Izravno samo na Macu.</td></tr>
     <tr><td>HARMONIE (5,5 km)</td><td>Sjeverni i srednji Jadran (Open-Meteo).</td></tr>
-    <tr><td>ECMWF (9 km / 0,25°)</td><td>Referentni globalni model, do 6 dana. Radi svugdje.</td></tr>
-    <tr><td>GFS (0,25°)</td><td>NOAA, globalni, do 5 dana. Radi svugdje.</td></tr>
+    <tr><td>ECMWF (9 km / 0,25°)</td><td>Referentni globalni model, <b>do 15 dana</b> (prvih 6 dana svaka 3 h, dalje svakih 6 h). Radi svugdje.</td></tr>
+    <tr><td>GFS (0,25°)</td><td>NOAA, globalni, <b>do 15–16 dana</b>. Radi svugdje.</td></tr>
     <tr><td>ALADIN-HR</td><td>DHMZ ga ne nudi kao javne podatke, pa nije dostupan.</td></tr>
   </table>
   <p>Za kratke regate najkorisniji su visoko-rezolucijski modeli (ICON-2I, ICON-D2, HARMONIE). Za duge offshore regate i dalje dane ECMWF i GFS. Kad se modeli slažu, prognoza je pouzdanija.</p>
@@ -243,7 +246,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   <p>Ako je oznaka na otočiću ili u luci, ruta je obilazi na sigurnoj udaljenosti. Aplikacija to napiše ispod popisa oznaka.</p>
 </section>
 
-<section id="s10" class="page">
+<section id="s10">
   <h2><span class="n">10</span>Spremanje i brisanje ruta i staze</h2>
   <h3>Rute se spremaju samo kad ti to zatražiš</h3>
   <ul>
@@ -375,6 +378,8 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
     <tr><td>Stara verzija</td><td>iPhone: otvori, pričekaj 10 s, zatvori do kraja i otvori. Mac: instaliraj novi DMG u Applications i pokreći je odande.</td></tr>
     <tr><td>„Dnevni limit Open-Meteo“</td><td>Prebaci izvor na <b class="ui">📥 GRIB izravno</b> (bez limita) ili na paket iz oblaka.</td></tr>
     <tr><td>Model je siv u Routingu</td><td>Ne pokriva vrijeme starta. Preuzmi prognozu „Za regatu“ ili promijeni start.</td></tr>
+    <tr><td>Karta je zatamnjena, gore piše „prognoza završava…“</td><td>Odabrani model nema podataka za to vrijeme; prikazano je njegovo zadnje stanje. Odaberi ECMWF ili GFS (do 15 dana) ili vrati vrijeme unatrag.</td></tr>
+    <tr><td>Vremenska traka ide samo 3 dana</td><td>Dugoročni dio još stiže ili nije bio dostupan (piše u kartici Prognoza). Provjeri da je „Dana unaprijed“ 15 i preuzmi ponovno uz internet.</td></tr>
     <tr><td>„Prognoza završava prije dolaska“</td><td>Kratki model (npr. ICON-D2, 48 h) ne doseže cilj. Koristi ECMWF ili GFS, ili pomakni start.</td></tr>
     <tr><td>Ruta ide čudno</td><td>Provjeri pozicije bova, vrijeme starta i gaz broda.</td></tr>
     <tr><td>Ne mogu obrisati stazu</td><td>Staza → <b class="ui">🗑 Obriši stazu i rute</b>, dva dodira.</td></tr>
@@ -398,7 +403,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   </table>
 </section>
 
-<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 2.1</footer>
+<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 2.2</footer>
 </main>
 </body>
 </html>

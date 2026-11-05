@@ -89,6 +89,18 @@ async function pool(items, n, fn) {
 }
 
 // ---------- model recipes ----------
+// ECMWF: 3-hourly to 144 h, then 6-hourly to 360 h (00/12 z runs). GFS: 3-hourly to 384 h (we take 6-hourly after 120 h).
+export function globalSteps(model, run, t0, t1, every = 3, far = 6) {
+  const max = model === 'ecmwf' ? 360 : 384, fine = model === 'ecmwf' ? 144 : 120, s = [];
+  for (let h = 0; h <= max; h += h < fine ? every : far) {
+    if (h >= fine && h % far) continue;
+    const v = run + h * H;
+    if (v >= t0 - 3 * H - (every - 3) * H && v <= t1 + Math.max(every, h >= fine ? 6 : 0) * H) s.push(h);
+  }
+  return s;
+}
+// last step a download needs from a run (so a run that is not complete that far is skipped)
+const needStep = (model, run, win) => { const max = model === 'ecmwf' ? 360 : 384; if (!win) return 0; const h = Math.ceil((win.t1 - run) / H / 6) * 6; return Math.max(0, Math.min(max, h)); };
 const dwd = (model, every, maxStep) => ({
   async latestRun(win) {
     let t = Math.floor((Date.now() - 1.5 * H) / (every * H)) * every * H;
@@ -121,16 +133,17 @@ let ecHost = 'aws';
 const ecBase = (run, h) => `${EC_HOSTS[ecHost]}/${ymd(run)}/${hh(run)}z/ifs/0p25/oper/${ymd(run)}${hh(run)}0000-${h}h-oper-fc`;
 const ecOk = url => ecHost === 'ecmwf' ? ok(url) : okDirect(url);
 const ECMWF = {
-  async latestRun() {
+  async latestRun(win) {
     const order = native ? ['ecmwf', 'aws'] : ['aws'];   // Mac: ECMWF's own server first (through the local proxy), AWS as reserve
     for (const hst of order) {
       ecHost = hst;
       let t = Math.floor((Date.now() - 6 * H) / (12 * H)) * 12 * H;
-      for (let k = 0; k < 3; k++, t -= 12 * H) if (await ecOk(ecBase(t, 144) + '.index') || (k > 0 && await ecOk(ecBase(t, 0) + '.index'))) return t;
+      // the run must be published as far as this download needs (long range: up to 360 h); otherwise the previous one
+      for (let k = 0; k < 3; k++, t -= 12 * H) if (await ecOk(ecBase(t, Math.max(144, needStep('ecmwf', t, win))) + '.index') || (k > 0 && await ecOk(ecBase(t, 0) + '.index'))) return t;
     }
     throw new Error('ECMWF trenutno ne odgovara (nema dostupnog runa)');
   },
-  steps(run, t0, t1) { const s = []; for (let h = 0; h <= 144; h += globalEvery) { const v = run + h * H; if (v >= t0 - 3 * H - (globalEvery - 3) * H && v <= t1 + globalEvery * H) s.push(h); } return s; },
+  steps(run, t0, t1) { return globalSteps('ecmwf', run, t0, t1, globalEvery, farEvery); },
   async filesAsync(run, h) {
     let viaProxy = ecHost === 'ecmwf';
     const getIdx = async proxy => { const host = proxy ? EC_HOSTS.ecmwf : EC_HOSTS.aws, u = ecBase(run, h).replace(EC_HOSTS[ecHost], host) + '.index';
@@ -149,12 +162,12 @@ const ECMWF = {
 };
 const gfsAws = (run, h) => `https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.${ymd(run)}/${hh(run)}/atmos/gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}`;
 const GFS_AWS = {
-  async latestRun() {
+  async latestRun(win) {
     let t = Math.floor((Date.now() - 5 * H) / (6 * H)) * 6 * H;
-    for (let k = 0; k < 4; k++, t -= 6 * H) if (await okDirect(gfsAws(t, 120) + '.idx')) return t;
+    for (let k = 0; k < 4; k++, t -= 6 * H) if (await okDirect(gfsAws(t, Math.max(120, needStep('gfs', t, win))) + '.idx')) return t;
     throw new Error('nema dostupnog runa');
   },
-  steps(run, t0, t1) { const s = []; for (let h = 0; h <= 120; h += globalEvery) { const v = run + h * H; if (v >= t0 - 3 * H - (globalEvery - 3) * H && v <= t1 + globalEvery * H) s.push(h); } return s; },
+  steps(run, t0, t1) { return globalSteps('gfs', run, t0, t1, globalEvery, farEvery); },
   async filesAsync(run, h) {
     const r = await fetch(gfsAws(run, h) + '.idx', { cache: 'no-store' }); if (!r.ok) throw new Error(`${r.status} GFS idx f${h}`);
     const L = (await r.text()).trim().split('\n').map(l => l.split(':'));
@@ -171,12 +184,12 @@ const GFS_AWS = {
   },
 };
 const GFS = (bbox) => ({
-  async latestRun() {
+  async latestRun(win) {
     let t = Math.floor((Date.now() - 4.5 * H) / (6 * H)) * 6 * H;
-    for (let k = 0; k < 3; k++, t -= 6 * H) { try { const r = await fetch(P(gfsUrl(t, 0, bbox))); if (r.ok && (await r.arrayBuffer()).byteLength > 100) return t; } catch { /* next */ } }
+    for (let k = 0; k < 3; k++, t -= 6 * H) { try { const r = await fetchT(P(gfsUrl(t, needStep('gfs', t, win), bbox)), {}, 25000); if (r.ok && (await r.arrayBuffer()).byteLength > 100) return t; } catch { /* next */ } }
     throw new Error('nema dostupnog runa');
   },
-  steps(run, t0, t1) { const s = []; for (let h = 0; h <= 120; h += globalEvery) { const v = run + h * H; if (v >= t0 - 3 * H - (globalEvery - 3) * H && v <= t1 + globalEvery * H) s.push(h); } return s; },
+  steps(run, t0, t1) { return globalSteps('gfs', run, t0, t1, globalEvery, farEvery); },
   files(run, h) { return [{ url: gfsUrl(run, h, bbox), extra: '' }]; },
 });
 const gfsUrl = (run, h, b) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&lev_10_m_above_ground=on&lev_surface=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
@@ -192,9 +205,10 @@ let native = false;
 export const directUsable = (id, isNative) => { const m = DIRECT.find(x => x.id === id); return !!m && (isNative || !m.mac); };
 
 // Download a forecast set directly from the sources.
-let deadline = Infinity, dwdEvery = 1, globalEvery = 3;
+let deadline = Infinity, dwdEvery = 1, globalEvery = 3, farEvery = 6;
 const emptyMarine = (b, times) => ({ lat0: b.s, lon0: b.w, dlat: 1, dlon: 1, nx: 1, ny: 1, times, vars: Object.fromEntries(['wave', 'waveDir', 'wavePer', 'cu', 'cv'].map(k => [k, new Float32Array(times.length).fill(NaN)])) });
-export async function downloadDirect({ bbox, modelIds, window, quality, settings, progress = () => {}, signal, maxSeconds = 150, quick = false, onPartial = null, globalOnly = false }) {
+export async function downloadDirect({ bbox, modelIds, window, quality, settings, progress = () => {}, signal, maxSeconds = 150, quick = false, onPartial = null, globalOnly = false, marine = true, maxPts = 90000, far = 6 }) {
+  farEvery = far;   // step beyond 5–6 days (12 h for the light long-range reserve)
   dwdEvery = quick ? 3 : 1;
   native = !!(settings && settings._native);
   deadline = Date.now() + maxSeconds * 1000;   // whatever arrived by then is used; the download never hangs
@@ -208,13 +222,14 @@ export async function downloadDirect({ bbox, modelIds, window, quality, settings
   const fields = {}, errors = [], empty = [];
   let done = 0;
   // grid points per field: full detail for normal areas, thinned only for very large ones (zoomed far out)
-  const MAXPTS = 90000;
+  const MAXPTS = maxPts;
   let thinned = false;
   // waves & currents (Open-Meteo) run at the same time as the wind, max 20 s – they never hold the wind back
   const times = []; for (let t = window.t0; t <= window.t1; t += H) times.push(t);
   const mc = new AbortController(); const mtimer = setTimeout(() => mc.abort(), 20000);
   if (signal) signal.addEventListener('abort', () => mc.abort());
-  const marineP = fetchOpenMeteoMarine({ grid: gridFor(bbox, MARINE_STEP, 'standard'), times, settings, signal: mc.signal, progress: () => {} })
+  const mtimes = times.filter(t => t <= window.t0 + 8 * 24 * H);   // waves/currents: the marine models reach ~8 days
+  const marineP = !marine ? Promise.resolve(null) : fetchOpenMeteoMarine({ grid: gridFor(bbox, MARINE_STEP, 'standard'), times: mtimes, settings, signal: mc.signal, progress: () => {} })
     .catch(e => { errors.push(e.name === 'AbortError' ? 'Valovi/struje preskočeni (Open-Meteo ne odgovara) – pokušaj ponovno kasnije' : 'Valovi/struje: ' + e.message); return null; });
   await Promise.all(modelIds.map(async id => {
     const m = DIRECT.find(x => x.id === id);
@@ -283,7 +298,11 @@ const Q = { u: 0.01, v: 0.01, gust: 0.01, cu: 0.01, cv: 0.01, precip: 0.01, lpi:
 export async function exportPackage(set) {
   const parts = [], fields = {};
   let off = 0;
-  for (const [id, f] of Object.entries(set.fields)) {
+  // a model's long-range extension travels as its own entry "<id>~ext" (and "<id>~ext~ext" for a second link)
+  const flat = [];
+  for (const [id, f] of Object.entries(set.fields)) { let k = id, g = f; while (g) { flat.push([k, g]); g = g.ext; k += '~ext'; } }
+  for (const [id, f0] of flat) {
+    const { ext: _e, fallback: _fb, ...f } = f0;
     const vars = {};
     for (const [k, a] of Object.entries(f.vars)) {
       const sc = Q[k];
@@ -320,6 +339,12 @@ export function importPackage(buf) {
       } else vars[k] = new Float32Array(buf.slice(base + o, base + o + n * 4));
     }
     set.fields[id] = { ...f, vars };
+  }
+  // re-attach extensions (longest suffix first, so chains rebuild from the end)
+  for (const id of Object.keys(set.fields).filter(k => k.includes('~ext')).sort((a, b) => b.length - a.length)) {
+    const parent = set.fields[id.slice(0, -4)];
+    if (parent) parent.ext = set.fields[id];
+    delete set.fields[id];
   }
   return set;
 }

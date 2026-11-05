@@ -104,7 +104,7 @@ function coords(grid) {
   }
   return { lats, lons };
 }
-const hours = (t0, t1) => { const a = []; for (let t = t0; t <= t1; t += 3600000) a.push(t); return a; };
+const hours = (t0, t1, step = 1) => { const a = []; for (let t = t0; t <= t1; t += step * 3600000) a.push(t); return a; };
 
 export async function fetchModelMeta(ids) {
   const out = {};
@@ -119,7 +119,7 @@ export async function fetchModelMeta(ids) {
 }
 
 // -------- Open-Meteo: one model on its own grid --------
-async function fetchOpenMeteoModel({ id, grid, times, settings, signal, progress, label }) {
+async function fetchOpenMeteoModel({ id, grid, times, settings, signal, progress, label, stepH = 1 }) {
   const { lats, lons } = coords(grid);
   const N = lats.length, T = times.length, BATCH = 260;
   const make = () => new Float32Array(T * N).fill(NaN);
@@ -127,10 +127,10 @@ async function fetchOpenMeteoModel({ id, grid, times, settings, signal, progress
   const key = settings.apiKey ? `&apikey=${encodeURIComponent(settings.apiKey.trim())}` : '';
   for (let s = 0; s < N; s += BATCH) {
     const e = Math.min(N, s + BATCH);
-    const url = `${apiBase('wx', settings)}?latitude=${lats.slice(s, e).join(',')}&longitude=${lons.slice(s, e).join(',')}&hourly=${WX_VARS.join(',')}&models=${id}&wind_speed_unit=kn&start_hour=${isoHour(times[0])}&end_hour=${isoHour(times[T - 1])}&timeformat=unixtime&timezone=GMT&cell_selection=sea${key}`;
+    const url = `${apiBase('wx', settings)}?latitude=${lats.slice(s, e).join(',')}&longitude=${lons.slice(s, e).join(',')}&hourly=${WX_VARS.join(',')}&models=${id}&wind_speed_unit=kn&start_hour=${isoHour(times[0])}&end_hour=${isoHour(times[T - 1])}${stepH > 1 ? `&temporal_resolution=hourly_${stepH}` : ''}&timeformat=unixtime&timezone=GMT&cell_selection=sea${key}`;
     let res = await fetchJSON(url, signal, progress); if (!Array.isArray(res)) res = [res];
     res.forEach((loc, k) => {
-      const p = s + k, h = loc.hourly, ti = h.time.map(t => Math.round((t * 1000 - times[0]) / 3600000));
+      const p = s + k, h = loc.hourly, ti = h.time.map(t => (t * 1000 - times[0]) % (stepH * 3600000) ? -1 : Math.round((t * 1000 - times[0]) / (stepH * 3600000)));
       for (let q = 0; q < ti.length; q++) {
         const t = ti[q]; if (t < 0 || t >= T) continue;
         const o = t * N + p;
@@ -212,8 +212,10 @@ function validUntil(f) {
 }
 
 // Download a forecast set synchronised to the race.
-export async function downloadForecast({ bbox, modelIds, window, quality, settings, progress = () => {}, signal }) {
-  const times = hours(window.t0, window.t1);
+// hourStep > 1 and gridCap: the light long-range part (days 4–15) – 3-hourly, coarse grid, no waves
+export async function downloadForecast({ bbox, modelIds, window, quality, settings, progress = () => {}, signal, hourStep = 1, gridCap = 0, marine = true }) {
+  const times = hours(window.t0, window.t1, hourStep);
+  const grid = step => { if (!gridCap) return gridFor(bbox, step, quality); let st = Math.max(step, 0.25), g = makeGrid(bbox, st); while (g.nx * g.ny > gridCap) { st *= 1.15; g = makeGrid(bbox, +st.toFixed(4)); } return g; };
   const fields = {}, empty = [], errors = [];
   progress(0, 'Provjeravam zadnje runove modela…');
   const meta = await fetchModelMeta(modelIds);
@@ -228,9 +230,13 @@ export async function downloadForecast({ bbox, modelIds, window, quality, settin
         if (!settings.mmUser) throw new Error('nema Meteomatics korisničkog računa (Postavke → Plaćeni izvori)');
         f = await fetchMeteomatics({ mm: m.mm, grid: gridFor(bbox, 0.01, quality), times, settings, signal, progress: sub });
       } else {
-        f = await fetchOpenMeteoModel({ id, grid: gridFor(bbox, m.step, quality), times, settings, signal, progress: sub, label: m.name });
+        f = await fetchOpenMeteoModel({ id, grid: grid(m.step), times, settings, signal, progress: sub, label: m.name, stepH: hourStep });
       }
       f.validUntil = validUntil(f);
+      if (f.validUntil != null && f.validUntil < times[times.length - 1]) {   // drop the empty tail after the model's end
+        const k = times.indexOf(f.validUntil) + 1, N = f.nx * f.ny;
+        f.times = times.slice(0, k); for (const v of Object.keys(f.vars)) if (f.vars[v].length === times.length * N) f.vars[v] = f.vars[v].slice(0, k * N);
+      }
       f.run = meta[id] || null;
       if (f.validUntil == null) empty.push(id); else fields[id] = f;
     } catch (err) {
@@ -239,10 +245,10 @@ export async function downloadForecast({ bbox, modelIds, window, quality, settin
     }
     progress(++done / jobs, `${m.name} gotov`);
   }
-  try { fields.marine = await fetchOpenMeteoMarine({ grid: gridFor(bbox, MARINE_STEP, quality), times, settings, signal, progress: sub }); }
+  try { if (!marine) throw Object.assign(new Error('-'), { skip: true }); fields.marine = await fetchOpenMeteoMarine({ grid: gridFor(bbox, MARINE_STEP, quality), times: times.filter(t => t <= window.t0 + 8 * 24 * 3600000), settings, signal, progress: sub }); }
   catch (err) {   // the wind still counts: waves/currents are reported as missing, the map keeps the ones already shown
     if (err.name === 'AbortError') throw err;
-    errors.push('Valovi/struje: ' + (err.daily ? 'Open-Meteo dnevni limit' : err.message));
+    if (!err.skip) errors.push('Valovi/struje: ' + (err.daily ? 'Open-Meteo dnevni limit' : err.message));
     fields.marine = { lat0: bbox.s, lon0: bbox.w, dlat: 1, dlon: 1, nx: 1, ny: 1, times, vars: Object.fromEntries(['wave', 'waveDir', 'wavePer', 'cu', 'cv'].map(k => [k, new Float32Array(times.length).fill(NaN)])) };
   }
   progress(1, 'Gotovo');

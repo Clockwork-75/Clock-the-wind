@@ -2,7 +2,7 @@ import { Polar, parsePolarCSV, parsePolarAny } from './polar.js';
 import { recommendSail, SAILS } from './sails.js';
 import { decodeLandmask, isLand, snapToSea } from './landmask.js';
 import { loadBathy, routingMask, depthAt } from './bathy.js';
-import { sample } from './field.js';
+import { sample, lastTime } from './field.js';
 import { MODELS, MM_MODELS, ALADIN, QUALITY, MARINE_STEP, modelById, registerModel, gridFor, raceWindow, estimateCalls, downloadForecast, checkNewRuns, saveForecast, loadForecast } from './forecast.js';
 import { decodeGrib, gribToField } from './grib.js';
 import { DIRECT, directUsable, nativeAvailable, downloadDirect, exportPackage, isPackage, importPackage, fetchCloudPackage, CLOUD_DEFAULT } from './direct.js';
@@ -23,10 +23,11 @@ const DEFAULTS = {
   apiKey: '', efficiency: 100, tackPenaltySec: 25, gybePenaltySec: 20, dtMin: 10, useCurrents: true, wavePenalty: true,
   quality: 'standard', dlModels: MODELS.filter(m => m.def).map(m => m.id), basemap: 'nautical', seamarks: false,
   colorOverLand: false, opacity: 0.85, arrows: 'arrows', particles: true, showNumbers: false, layer: 'wind', particleDensity: 1,
-  colors: true, hiRes: true, draft: 2.6, depthMargin: 1.4, avoidShallow: true, boatId: 'melges40', mmUser: '', mmPass: '',
+  colors: true, hiRes: true, fcDays: 15, draft: 2.6, depthMargin: 1.4, avoidShallow: true, boatId: 'melges40', mmUser: '', mmPass: '',
 };
 const settings = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem('ctw.settings') || '{}'));
 if (settings.basemap === 'offline' && !localStorage.getItem('ctw.v2')) { settings.basemap = 'nautical'; localStorage.setItem('ctw.v2', '1'); }
+if (!localStorage.getItem('ctw.v22days')) { if (!settings.fcDays || settings.fcDays <= 3) settings.fcDays = 15; localStorage.setItem('ctw.v22days', '1'); localStorage.setItem('ctw.settings', JSON.stringify(settings)); }
 const saveSettings = () => localStorage.setItem('ctw.settings', JSON.stringify(settings));
 // v0.6: lighter defaults for Open-Meteo (free daily quota)
 if (!localStorage.getItem('ctw.v6')) {
@@ -292,7 +293,7 @@ function renderChips() {
 }
 
 // ---------------- timeline ----------------
-const STEP = 15 * 60000;
+const STEP = 15 * 60000, PLAY_STEP = 30 * 60000;   // slider resolution · play: 30 min every 0.16 s
 function setupTimeline() {
   const s = state.set; if (!s) return;
   const sl = $('#tlSlider');
@@ -300,6 +301,12 @@ function setupTimeline() {
   sl.value = Math.round((state.time - s.times[0]) / STEP);
   drawTimeline();
 }
+// timeline rows (44 px): day labels 0–10 · one thin bar per model 11–21 (how far each model reaches) ·
+// wind strip 23–31 · hour ticks 33–43. Past ~5 days the forecast is a trend: that part is hatched.
+const TL = { bars: 11, barsH: 10, strip: 23, stripH: 8, ticks: 33 };
+const DOW = ['ned', 'pon', 'uto', 'sri', 'čet', 'pet', 'sub'];
+const tzHour = t => +new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false }).format(t) % 24;
+const tzDay = t => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric' }).formatToParts(t); const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[p.find(x => x.type === 'weekday').value]; return { dow: DOW[wd], d: p.find(x => x.type === 'day').value }; };
 function drawTimeline() {
   const s = state.set; const cv = $('#tlCanvas');
   const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -307,26 +314,51 @@ function drawTimeline() {
   const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
   if (!s) return;
   const t0 = s.times[0], t1 = s.times[s.times.length - 1], X = t => (t - t0) / (t1 - t0) * (w - 2) + 1;
+  const pxDay = (w - 2) / Math.max(1 / 24, (t1 - t0) / 86400000);
+  // one bar per model in its colour: solid = detailed part, lighter = long-range extension (days 4–15)
+  const ids = s.models.filter(id => s.fields[id] && s.fields[id].times);
+  const bh = Math.max(1.2, Math.min(3, TL.barsH / Math.max(1, ids.length) - 0.6)), gap = ids.length ? TL.barsH / ids.length : 0;
+  ids.forEach((id, i) => {
+    const f = s.fields[id], y = TL.bars + i * gap, own = Math.min(f.times[f.times.length - 1], f.validUntil || 1e15), end = lastTime(f);
+    c.fillStyle = mcol(id); c.globalAlpha = id === state.modelId ? 1 : 0.8;
+    c.fillRect(X(Math.max(t0, f.times[0])), y, Math.max(1, X(Math.min(own, t1)) - X(Math.max(t0, f.times[0]))), bh);
+    if (end > own) { c.globalAlpha = 0.45; c.fillRect(X(own), y, Math.max(1, X(Math.min(end, t1)) - X(own)), bh); }
+    c.globalAlpha = 1;
+  });
   // wind strip for the display model at the course start (PredictWind-like day bar)
   const ref = course.marks[0];
   if (state.wind && ref) {
-    const out = [];
-    for (let t = t0; t < t1; t += 3600000) {
+    const out = [], dt = (t1 - t0) > 6 * 86400000 ? 3 * 3600000 : 3600000;
+    for (let t = t0; t < t1; t += dt) {
       sample(state.wind, ['u', 'v'], ref.lat, ref.lon, t, out);
       const v = Math.hypot(out[0], out[1]);
       c.fillStyle = v === v ? colorFor('wind', v) : 'rgba(255,255,255,.05)';
-      c.fillRect(X(t), 14, X(t + 3600000) - X(t) + 0.5, 8);
+      c.fillRect(X(t), TL.strip, X(t + dt) - X(t) + 0.5, TL.stripH);
     }
   }
-  // model validity
-  if (state.wind && state.wind.validUntil < t1) { c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(X(state.wind.validUntil), 12, w - X(state.wind.validUntil), 12); }
-  // day separators + labels
+  // the display model has no data any more: dark (its last state stays frozen on the map)
+  if (state.wind && state.wind.validUntil < t1) { c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(X(state.wind.validUntil), TL.strip - 1, w - X(state.wind.validUntil), TL.stripH + 2); }
+  // trend zone (more than 5 days ahead): hatched, labelled once
+  const tr = Date.now() + 5 * 86400000;
+  if (tr < t1) {
+    c.save(); c.beginPath(); c.rect(X(tr), TL.strip, w - X(tr), TL.stripH); c.clip();
+    c.strokeStyle = 'rgba(11,18,32,.55)'; c.lineWidth = 1.5;
+    for (let x = X(tr) - TL.stripH; x < w; x += 5) { c.beginPath(); c.moveTo(x, TL.strip + TL.stripH); c.lineTo(x + TL.stripH, TL.strip); c.stroke(); }
+    c.restore();
+    if (w - X(tr) > 40) { c.font = '600 9.5px -apple-system,system-ui'; c.textBaseline = 'top'; c.fillStyle = '#9aa7b8'; c.fillText('trend', X(tr) + 3, TL.ticks + 1); }
+  }
+  // day separators + labels – as much text as the width allows
   c.font = '600 10.5px -apple-system,system-ui'; c.textBaseline = 'top';
-  for (let t = t0; t <= t1; t += 3600000) {
-    const hh = +new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false }).format(t);
-    const x = X(t);
-    if (hh === 0) { c.fillStyle = 'rgba(255,255,255,.55)'; c.fillRect(x, 0, 1, h); c.fillStyle = '#cfd8e3'; c.fillText(fmtTime(t).slice(0, 10), x + 4, 0); }
-    else if (hh % 6 === 0) { c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(x, 24, 1, 6); c.fillStyle = '#8796a8'; c.fillText(String(hh).padStart(2, '0'), x + 2, 24); }
+  const every = pxDay < 18 ? 2 : 1; let k = 0;
+  for (let t = Math.floor(t0 / 3600000) * 3600000; t <= t1; t += 3600000) {
+    if (t < t0) continue;
+    const hh = tzHour(t), x = X(t);
+    if (hh === 0) {
+      c.fillStyle = 'rgba(255,255,255,.5)'; c.fillRect(x, 0, 1, h);
+      if (k++ % every === 0 && x < w - 12) { const d = tzDay(t); c.fillStyle = '#cfd8e3'; c.fillText(pxDay >= 70 ? fmtTime(t).slice(0, 10) : pxDay >= 36 ? `${d.dow} ${d.d}.` : `${d.d}.`, x + 3, 0); }
+    }
+    else if (pxDay >= 90 && hh % 6 === 0) { c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(x, TL.ticks, 1, 6); c.fillStyle = '#8796a8'; c.fillText(String(hh).padStart(2, '0'), x + 2, TL.ticks); }
+    else if (pxDay >= 40 && pxDay < 90 && hh === 12) { c.fillStyle = 'rgba(255,255,255,.2)'; c.fillRect(x, TL.ticks, 1, 4); }
   }
   // race window: start flag + expected racing period
   const st = raceStart();
@@ -335,21 +367,21 @@ function drawTimeline() {
     const end = etas.length ? Math.max(...etas) : st + raceWindow(st, courseLength()).estHours * 3600000;
     c.fillStyle = 'rgba(76,209,138,.16)'; c.fillRect(X(st), 0, Math.max(2, X(Math.min(end, t1)) - X(st)), h);
     c.fillStyle = '#4cd18a'; c.fillRect(X(st) - 1, 0, 2, h);
-    c.font = '700 10px -apple-system,system-ui'; c.fillText('START', X(st) + 3, 24);
+    c.font = '700 10px -apple-system,system-ui'; c.fillText('START', X(st) + 3, TL.ticks);
   }
   // route ETAs
   for (const [id, r] of Object.entries(state.routes)) {
     if (!r.ok || settings.mode !== 'race') continue;
     c.fillStyle = mcol(id);
-    c.fillRect(X(r.startTime), 10, Math.max(2, X(r.eta) - X(r.startTime)), 2);
-    c.beginPath(); c.arc(X(r.eta), 11, 3, 0, 7); c.fill();
+    c.fillRect(X(r.startTime), TL.strip - 2, Math.max(2, X(r.eta) - X(r.startTime)), 2);
+    c.beginPath(); c.arc(X(r.eta), TL.strip - 1, 3, 0, 7); c.fill();
   }
   // now marker + cursor
   const now = Date.now();
-  if (now > t0 && now < t1) { c.fillStyle = '#ffb547'; c.fillRect(X(now) - 0.5, 10, 1.5, 16); }
+  if (now > t0 && now < t1) { c.fillStyle = '#ffb547'; c.fillRect(X(now) - 0.5, TL.bars, 1.5, TL.strip + TL.stripH - TL.bars + 2); }
   const x = X(state.time);
-  c.fillStyle = '#fff'; c.beginPath(); c.moveTo(x - 6, 30); c.lineTo(x + 6, 30); c.lineTo(x, 22); c.fill();
-  c.fillRect(x - 1, 10, 2, 14);
+  c.fillStyle = '#fff'; c.beginPath(); c.moveTo(x - 6, h - 2); c.lineTo(x + 6, h - 2); c.lineTo(x, TL.strip + TL.stripH); c.fill();
+  c.fillRect(x - 1, TL.bars, 2, TL.strip + TL.stripH - TL.bars);
 }
 function setTime(t, fromSlider = false) {
   const s = state.set; if (!s) return;
@@ -362,11 +394,21 @@ function setTime(t, fromSlider = false) {
   const relNow = (state.time - Date.now()) / 3600000;
   const relTxt = settings.mode === 'forecast' ? (Math.abs(relNow) < 0.5 ? 'sada' : relNow > 0 ? `za ${fmtDur(relNow)}` : `prije ${fmtDur(-relNow)}`)
     : Math.abs(rel) < 0.01 ? 'START' : rel < 0 ? `start za ${fmtDur(-rel)}` : `${fmtDur(rel)} od starta`;
-  $('#tlInfo').textContent = `${m ? m.name : ''}${run ? ' run ' + fmtRun(run.runInit) : ''} · ${relTxt}${state.wind && state.time > state.wind.validUntil ? ' · IZVAN dosega modela' : ''}`;
+  const ended = !!(state.wind && state.time > state.wind.validUntil + 30 * 60000);
+  $('#tlInfo').textContent = `${m ? m.name : ''}${run ? ' run ' + fmtRun(run.runInit) : ''} · ${relTxt}${ended ? ' · IZVAN dosega modela' : ''}`;
+  showEnded(ended, m);
   drawTimeline();
   wxLayer.draw();
   updateBoats();
   updatePointCard();
+}
+// past the end of the chosen model: its last state stays on the map, dimmed, with a clear note (never mistaken for a forecast)
+function showEnded(ended, m) {
+  document.body.classList.toggle('wx-ended', ended);
+  const n = $('#endNote');
+  if (n) { n.classList.toggle('hidden', !ended); if (ended) n.innerHTML = `⏸ <b>${m ? m.name : 'Model'}</b>: prognoza završava ${fmtTime(state.wind.validUntil)} – prikazano zadnje stanje`; }
+  const s = state.set; if (!s) return;
+  $$('#modelChips .chip').forEach(b => { const f = s.fields[b.dataset.model]; b.classList.toggle('ended', !!f && state.time > (f.validUntil || 0) + 30 * 60000); });
 }
 $('#tlSlider').addEventListener('input', e => setTime(state.set.times[0] + e.target.value * STEP, true));
 $('#btnPrev').onclick = () => setTime(state.time - 3600000);
@@ -378,7 +420,7 @@ $('#btnPlay').onclick = () => {
   $('#playIcon').setAttribute('d', 'M7 5h4v14H7zM13 5h4v14h-4z');
   playing = setInterval(() => {
     const s = state.set; if (!s) return;
-    let t = state.time + STEP;
+    let t = state.time + PLAY_STEP;   // always the same speed, however long the forecast is (like Windy)
     if (t > s.times[s.times.length - 1]) t = s.times[0];
     setTime(t);
   }, 160);
@@ -464,7 +506,7 @@ function setMode(m) {
   if (settings.mode === m) { updateModePill(); return; }
   settings.mode = m; saveSettings();
   drawCourse();
-  if (m === 'race') { routeLayer.addTo(map); updateBoats(); } else { replayPause(); if (boatPopup) map.closePopup(boatPopup); routeLayer.remove(); }
+  if (m === 'race') { routeLayer.addTo(map); updateBoats(); setTimeout(() => maybeFillWindow(300), 500); } else { replayPause(); if (boatPopup) map.closePopup(boatPopup); routeLayer.remove(); }
   renderReplayBar();
   drawTimeline(); updateModePill(); updatePointCard();
   const open = $('.tabs [data-tab].on');
@@ -747,7 +789,103 @@ function dlArea() {
 function dlWindow() {
   if (!fcMode()) return raceWindow(raceStart(), courseLength());
   const t0 = Math.floor(Date.now() / H1) * H1 - H1;
-  return { t0, t1: t0 + (settings.fcDays || 3) * 24 * H1, estHours: 0 };
+  return { t0, t1: t0 + fcDays() * 24 * H1, estHours: 0 };
+}
+// ---- long range (days 4–15) ----
+// Forecast mode downloads in two parts: the first 3 days in full detail (every model), then – while you already
+// look at the map – days 4–15 for the models that reach that far, light (3-hourly, coarse grid, from Open-Meteo:
+// a few MB instead of ~100 MB of global ECMWF files). Each model's long part is attached to it as `ext`.
+const fcDays = () => settings.fcDays || 15;
+const SHORT_DAYS = 3;
+const LONG_OM = { dir_ecmwf: 'ecmwf_ifs', dir_gfs: 'gfs_seamless', dir_icon_eu: 'icon_eu', ecmwf_ifs: 'ecmwf_ifs', gfs_seamless: 'gfs_seamless',
+  ecmwf_aifs025_single: 'ecmwf_aifs025_single', ukmo_global_deterministic_10km: 'ukmo_global_deterministic_10km', icon_eu: 'icon_eu' };
+const LONG_PTS = 120;   // grid points per model for days 4–15 (Open-Meteo counts every point; ~0.5° is plenty that far ahead)
+const ownEnd = f => f.times[f.times.length - 1];
+const noExt = g => { if (!g || !g.ext) return g; const { ext: _e, ...r } = g; return r; };
+// continue model field f with g (only if g really reaches further); at most two links, so chains never grow
+function attachExt(f, g) {
+  if (!f || !g || !g.times || !g.times.length) return false;
+  const end = lastTime(g);
+  if (end <= ownEnd(f) + 3 * H1) return false;
+  f.ext = g.ext ? { ...g, ext: noExt(g.ext) } : g;
+  f.validUntil = Math.max(end, Math.min(f.validUntil || 0, ownEnd(f)));
+  return true;
+}
+// a new (shorter) field of a model keeps what the previous one had further ahead
+function carryLong(nf, of) {
+  if (!nf || !of || nf.ext) return false;
+  const c = ownEnd(of) > ownEnd(nf) + 3 * H1 ? of : of.ext;
+  return attachExt(nf, c);
+}
+// the set's timeline reaches as far as its longest model
+function extendTimes(set) {
+  if (!set || !set.times || !set.times.length) return;
+  let end = set.times[set.times.length - 1];
+  for (const id of set.models) { const f = set.fields[id]; if (f && f.times) end = Math.max(end, lastTime(f)); }
+  if (end <= set.times[set.times.length - 1]) return;
+  const T = set.times.slice(); for (let t = T[T.length - 1] + H1; t <= end; t += H1) T.push(t);
+  set.times = T;
+}
+// does the window already have long-range data (5 days ahead) everywhere?
+function longCovered(set) {
+  if (!set || !set.models) return false;
+  const t = Date.now() + 5 * 24 * H1;
+  const ids = set.models.filter(id => !id.startsWith('grib:') && set.fields[id] && set.fields[id].times && lastTime(set.fields[id]) > t);
+  if (!ids.length) return false;
+  const w = withFallback(set, ids[0]), v = map.getBounds(), out = [];
+  for (let j = 0; j <= 6; j++) for (let i = 0; i <= 8; i++) {
+    sample(w, ['u'], v.getSouth() + (v.getNorth() - v.getSouth()) * j / 6, v.getWest() + (v.getEast() - v.getWest()) * i / 8, t, out);
+    if (out[0] !== out[0]) return false;
+  }
+  return true;
+}
+let lastGribFail = 0, longBusy = false, pendingLong = null;
+function runLong(set, area, t0, t1, manual, bar, txt) {
+  longBusy = true;
+  const shell = { models: set.models.slice(), errors: [], fields: Object.fromEntries(set.models.filter(id => set.fields[id] && set.fields[id].times).map(id => [id, { times: set.fields[id].times, validUntil: set.fields[id].validUntil }])) };
+  shell.models = Object.keys(shell.fields);
+  if (manual) txt.textContent = `Dugoročna prognoza (do ${fcDays()} dana)…`;
+  (async () => {
+    try {
+      const n = await fetchLong(shell, area, t0, t1, manual, (f, t) => { if (!manual) return; if (f != null) bar.style.width = (f * 100).toFixed(0) + '%'; if (t) txt.textContent = 'Dugoročno · ' + t; });
+      const cur = state.set; if (!cur) return;
+      let k = 0;
+      for (const id of shell.models) { const e = shell.fields[id].ext, f = cur.fields[id]; if (e && f && (!f.ext || lastTime(e) >= lastTime(f) - H1) && attachExt(f, e)) k++; }
+      if (k) { cur.longTried = Date.now(); extendTimes(cur); await saveForecast(cur); const kt = state.time; useSet(cur, { keepView: true }); setTime(kt); if (manual) txt.textContent = `Gotovo: prognoza do ${fcDays()} dana.`; }
+      else { cur.errors = [...(cur.errors || []), ...shell.errors]; if (manual) toast('Dugoročna prognoza (dani 4–15) trenutno nije dostupna – prva 3 dana su preuzeta', 5000); }
+    } catch (e) { console.warn('long', e); }
+    finally {
+      longBusy = false;
+      const p = pendingLong; pendingLong = null;
+      if (p && state.set && (p[3] || !longCovered(state.set))) runLong(state.set, ...p);
+    }
+  })();
+}
+async function fetchLong(set, area, t0, t1, allowGrib, progress) {
+  const pairs = set.models.filter(id => LONG_OM[id]).map(id => [id, LONG_OM[id]]);
+  if (!pairs.length) return 0;
+  const tS = Math.floor((t0 + SHORT_DAYS * 24 * H1 - 6 * H1) / (3 * H1)) * 3 * H1;   // overlaps the detailed part a little
+  let n = 0, err = null;
+  try {
+    const res = await downloadForecast({ bbox: area, modelIds: [...new Set(pairs.map(p => p[1]))], window: { t0: tS, t1 }, quality: 'standard', settings,
+      signal: dlAbort && dlAbort.signal, hourStep: 3, gridCap: LONG_PTS, marine: false, progress });
+    for (const [id, om] of pairs) if (res.fields[om] && attachExt(set.fields[id], noExt(res.fields[om]))) n++;
+  } catch (e) { if (e.name === 'AbortError') throw e; err = e; }
+  // Mac: the official GRIB files as reserve when Open-Meteo cannot deliver (e.g. its daily limit)
+  const dir = pairs.map(p => p[0]).filter(id => /^dir_(ecmwf|gfs|icon_eu)$/.test(id) && !set.fields[id].ext && directUsable(id, state.native));   // each one Open-Meteo did not deliver
+  // Mac: when Open-Meteo cannot deliver (its daily limit, outage), the official GRIBs – automatically too, but at most every
+  // 30 min and for a wide area (ECMWF 12-hourly past day 6, ~50 MB; GFS cut to the area on NOAA's side), so pans stay covered
+  if (state.native && dir.length && allowGrib) {   // ~50 MB: only when you press Preuzmi – never competes with filling the map
+    const wide = { s: Math.max(-80, Math.min(area.s, ADRIATIC.s) - 3), n: Math.min(80, Math.max(area.n, ADRIATIC.n) + 3), w: Math.min(area.w, ADRIATIC.w) - 4, e: Math.max(area.e, ADRIATIC.e) + 4 };
+    try {
+      const d = await downloadDirect({ bbox: wide, modelIds: dir, window: { t0: tS, t1 }, settings, signal: dlAbort && dlAbort.signal, maxSeconds: 240, quick: true, globalOnly: !dir.includes('dir_icon_eu'), marine: false, maxPts: 40000, far: 12, progress });
+      for (const id of dir) if (d.fields[id] && attachExt(set.fields[id], d.fields[id])) n++;
+      if (!dir.some(id => set.fields[id].ext)) lastGribFail = Date.now();
+    } catch (e) { if (e.name === 'AbortError') throw e; err = err || e; lastGribFail = Date.now(); }
+  }
+  if (n) extendTimes(set);
+  else set.errors = [...(set.errors || []), 'Dugoročna prognoza (dani 4–15) trenutno nije dostupna' + (err ? ': ' + (err.daily ? 'Open-Meteo dnevni limit' : err.message) : '')];
+  return n;
 }
 function areaNote() {
   const bb = dlArea(), a = areaSel();
@@ -766,7 +904,7 @@ function renderDataTab() {
   const cloud = settings.source === 'cloud';
   const dirList = DIRECT.map(m => `<label class="check"><input type="checkbox" data-dir="${m.id}" ${directUsable(m.id, state.native) ? ((settings.directModels || []).includes(m.id) ? 'checked' : '') : 'disabled'}>
       <div><div class="t"><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} <small style="color:var(--muted)">${m.res}</small></div><div class="d">${m.note}${directUsable(m.id, state.native) ? '' : ' · <b>samo u Mac aplikaciji</b>'}</div></div></label>`).join('');
-  const hrs = Math.max(1, Math.round((win.t1 - win.t0) / 3600000));
+  const hrs = Math.max(1, Math.round((Math.min(win.t1, fcMode() ? win.t0 + SHORT_DAYS * 24 * H1 : win.t1) - win.t0) / 3600000));   // detailed part (days 4–15 come light, from Open-Meteo)
   const mb = (settings.directModels || []).filter(id => directUsable(id, state.native)).reduce((a, id) => a + (id === 'dir_icon_d2' ? Math.min(hrs, 48) * 3 * 1.1 : id === 'dir_icon_eu' ? Math.min(hrs, 120) * 3 * 1.0 : id === 'dir_ecmwf' ? Math.ceil(hrs / 3) * 2.1 : Math.ceil(hrs / 3) * (state.native ? 0.05 : 2.8)), 0);
   const free = MODELS.map(m => {
     const g = gridFor(bb, m.step, settings.quality);
@@ -781,8 +919,8 @@ function renderDataTab() {
     ${fcMode() ? `
     <div class="note">Prognoza za <b>područje koje trenutno vidiš na karti</b>, od sada unaprijed, bez staze i routinga. Pomakni ili zumiraj kartu na željeno područje (npr. cijeli srednji Jadran), pa preuzmi.</div>
 ${AREA_UI()}
-    <div class="row"><label>Dana unaprijed</label><select id="fcDays">${[1, 2, 3, 4, 5, 7, 10].map(v => `<option ${+(settings.fcDays || 3) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-    <div class="note">Visoko-rezolucijski modeli pokrivaju 2–3 dana (ICON-2I, ICON-D2, HARMONIE). ECMWF, ICON-EU i GFS idu dalje.</div>` : `
+    <div class="row"><label>Dana unaprijed</label><select id="fcDays">${[[15, '15 – do kraja prognoze'], [10, '10'], [7, '7'], [5, '5'], [3, '3 – štedi mobilne podatke']].map(([v, l]) => `<option value="${v}" ${fcDays() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="note">Prva 3 dana stižu u punoj rezoluciji za sve modele. Zatim se u pozadini dopuni ostatak (do 15 dana) za modele koji idu toliko daleko – ECMWF i GFS 15 dana, UKMO ~6, ICON-EU 5, ARPEGE 4 – svakih 3 h, svega nekoliko MB. Visoko-rezolucijski modeli (ICON-2I, ICON-D2, HARMONIE) pokrivaju 2–3 dana. Iza 5 dana prognoza je <b>trend</b> (na vremenskoj crti iscrtkano).</div>` : `
     <div class="row"><label>Start regate</label><b>${fmtTime(st)}</b><button class="mini" id="dlChgStart">promijeni</button></div>
     ${AREA_UI()}
     <div class="row"><label>Prozor prognoze</label><span>${fmtTime(win.t0)} → ${fmtTime(win.t1)}</span></div>
@@ -790,7 +928,7 @@ ${AREA_UI()}
     ${s ? `<h3>Trenutna prognoza</h3>
       <div class="note">Preuzeto ${fmtTime(s.created)} · kvaliteta ${QUALITY[s.quality] ? QUALITY[s.quality].name : '–'}</div>
       <canvas class="chart" id="covChart" style="height:${28 + s.models.length * 22}px"></canvas>
-      <div class="note">Traka = razdoblje koje model pokriva; zelena zona = regata. ● uz ime = dostupan je noviji run.</div>
+      <div class="note">Traka = razdoblje koje model pokriva (svjetliji dio = dugoročno, svakih 3–6 h); zelena zona = regata. ● uz ime = dostupan je noviji run.</div>
       ${s.errors && s.errors.length ? `<div class="note warn">${s.errors.join('<br>')}</div>` : ''}
       ${s.empty && s.empty.length ? `<div class="note warn">Model ne pokriva ovo područje: ${s.empty.map(id => modelById(id).name).join(', ')}</div>` : ''}
       <button id="btnCheckRuns" class="btn block">Provjeri nove runove modela</button>
@@ -800,12 +938,12 @@ ${AREA_UI()}
     <h3>Izvor podataka</h3>
     <div class="seg"><button data-src="direct" class="${direct ? 'on' : ''}">📥 GRIB izravno</button><button data-src="cloud" class="${cloud ? 'on' : ''}">☁️ Paket iz oblaka</button><button data-src="openmeteo" class="${!direct && !cloud ? 'on' : ''}">📡 Open-Meteo</button></div>
     <div class="note">${direct ? `Originalne GRIB datoteke izravno od službenih meteoroloških centara (ECMWF, NOAA${state.native ? ', DWD' : ''}), <b>bez API limita</b>, samo kad klikneš Preuzmi.${state.native ? '' : ' DWD modeli (ICON-D2/EU) rade samo u Mac aplikaciji.'}`
-      : cloud ? '<b>Bez API limita.</b> Gotov paket za cijeli Jadran (ICON-2I, ICON-D2, ICON-EU, ECMWF, GFS, valovi i struje), 5 dana unaprijed, koji tvoj GitHub sam osvježava 4× dnevno nakon novih runova. Preuzimanje ~10–15 MB.'
+      : cloud ? '<b>Bez API limita.</b> Gotov paket za cijeli Jadran (ICON-2I, ICON-D2, ICON-EU, ECMWF, GFS, valovi i struje) – ECMWF i GFS do 15 dana unaprijed – koji tvoj GitHub sam osvježava 4× dnevno nakon novih runova. Preuzimanje ~10–15 MB.'
       : 'Open-Meteo: 9 modela uključujući ICON-2I i HARMONIE; besplatno s dnevnim limitom po internetskoj vezi. Ako limit istekne, aplikacija se sama prebaci na paket iz oblaka.'}</div>
     <h3>Rezolucija</h3>
     <div class="row"><label>Kvaliteta</label><select id="quality">${Object.entries(QUALITY).map(([k, q]) => `<option value="${k}" ${settings.quality === k ? 'selected' : ''}>${q.name}</option>`).join('')}</select></div>
     ${cloud ? `<h3>Paket iz oblaka</h3><div class="note">Paket sadrži sve modele odjednom za cijeli Jadran. Područje i kvaliteta se ne biraju.</div>` : direct ? `<h3>Modeli (izravno s izvora)</h3>${dirList}
-    <div class="note">Procjena: ~${Math.round(mb)} MB preuzimanja za ${hrs} h (izrezuje se samo odabrano područje, na disk ide nekoliko MB). Za ICON-2I i HARMONIE prebaci na Open-Meteo.</div>` : `<h3>Besplatni modeli (Open-Meteo)</h3>${free}`}
+    <div class="note">Procjena: ~${Math.round(mb)} MB preuzimanja za prvih ${hrs} h (izrezuje se samo odabrano područje, na disk ide nekoliko MB)${fcMode() && fcDays() > SHORT_DAYS ? ` + dani 4–${fcDays()} preko Open-Meteo, ~1–3 MB` : ''}. Za ICON-2I i HARMONIE prebaci na Open-Meteo.</div>` : `<h3>Besplatni modeli (Open-Meteo)</h3>${free}`}
     <label class="check"><input type="checkbox" disabled><div><div class="t">${ALADIN.name} <small style="color:var(--muted)">${ALADIN.res}</small></div><div class="d">${ALADIN.note}</div></div></label>
     <h3>Plaćeni izvori</h3>
     <div class="note">Open-Meteo komercijalni ključ (veći limiti, svi modeli): Postavke → Izvori. Meteomatics (1 km downscaling, ECMWF, mix):</div>
@@ -877,7 +1015,10 @@ function drawCoverage(cv) {
   s.models.forEach((id, i) => {
     const f = s.fields[id], m = modelById(id), y = 6 + i * 22;
     c.fillStyle = '#cfd8e3'; c.fillText(m.name, 4, y + 11);
-    c.fillStyle = mcol(m.id); c.globalAlpha = 0.85; c.fillRect(X(f.times[0]), y + 2, X(f.validUntil) - X(f.times[0]), 12); c.globalAlpha = 1;
+    const own = Math.min(ownEnd(f), f.validUntil || 1e15), end = lastTime(f);
+    c.fillStyle = mcol(m.id); c.globalAlpha = 0.85; c.fillRect(X(f.times[0]), y + 2, X(own) - X(f.times[0]), 12);
+    if (end > own) { c.globalAlpha = 0.4; c.fillRect(X(own), y + 2, X(end) - X(own), 12); }
+    c.globalAlpha = 1;
     if (f.run) { c.fillStyle = '#0b1220'; c.fillText(fmtRun(f.run.runInit), X(f.times[0]) + 4, y + 12); }
     if (state.newRuns.some(n => n.id === id)) { c.fillStyle = '#ffb547'; c.fillText('●', 80, y + 11); }
     if (f.validUntil < end) { c.fillStyle = '#ff6b6b'; c.fillText('kratko', X(f.validUntil) + 4, y + 12); }
@@ -889,12 +1030,12 @@ function drawCoverage(cv) {
   }
   c.fillStyle = '#4cd18a'; c.fillRect(X(st), 0, 2, h - 14);
 }
-let dlBusy = false;
+let dlBusy = false, curDl = null, dlAborted = false;
 async function doDownload(opts = {}) {
   if (!navigator.onLine) return opts.auto ? null : toast('Nema interneta – koristi se zadnja spremljena prognoza');
   if (!settings.dlModels.length && settings.source === 'openmeteo') return toast('Odaberi barem jedan model');
   if (dlBusy) return;
-  dlBusy = true;
+  dlBusy = true; dlAborted = false; curDl = { auto: !!opts.auto, area: opts.bbox || null, zoom: map.getZoom() };
   const dummy = { style: {}, classList: { add() {}, remove() {} }, textContent: '', innerHTML: '' };
   const btn = $('#btnDownload') || dummy; btn.disabled = true; ($('#btnAbort') || dummy).classList.remove('hidden');
   const bar = $('#dlBar') || dummy, txt = $('#dlText') || dummy;
@@ -904,7 +1045,11 @@ async function doDownload(opts = {}) {
     const cur = state.set;
     const empty = m => { if (!m || m.nx === 1 || !m.vars || !m.vars.wave) return true; const a = m.vars.wave; for (let i = 0; i < a.length; i += 7) if (a[i] === a[i]) return false; return true; };
     if (cur && empty(p.fields.marine) && !empty(cur.fields.marine)) p.fields.marine = cur.fields.marine;   // never lose waves/currents
-    keepGribs(p, cur); inheritCoverage(p, cur);
+    if (cur) for (const id of p.models) carryLong(p.fields[id], cur.fields[id]);   // never lose days 4–15 either
+    // a model that did not arrive this time (server busy) stays from the previous forecast instead of vanishing
+    if (cur && opts.auto && !p.partial) for (const id of cur.models) { const f = cur.fields[id];   // (automatic refills only: a manual download takes exactly the models you chose)
+      if (!id.startsWith('grib:') && !p.fields[id] && f && f.times && lastTime(f) > Date.now()) { p.fields[id] = f; p.models.push(id); } }
+    keepGribs(p, cur); inheritCoverage(p, cur); extendTimes(p);
   };
   try {
     dlAbort = new AbortController();
@@ -914,19 +1059,34 @@ async function doDownload(opts = {}) {
     if (src === 'cloud' && opts.auto && !inAdriatic(area)) src = 'direct';
     if (src === 'cloud') {
       try { await loadCloud(bar, txt, opts.auto); return; }
-      catch (e) { if (!opts.auto) throw e; src = 'direct'; }   // cloud not reachable: official GRIBs instead
+      catch (e) {   // cloud not reachable (e.g. the package was never built on GitHub): official GRIBs instead, never a dead end
+        if (e.name === 'AbortError') throw e;
+        src = 'direct';
+        if (!opts.auto) { toast('Paket iz oblaka nije dostupan – preuzimam službene GRIB-ove (ECMWF, GFS)', 5000); txt.textContent = 'Paket iz oblaka nije dostupan – preuzimam izravno…'; }
+      }
     }
     const useDirect = src === 'direct';
     if (useDirect && !(settings.directModels || []).length) throw new Error('Odaberi barem jedan model');
     const dirIds = (settings.directModels || []).filter(id => directUsable(id, state.native));
     let win = dlWindow();
-    if (opts.auto && state.set && state.set.times && state.set.times.length) {   // a refill keeps (at least) the time span already on screen
-      const T = state.set.times; win = { ...win, t0: Math.min(win.t0, Math.max(T[0], Date.now() - 6 * 3600000)), t1: Math.min(Math.max(win.t1, T[T.length - 1]), Date.now() + 5 * 24 * 3600000) };
+    // forecast mode: first the detailed 3 days, the rest (up to 15 days) as a light second part below
+    const now0 = Math.floor(Date.now() / H1) * H1 - H1;
+    const longT1 = fcMode() ? (win.t1 - win.t0 > (SHORT_DAYS * 24 + 2) * H1 ? win.t1 : 0) : (fcDays() > SHORT_DAYS ? now0 + fcDays() * 24 * H1 : 0);
+    const longT0 = fcMode() ? win.t0 : now0;
+    if (longT1 && fcMode()) win = { ...win, t1: win.t0 + SHORT_DAYS * 24 * H1 };
+    else if (opts.auto && state.set && state.set.times && state.set.times.length) {   // race mode: a refill keeps (at least) the time span already on screen
+      // only the DETAILED span counts (days 4–15 of the models stay attached anyway) – otherwise a refill would fetch 15 days of everything
+      const T = state.set.times, own = Math.max(...state.set.models.filter(id => !id.startsWith('grib:') && state.set.fields[id] && state.set.fields[id].times).map(id => ownEnd(state.set.fields[id])), win.t1);
+      win = { ...win, t0: Math.min(win.t0, Math.max(T[0], Date.now() - 6 * 3600000)), t1: Math.min(own, Math.max(win.t1, Date.now() + SHORT_DAYS * 24 * 3600000)) };   // detail for the race (+3 days); the rest stays attached
     }
-    const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: area, modelIds: useDirect ? (dirIds.length ? dirIds : ['dir_ecmwf', 'dir_gfs']) : settings.dlModels, window: win, quality: settings.quality, settings, signal: dlAbort.signal, maxSeconds: 150,   // the map is coloured as soon as the first model arrives; the rest may take its time (never cut short) quick: !!opts.auto, globalOnly: !!opts.auto && map.getZoom() < 6.5,   // a manual download always takes every model you chose
+    const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: area, modelIds: useDirect ? (dirIds.length ? dirIds : ['dir_ecmwf', 'dir_gfs']) : settings.dlModels, window: win, quality: settings.quality, settings, signal: dlAbort.signal, maxSeconds: 150,
+      // the map is coloured as soon as the first model arrives (onPartial). An automatic refill is quick (DWD 3-hourly);
+      // zoomed far out it takes only the global models. A manual download always takes every model you chose.
+      quick: !!opts.auto, globalOnly: !!opts.auto && map.getZoom() < 6.5,
       onPartial: useDirect ? p => { settle(p); useSet(p, { keepView: true }); } : null,
       progress: (f, t) => { if (f != null) bar.style.width = (f * 100).toFixed(0) + '%'; if (t) txt.textContent = t; } });
     settle(set);
+    set.longTried = longT1 ? Date.now() : 0;   // days 4–15 are attempted below (both modes); retried after 30 min if they failed
     txt.textContent = 'Spremam za offline…';
     await saveForecast(set);
     if (!opts.auto) { state.routes = {}; drawRoutes(); }
@@ -936,6 +1096,12 @@ async function doDownload(opts = {}) {
     state.time = opts.auto && keepT >= set.times[0] && keepT <= set.times[set.times.length - 1] ? keepT : st;
     useSet(set, { keepView: true });
     set.mode = settings.mode;
+    // second part: days 4–15 (the map is already usable meanwhile)
+    // runs on its own: it never holds up the map filling; the result is attached to whatever forecast is on screen then
+    if (longT1 && !(opts.auto && longCovered(set))) {
+      if (longBusy) pendingLong = [area, longT0, longT1, !opts.auto, bar, txt];   // runs right after the one in progress
+      else runLong(set, area, longT0, longT1, !opts.auto, bar, txt);
+    }
     txt.textContent = fcMode() ? `Gotovo: ${set.models.length} modela za odabrano područje.` : `Gotovo: ${set.models.length} modela, sinkronizirano sa startom ${fmtTime(st)}.`;
     toast(opts.auto ? '✓ Prognoza dopunjena za cijeli prozor' : 'Prognoza preuzeta i spremljena za offline');
     if ($('#tab-data').classList.contains('on')) renderDataTab();
@@ -946,9 +1112,9 @@ async function doDownload(opts = {}) {
       try { await loadCloud(bar, txt); toast('Open-Meteo limit potrošen – učitan je paket iz oblaka (bez limita)', 6000); }
       catch (e2) { txt.innerHTML = LIMIT_HELP() + `<div class="note warn">Paket iz oblaka: ${e2.message}</div>`; toast('Dnevni limit Open-Meteo je potrošen – vidi upute ispod gumba', 6000); }
     }
-    else { txt.textContent = e.name === 'AbortError' ? 'Prekinuto.' : e.message; if (e.name !== 'AbortError') toast(e.message, 5000); }
+    else { if (e.name === 'AbortError') dlAborted = true; txt.textContent = e.name === 'AbortError' ? 'Prekinuto.' : e.message; if (e.name !== 'AbortError') toast(e.message, 5000); }
   }
-  finally { btn.disabled = false; const a = $('#btnAbort'); a && a.classList.add('hidden'); dlBusy = false; }
+  finally { btn.disabled = false; const a = $('#btnAbort'); a && a.classList.add('hidden'); dlBusy = false; curDl = null; }
 }
 // "Fill the window": in forecast mode with area = window, panning/zooming outside the downloaded area downloads
 // the new window automatically (with a margin, so small pans do not trigger it). Never in race mode (would reset routes).
@@ -976,7 +1142,19 @@ function uncoveredShare() {
 let lastFill = 0, lastFillFailed = false;
 function maybeFillWindow(delay = 1200) {
   clearTimeout(fillTimer);
-  if (areaSel() !== 'view' || pick || !navigator.onLine) return;
+  if (pick || !navigator.onLine) return;
+  const wantLong = () => fcDays() > SHORT_DAYS && state.set && Date.now() - (+state.set.longTried || 0) > 30 * 60000 && !longCovered(state.set);
+  if (areaSel() !== 'view') {   // fixed area (Adriatic / own rectangle): no window filling, but days 4–15 once
+    if (dlBusy) { fillTimer = setTimeout(() => maybeFillWindow(delay), 3000); return; }   // try again when the current download ends
+    if (!wantLong()) return;
+    fillTimer = setTimeout(() => { if (dlBusy) return maybeFillWindow(delay); if (wantLong()) doDownload({ auto: true, bbox: dlArea() }); }, Math.max(delay, 1500));
+    return;
+  }
+  // an automatic refill for a view you have already left is cancelled, so the one for what you see now starts at once
+  if (dlBusy && curDl && curDl.auto && curDl.area && dlAbort && uncoveredShare() >= 0.002) {
+    const v = viewBBox(0.5), r = curDl.area;
+    if (!(v.s >= r.s && v.n <= r.n && v.w >= r.w && v.e <= r.e)) dlAbort.abort();
+  }
   if (dlBusy) { fillTimer = setTimeout(() => maybeFillWindow(delay), 3000); return; }   // check again when the current download ends
   // fill when any edge is missing, or when you zoomed back in after a thinned (whole-sea) download
   // zoomed back in after a coarse/global-only download: fetch full detail (incl. DWD) for the new window
@@ -985,23 +1163,31 @@ function maybeFillWindow(delay = 1200) {
     if (!s.thinned) return false;
     const e = setExtent({ models: s.models.filter(id => !id.startsWith('grib:')), fields: s.fields }); if (!e) return false;
     return (v.getEast() - v.getWest()) * (v.getNorth() - v.getSouth()) < 0.15 * (e.e - e.w) * (e.n - e.s); };
-  if (uncoveredShare() < 0.002 && !needDetail()) return;
+  // days 4–15 missing (e.g. a forecast from an older version): fetched once per forecast, never in a loop
+  const courseOut = () => { const s = state.set; if (fcMode() || !s || course.marks.length < 2) return false; const cb = courseBBox();
+    const g = s.models.filter(id => /ecmwf|gfs/.test(id) && s.fields[id] && s.fields[id].nx); if (!g.length) return false;
+    return !g.some(id => { const e = extentOf(s.fields[id]); return cb.s >= e.s && cb.n <= e.n && cb.w >= e.w && cb.e <= e.e; }); };
+  const farWait = () => { const s = state.set; if (!s) return false;   // only past the DETAILED part of every model
+    const own = Math.max(0, ...s.models.filter(id => s.fields[id] && s.fields[id].times && !id.startsWith('grib:')).map(id => ownEnd(s.fields[id])));
+    return state.time > own + H1 && Date.now() - (+s.longTried || 0) < 30 * 60000 && !longCovered(s); };
+  const uncov = () => !farWait() && uncoveredShare() >= 0.002;
+  if (!uncov() && !needDetail() && !wantLong() && !courseOut()) return;
   const since = Date.now() - lastFill, pause = lastFillFailed ? 45000 : 3000;   // never hammer the servers
   fillTimer = setTimeout(async () => {
-    if ((uncoveredShare() < 0.002 && !needDetail()) || dlBusy || pick) return;
+    if ((!uncov() && !needDetail() && !wantLong() && !courseOut()) || dlBusy || pick) return;
     lastFill = Date.now();
     toast('Preuzimam prognozu za cijeli prikaz…', 2500);
     const v = viewBBox(1.0);   // twice the window: the next zoom-out or pan is usually covered already
     const before = state.set;
     await doDownload({ auto: true, bbox: fcMode() || !course.marks.length ? v : union(v, courseBBox()) });
-    lastFillFailed = state.set === before;
+    lastFillFailed = state.set === before && !dlAborted;   // cancelled for a newer view is not a failure
   }, Math.max(delay, since < pause ? pause - since : 0));
 }
 map.on('moveend', maybeFillWindow);
 // re-download only the models that have a newer run than the one stored; merge into the current set
 async function loadCloud(bar, txt, auto = false) {
   const set = await fetchCloudPackage(settings.cloudUrl || CLOUD_DEFAULT, state.native, (f, t) => { if (t && txt) txt.textContent = t; });
-  set.mode = 'forecast';
+  set.mode = 'forecast'; set.longTried = Date.now();   // the package carries its own range (up to 15 days)
   const hasWaves = m => { if (!m || m.nx === 1 || !m.vars || !m.vars.wave) return false; const a = m.vars.wave; for (let i = 0; i < a.length; i += 7) if (a[i] === a[i]) return true; return false; };
   if (state.set && !hasWaves(set.fields.marine) && hasWaves(state.set.fields.marine)) set.fields.marine = state.set.fields.marine;
   keepGribs(set, state.set); inheritCoverage(set, state.set);
@@ -1028,12 +1214,14 @@ async function refreshNewRuns() {
   const bar = $('#dlBar'), txt = $('#dlText');
   try {
     dlAbort = new AbortController();
-    const win = s.mode === 'forecast' || fcMode() ? dlWindow() : (s.window || dlWindow());
+    let win = s.mode === 'forecast' || fcMode() ? dlWindow() : (s.window || dlWindow());
+    if (s.mode === 'forecast' || fcMode()) win = { ...win, t1: Math.min(win.t1, win.t0 + SHORT_DAYS * 24 * H1) };   // new run: detail again, days 4–15 stay
     const fresh = await downloadForecast({ bbox: s.bbox || dlArea(), modelIds: ids, window: win, quality: s.quality || settings.quality, settings, signal: dlAbort.signal,
       progress: (f, t) => { if (f != null && bar) bar.style.width = (f * 100).toFixed(0) + '%'; if (t && txt) txt.textContent = t; } });
-    for (const id of fresh.models) s.fields[id] = fresh.fields[id];
+    for (const id of fresh.models) { carryLong(fresh.fields[id], s.fields[id]); s.fields[id] = fresh.fields[id]; }
     s.fields.marine = fresh.fields.marine;
     if (fresh.times[fresh.times.length - 1] > s.times[s.times.length - 1]) s.times = fresh.times;
+    extendTimes(s);
     s.created = Date.now();
     await saveForecast(s);
     state.newRuns = []; useSet(s); renderDataTab();
@@ -1197,8 +1385,20 @@ async function runRouting(ids, override = {}) {
   if (!ids.length) return toast('Odaberi barem jedan model');
   if ((override.marks || course.marks).length < 2) return toast('Staza nema start i cilj (in-port etapa?) – odaberi etapu sa stazom', 4000);
   if (!state.mask) toast('Upozorenje: maska kopna nije učitana');
+  // the forecast must cover the whole course: wait for a download in progress, then fill the course once if needed
+  if (!override.marks && navigator.onLine && state.set) {
+    for (let i = 0; i < 360 && dlBusy; i++) await new Promise(r => setTimeout(r, 500));
+    const cb = courseBBox(), REGIONAL = ['dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
+    const short = id => { const f = state.set.fields[id]; if (!f || !f.nx || id.startsWith('grib:') || REGIONAL.includes(id)) return false; const e = extentOf(f); return !(cb.s >= e.s && cb.n <= e.n && cb.w >= e.w && cb.e <= e.e); };
+    const need = fcMode() ? 0 : dlWindow().t1;   // start + estimated race time + reserve, for THIS course
+    const early = id => { const f = state.set.fields[id]; return !!f && !id.startsWith('grib:') && !REGIONAL.includes(id) && need && (f.validUntil || 0) < need - H1 && f.times[0] <= (override.startTime || raceStart()); };
+    if (ids.some(short) || ids.some(early)) { toast('Dopunjavam prognozu za cijelu stazu…', 3000); await doDownload({ auto: true, bbox: union(viewBBox(1.0), cb) }); ids = ids.filter(id => state.set && state.set.fields[id]); if (!ids.length) return toast('Prognoza za stazu nije dostupna – preuzmi je u kartici Prognoza', 5000); }
+  }
   const startTime = override.startTime || raceStart();
   const marks = override.marks || course.marks;
+  const rs = state.set;   // the forecast as it is now – a refill during routing must not pull fields from under it
+  if (!rs) return toast('Prvo preuzmi prognozu', 4000);
+  ids = ids.filter(id => rs.fields[id]); if (!ids.length) return toast('Odabrani modeli nisu u prognozi – preuzmi je ponovno', 4000);
   if (!$('#runStatus')) openSheet('routing');   // progress lives in the routing tab – make sure it exists
   const st = $('#runStatus');
   st.innerHTML = ids.map(id => `<div class="note"><span class="dot" style="background:${mcol(id)}"></span>${modelById(id).name}: <span id="rs-${id.replace(/[^\w-]/g, '_')}">čeka…</span><div class="progress"><div id="rp-${id.replace(/[^\w-]/g, '_')}"></div></div></div>`).join('');
@@ -1221,7 +1421,7 @@ async function runRouting(ids, override = {}) {
           w.removeEventListener('message', onMsg); resolve(e.data.result);
         };
         w.addEventListener('message', onMsg);
-        w.postMessage({ cmd: 'route', id: msgId, wind: state.set.fields[id], marine: state.set.fields.marine, polar: state.polar.serialize(), marks, startTime, opts });
+        w.postMessage({ cmd: 'route', id: msgId, wind: rs.fields[id], marine: rs.fields.marine, polar: state.polar.serialize(), marks, startTime, opts });
       });
       res.model = id; res.boat = state.boat.name; res.live = !!override.marks;
       state.routes[id] = res;
@@ -1570,7 +1770,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.2.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
@@ -1674,5 +1874,5 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   setInterval(() => state.set && setTime(state.time), 60000); // keep countdown fresh
 })();
 window.ctw = { state, settings, course, map,
-  fn: { courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt,
+  fn: { courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
     markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer } };

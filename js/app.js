@@ -471,8 +471,15 @@ $('#btnPrev').onclick = () => setTime(state.time - 3600000);
 $('#btnNext').onclick = () => setTime(state.time + 3600000);
 $('#btnNow').onclick = () => setTime(Math.round(Date.now() / STEP) * STEP);
 let playing = null;
+const setPlayIcon = on => $('#playIcon').setAttribute('d', on ? 'M7 5h4v14H7zM13 5h4v14h-4z' : 'M7 5v14l12-7z');
 $('#btnPlay').onclick = () => {
-  if (playing) { clearInterval(playing); playing = null; $('#playIcon').setAttribute('d', 'M7 5v14l12-7z'); return; }
+  // with calculated routes on screen the big ▶ plays the RACE at the chosen replay speed (s/s) – never the fast
+  // forecast animation, which would make the boats fly through the course in seconds
+  if (settings.mode === 'race' && okRoutes().length) {
+    if (playing) { clearInterval(playing); playing = null; }
+    rp.on ? replayPause() : replayPlay(); return;
+  }
+  if (playing) { clearInterval(playing); playing = null; setPlayIcon(false); return; }
   $('#playIcon').setAttribute('d', 'M7 5h4v14H7zM13 5h4v14h-4z');
   playing = setInterval(() => {
     const s = state.set; if (!s) return;
@@ -1742,6 +1749,7 @@ function replayRange() {
 function replayPause() { if (!rp.on) return; rp.on = false; clearInterval(rp.raf); setTime(state.time); renderReplayBar(); }
 function replayPlay() {
   const R = replayRange(); if (!R) return;
+  if (playing) { clearInterval(playing); playing = null; }
   if (boatPopup) map.closePopup(boatPopup);
   if (state.time >= R.t1 || state.time < R.t0) setTime(R.t0);
   rp.on = true; rp.last = performance.now(); rp.lastFull = 0;
@@ -1760,6 +1768,7 @@ function replayPlay() {
 }
 function renderReplayBar() {
   const el = $('#replayBar'); if (!el) return;
+  if (!playing) setPlayIcon(rp.on);
   const o = okRoutes();
   if (settings.mode !== 'race' || !o.length) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
@@ -1921,7 +1930,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.4 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };

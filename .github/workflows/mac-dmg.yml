@@ -17,6 +17,16 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Provjeri izvore karte (bez API ključa)
+        continue-on-error: true
+        run: |
+          E=https://server.arcgisonline.com/ArcGIS/rest/services
+          for u in "$E/World_Topo_Map/MapServer/tile/11/747/1102" "$E/Canvas/World_Dark_Gray_Base/MapServer/tile/11/747/1102" \
+                   "$E/Canvas/World_Dark_Gray_Reference/MapServer/tile/11/747/1102" "$E/Canvas/World_Light_Gray_Base/MapServer/tile/11/747/1102" \
+                   "$E/Reference/World_Boundaries_and_Places/MapServer/tile/11/747/1102" "$E/Elevation/World_Hillshade/MapServer/tile/11/747/1102" \
+                   "https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/11/1102/747.png"; do
+            curl -s -o /tmp/t -w "%{http_code} %{content_type} %{size_download} $u\n" -H "Referer: https://clockwork-75.github.io/" "$u"
+          done
       - name: Složi aplikaciju
         run: |
           set -euo pipefail

@@ -115,9 +115,9 @@ const minDepth = () => settings.avoidShallow ? settings.draft + settings.depthMa
 const map = L.map('map', { zoomControl: false, attributionControl: true, worldCopyJump: false, minZoom: 5, maxZoom: 17, zoomSnap: 0.25, wheelPxPerZoomLevel: 90 })
   .setView([43.25, 16.1], 9);
 const TILE_SETS = {
-  dark: { url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap, © CARTO' },
-  light: { url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap, © CARTO' },
-  sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', attr: 'Esri World Imagery' },
+  dark: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', attr: '© Esri, HERE, Garmin, © OpenStreetMap', maxNative: 16 },
+  light: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', attr: '© Esri, HERE, Garmin, © OpenStreetMap', maxNative: 16 },
+  sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', attr: 'Esri World Imagery' },
 };
 const EMODNET = 'https://ows.emodnet-bathymetry.eu/wms';
 map.createPane('labels'); map.getPane('labels').style.zIndex = 450; map.getPane('labels').style.pointerEvents = 'none';
@@ -128,8 +128,8 @@ function applyBasemap() {
   const add = l => { baseLayers.push(l.addTo(map)); };
   const t = TILE_SETS[state.basemap];
   if (t) {
-    add(L.tileLayer(t.url, { attribution: t.attr, subdomains: 'abcd', maxZoom: 19 }));
-    add(L.tileLayer(t.labels, { pane: 'labels', subdomains: 'abcd', maxZoom: 19 }));
+    add(L.tileLayer(t.url, { attribution: t.attr, maxZoom: 19, maxNativeZoom: t.maxNative || 19 }));
+    add(L.tileLayer(t.labels, { pane: 'labels', maxZoom: 19, maxNativeZoom: t.maxNative || 19 }));
   } else if (state.basemap === 'emodnet') {
     add(L.tileLayer.wms(EMODNET, { layers: 'emodnet:mean', styles: 'atlas_land', format: 'image/png', attribution: 'EMODnet Bathymetry', maxZoom: 17 }));
     add(L.tileLayer.wms(EMODNET, { layers: 'emodnet:contours', format: 'image/png', transparent: true, pane: 'labels', maxZoom: 17 }));
@@ -147,8 +147,8 @@ function applyBasemap() {
 // Only over the offline basemaps (nautical / dark coast), only online, from zoom LAND_DETAIL_Z. Off: Postavke → Karta.
 const LAND_DETAIL_Z = 10;
 const DETAIL_TILES = {
-  nautical: { base: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', hill: 0.38 },
-  offline: { base: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', hill: 0.22 },
+  nautical: { base: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', labels: null, hill: 0 },   // towns, roads and relief in one layer
+  offline: { base: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', hill: 0.22, maxNative: 16 },
 };
 const HILLSHADE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}';
 let detailLayers = [], detailKey = '';
@@ -159,10 +159,10 @@ function updateLandDetail() {
   if (key !== detailKey) {
     detailLayers.forEach(l => map.removeLayer(l)); detailLayers = [];
     if (on) {
-      const attr = '© OpenStreetMap, © CARTO · reljef © Esri';
-      detailLayers.push(L.tileLayer(d.base, { subdomains: 'abcd', maxZoom: 19, attribution: attr }).addTo(map));
-      detailLayers.push(L.tileLayer(HILLSHADE, { maxZoom: 19, maxNativeZoom: 15, opacity: d.hill, className: 'ctw-hill' }).addTo(map));
-      detailLayers.push(L.tileLayer(d.labels, { pane: 'labels', subdomains: 'abcd', maxZoom: 19 }).addTo(map));
+      const attr = '© Esri, HERE, Garmin, © OpenStreetMap';
+      detailLayers.push(L.tileLayer(d.base, { maxZoom: 19, maxNativeZoom: d.maxNative || 19, attribution: attr }).addTo(map));
+      if (d.hill) detailLayers.push(L.tileLayer(HILLSHADE, { maxZoom: 19, maxNativeZoom: 15, opacity: d.hill, className: 'ctw-hill' }).addTo(map));
+      if (d.labels) detailLayers.push(L.tileLayer(d.labels, { pane: 'labels', maxZoom: 19, maxNativeZoom: d.maxNative || 19 }).addTo(map));
     }
     detailKey = key;
   }
@@ -1422,7 +1422,7 @@ async function cacheTiles() {
       if (settings.seamarks) urls.push(fill('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png'));
     }
   }
-  const cache = await caches.open('ctw-tiles-v1');
+  const cache = await caches.open('ctw-tiles-v2');
   const tt = $('#tileText');
   for (let i = 0; i < urls.length; i += 8) {
     await Promise.all(urls.slice(i, i + 8).map(u => fetch(u, { mode: 'cors' }).then(r => r.ok && cache.put(u, r)).catch(() => {})));
@@ -1914,7 +1914,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };

@@ -1,6 +1,6 @@
 // Clock the Wind service worker: app shell offline + cache-as-you-go map tiles.
-const SHELL = 'ctw-shell-v42';
-const TILES = 'ctw-tiles-v1';
+const SHELL = 'ctw-shell-v43';
+const TILES = 'ctw-tiles-v2';   // v2: old cache may hold CARTO "API key required" tiles
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/polar.js', 'js/sails.js', 'js/geo.js', 'js/landmask.js', 'js/field.js', 'js/forecast.js',
@@ -13,7 +13,7 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('ctw-shell') && k !== SHELL).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => (k.startsWith('ctw-shell') && k !== SHELL) || (k.startsWith('ctw-tiles') && k !== TILES)).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 const isTile = u => /basemaps\.cartocdn\.com|arcgisonline\.com|openseamap\.org|emodnet-bathymetry\.eu\/wms/.test(u);
 const isApi = u => /open-meteo\.com|meteomatics\.com/.test(u);

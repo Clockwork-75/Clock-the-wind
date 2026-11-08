@@ -2,12 +2,13 @@
 // Prints, for points along the Adriatic and several hours, each model's wind (dir/kn) and ClockW's,
 // and flags every place where ClockW points more than 60° away from the models' own average direction.
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { importPackage } from '../../js/direct.js';
 import { buildClockW } from '../../js/ensemble.js';
 import { sample } from '../../js/field.js';
 
 const file = process.argv[2] || 'data/latest.ctw';
-const buf = readFileSync(file); const set = importPackage(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+let buf = readFileSync(file); if (buf[0] === 0x1f && buf[1] === 0x8b) buf = gunzipSync(buf); const set = importPackage(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
 const ids = set.models.filter(id => set.fields[id] && set.fields[id].times);
 console.log('models', ids.join(', '));
 for (const id of ids) { const f = set.fields[id]; console.log(id, 'grid', f.lat0, f.lon0, f.dlat, f.dlon, f.nx + 'x' + f.ny, 'times', f.times.length, new Date(f.times[0]).toISOString(), '→', new Date(f.validUntil || f.times[f.times.length - 1]).toISOString(), f.ext ? 'ext' : ''); }

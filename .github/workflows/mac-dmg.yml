@@ -1,0 +1,61 @@
+# Clock the Wind – builds the Mac app (DMG) on a real Mac with Apple's own tools and publishes it as a
+# download link: https://github.com/Clockwork-75/Clock-the-wind/releases/latest/download/Clock-the-Wind.dmg
+# Runs on every upload to main and on demand (Actions → Mac DMG → Run workflow).
+name: Mac DMG
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mac-dmg
+  cancel-in-progress: true
+jobs:
+  dmg:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Složi aplikaciju
+        run: |
+          set -euo pipefail
+          VER=$(grep -oE "Verzija [0-9]+(\.[0-9]+)+" js/app.js | head -1 | cut -d' ' -f2)
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          mkdir -p build
+          cp -R "mac/Clock the Wind.app" build/
+          WEB="build/Clock the Wind.app/Contents/Resources/web"
+          mkdir -p "$WEB"
+          for f in index.html manifest.webmanifest sw.js css data docs icons img js vendor; do cp -R "$f" "$WEB/"; done
+          PL="build/Clock the Wind.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VER" "$PL"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VER" "$PL"
+          chmod 755 "build/Clock the Wind.app/Contents/MacOS/ClockTheWind"
+          xattr -cr "build/Clock the Wind.app"
+          codesign --force --deep --sign - "build/Clock the Wind.app"
+          codesign --verify --deep --strict --verbose=2 "build/Clock the Wind.app"
+      - name: Napravi DMG
+        run: |
+          set -euo pipefail
+          mkdir -p stage
+          cp -R "build/Clock the Wind.app" stage/
+          ln -s /Applications stage/Applications
+          hdiutil create -volname "Clock the Wind" -srcfolder stage -ov -format UDZO Clock-the-Wind.dmg
+          hdiutil verify Clock-the-Wind.dmg
+          # check: the DMG mounts, the app inside is intact and signed
+          MNT=$(hdiutil attach -nobrowse -readonly Clock-the-Wind.dmg | grep -o '/Volumes/.*' | head -1)
+          ls -la "$MNT"
+          codesign --verify --deep --strict "$MNT/Clock the Wind.app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$MNT/Clock the Wind.app/Contents/Info.plist"
+          hdiutil detach "$MNT"
+          cp Clock-the-Wind.dmg "Clock-the-Wind-$VER.dmg"
+      - name: Objavi link za preuzimanje
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="mac-$VER"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" Clock-the-Wind.dmg "Clock-the-Wind-$VER.dmg" --latest \
+            --title "Clock the Wind $VER za Mac" \
+            --notes "Dvaput klikni Clock-the-Wind.dmg u Preuzimanjima, povuci Clock the Wind u Applications (Zamijeni). Prvo pokretanje: Postavke sustava → Privatnost i sigurnost → Ipak otvori."

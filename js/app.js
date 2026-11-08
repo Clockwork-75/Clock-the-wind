@@ -1726,11 +1726,14 @@ function showBoatInfo(id, refresh = false) {
 }
 
 // ---------------- race replay (PredictWind-style) ----------------
-// × real time: 0.5–10 min of race per second. Default 1.5 min/s (v2.3: 3.3× slower than the old 5 min/s)
-const REPLAY_SPEEDS = [30, 60, 90, 180, 300, 600];
-if (!localStorage.getItem('ctw.v23replay')) { settings.replaySpeed = 90; localStorage.setItem('ctw.v23replay', '1'); saveSettings(); }
-const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? settings.replaySpeed : 90;
-const speedLabel = v => `${String(v / 60).replace('.', ',')} min/s`;
+// × real time = seconds of race per second of watching. Default 10 s/s: slow enough to follow every manoeuvre and
+// sail change without pausing (v2.3.3; was 90 s/s in 2.3 and 300 s/s in 2.2). Changeable while the race runs.
+const REPLAY_SPEEDS = [3, 5, 10, 20, 30, 60, 120];
+if (!localStorage.getItem('ctw.v233replay')) { settings.replaySpeed = 10; localStorage.setItem('ctw.v233replay', '1'); saveSettings(); }
+const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? settings.replaySpeed : 10;
+const speedLabel = v => `${v} s/s`;
+// how long the whole replay takes at speed v (from the first start to the last finish)
+const replayDur = v => { const R = replayRange(); if (!R) return ''; const m = (R.t1 - R.t0) / v / 60000; return m < 1 ? `${Math.round(m * 60)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1).replace('.', ',')} h`; };
 const rp = { on: false, raf: 0, last: 0, lastFull: 0 };
 function replayRange() {
   const o = okRoutes(); if (!o.length) return null;
@@ -1762,7 +1765,7 @@ function renderReplayBar() {
   el.classList.remove('hidden');
   const sp = replaySpeed();
   el.innerHTML = `<button id="rpPlay" class="rpbtn" title="${rp.on ? 'Pauza' : 'Pokreni utrku'}" aria-label="${rp.on ? 'Pauza' : 'Pokreni utrku'}"><svg viewBox="0 0 24 24" aria-hidden="true">${rp.on ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>'}</svg></button>
-    <select id="rpSpeed" title="Brzina replaya">${REPLAY_SPEEDS.map(v => `<option value="${v}" ${v === sp ? 'selected' : ''}>${speedLabel(v)}</option>`).join('')}</select>
+    <select id="rpSpeed" title="Brzina replaya: sekunde utrke u jednoj sekundi · u zagradi trajanje cijelog replaya">${REPLAY_SPEEDS.map(v => `<option value="${v}" ${v === sp ? 'selected' : ''}>${speedLabel(v)} · ${replayDur(v)}</option>`).join('')}</select>
     <div id="rpRank" class="rprank"></div>
     ${o.length > 1 ? `<button id="rpView" class="rpbtn small" title="Prikaz ruta">${settings.routeView === 'one' ? '1 ruta' : 'Sve'}</button>` : ''}`;
   // reacts on touch-down anywhere on the (enlarged) button – no need to hit its centre or hold still until release
@@ -1918,7 +1921,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.2 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };

@@ -1,10 +1,8 @@
 # Clock the Wind – builds the Mac app (DMG) on a real Mac with Apple's own tools and publishes it as a
 # download link: https://github.com/Clockwork-75/Clock-the-wind/releases/latest/download/Clock-the-Wind.dmg
-# Runs on every upload to main and on demand (Actions → Mac DMG → Run workflow).
+# Runs on demand only (Actions → Mac DMG → Run workflow): first the web version is checked, then the DMG is made.
 name: Mac DMG
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write

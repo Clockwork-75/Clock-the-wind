@@ -33,6 +33,7 @@ export const LAYERS = {
   waves:   { name: 'Valovi', unit: 'm', vars: ['wave', 'waveDir'], src: 'marine', scale: scale([[0, '#24508f'], [0.25, '#2b78b8'], [0.5, '#2fa3c0'], [1, '#3bbb8e'], [1.5, '#a6d145'], [2, '#f2cf35'], [3, '#f0832a'], [4, '#d63a3a'], [6, '#8f2a8f']]), value: a => a[0], legend: [0, 0.5, 1, 1.5, 2, 3, 4] },
   current: { name: 'Struje', unit: 'kn', vars: ['cu', 'cv'], src: 'marine', scale: scale([[0, '#1d3557'], [0.15, '#245d8f'], [0.3, '#2a86b8'], [0.5, '#39b39c'], [0.75, '#c9d64a'], [1, '#f2c037'], [1.5, '#f08a2a'], [2.5, '#e03a3a']]), value: a => Math.hypot(a[0], a[1]), legend: [0, 0.25, 0.5, 1, 1.5, 2] },
   rain:    { name: 'Kiša', unit: 'mm/h', vars: ['precip'], src: 'wx', scale: scale([[0, '#000000', 0], [0.1, '#9fd8ff', 0], [0.2, '#9fd8ff', 0.75], [0.5, '#4fb0ff', 0.85], [1, '#2f6fe0', 0.9], [3, '#2fb24c', 0.9], [6, '#f2d43a', 0.95], [10, '#f08a24', 0.95], [20, '#d7263d', 1], [40, '#a020a0', 1]]), value: a => a[0], legend: [0.2, 1, 3, 6, 10, 20] },
+  conf:    { name: 'Pouzdanost ClockW', unit: '%', vars: ['conf'], src: 'wx', scale: scale([[0, '#c62828'], [30, '#ef6c00'], [50, '#f9a825'], [70, '#c0ca33'], [85, '#43a047'], [100, '#1b7f3b']]), value: a => a[0], legend: [0, 25, 50, 75, 100] },
   storm:   { name: 'Grmljavina', unit: 'J/kg', vars: ['cape', 'lpi'], src: 'wx', scale: scale([[0, '#000000', 0], [150, '#fff3b0', 0], [300, '#fff3b0', 0.55], [700, '#f7c948', 0.75], [1200, '#f08c2e', 0.85], [2000, '#e03a3a', 0.9], [3000, '#9b2c9b', 0.95]]), value: a => a[0], legend: [300, 700, 1200, 2000, 3000] },
 };
 export const windScale = LAYERS.wind.scale;
@@ -167,7 +168,7 @@ export class WeatherLayer {
   drawArrows(ctx, layer, f, size) {
     const { map, state } = this;
     const kind = state.layer;
-    if (!['wind', 'gust', 'waves', 'current'].includes(kind)) return;
+    if (!['wind', 'gust', 'waves', 'current', 'conf'].includes(kind)) return;
     const gap = state.arrowGap || 46;
     const out = [];
     for (let y = gap / 2; y < size.y; y += gap) {
@@ -192,8 +193,9 @@ export class WeatherLayer {
         if (out[0] !== out[0]) continue;
         const [tws, twd] = speedDirFromUV(out[0], out[1]);
         const s = kind === 'gust' && out[2] === out[2] ? out[2] : tws;
-        if (state.arrows === 'barbs') drawBarb(ctx, x, y, twd, s);
-        else drawArrow(ctx, x, y, (twd + 180) % 360, 10 + Math.min(22, s * 0.7), 'rgba(12,18,30,.9)', 'rgba(255,255,255,.95)');
+        // v2.3: wind arrows 10 % smaller and a touch lighter (were almost black)
+        if (state.arrows === 'barbs') drawBarb(ctx, x, y, twd, s, WIND_ARROW.scale);
+        else drawArrow(ctx, x, y, (twd + 180) % 360, (10 + Math.min(22, s * 0.7)) * WIND_ARROW.scale, WIND_ARROW.fill, 'rgba(255,255,255,.95)', WIND_ARROW.scale);
         if (state.showNumbers) {
           ctx.font = '600 11px -apple-system,system-ui,sans-serif'; ctx.textAlign = 'center';
           ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.strokeText(Math.round(s), x, y + 21);
@@ -204,22 +206,23 @@ export class WeatherLayer {
   }
 }
 
-function drawArrow(ctx, x, y, dirTo, len, fill, halo) {
+export const WIND_ARROW = { scale: 0.9, fill: 'rgba(20,30,50,.88)' };   // was 1.0 / rgba(12,18,30,.9)
+function drawArrow(ctx, x, y, dirTo, len, fill, halo, k = 1) {
   const a = dirTo * Math.PI / 180;
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-  const L = len, h = Math.max(5, L * 0.38);
+  const L = len, h = Math.max(5 * k, L * 0.38);
   ctx.beginPath();
   ctx.moveTo(0, L / 2); ctx.lineTo(0, -L / 2 + h * 0.6);
-  ctx.lineWidth = 3.6; ctx.strokeStyle = halo; ctx.lineCap = 'round'; ctx.stroke();
-  ctx.lineWidth = 1.6; ctx.strokeStyle = fill; ctx.stroke();
+  ctx.lineWidth = 3.6 * k; ctx.strokeStyle = halo; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.lineWidth = 1.6 * k; ctx.strokeStyle = fill; ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(0, -L / 2); ctx.lineTo(h * 0.45, -L / 2 + h); ctx.lineTo(-h * 0.45, -L / 2 + h); ctx.closePath();
-  ctx.lineWidth = 2; ctx.strokeStyle = halo; ctx.stroke(); ctx.fillStyle = fill; ctx.fill();
+  ctx.lineWidth = 2 * k; ctx.strokeStyle = halo; ctx.stroke(); ctx.fillStyle = fill; ctx.fill();
   ctx.restore();
 }
 
-function drawBarb(ctx, x, y, dirFrom, kn) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(dirFrom * Math.PI / 180);
+function drawBarb(ctx, x, y, dirFrom, kn, k = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(dirFrom * Math.PI / 180); ctx.scale(k, k);
   const L = 24;
   const draw = (color, w) => {
     ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
@@ -229,7 +232,7 @@ function drawBarb(ctx, x, y, dirFrom, kn) {
     while (k >= 10) { ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(10, pos - 4); ctx.stroke(); pos += 5; k -= 10; }
     if (k >= 5) { if (pos === -L) pos += 4; ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(5, pos - 2); ctx.stroke(); }
   };
-  draw('rgba(255,255,255,.9)', 3.4); draw('rgba(12,18,30,.95)', 1.4);
+  draw('rgba(255,255,255,.9)', 3.4); draw(k < 1 ? WIND_ARROW.fill : 'rgba(12,18,30,.95)', 1.4);
   ctx.beginPath(); ctx.arc(0, 0, 2, 0, 7); ctx.fill();
   ctx.restore();
 }
@@ -411,6 +414,8 @@ export class ChartLayer {
     const nautical = mode === 'nautical', plain = mode === 'offline';
     if (!nautical && !plain) { this.drawCoastStroke(ctx, '#ffffff55', 0.8); return; }
     const landColor = nautical ? '#f2e6c2' : '#3a3e44';
+    const detail = !!state.landDetail && !!state.coast;   // zoomed in + online: land comes from the detailed map tiles below
+    if (detail && plain) { ctx.fillStyle = '#12314f'; ctx.fillRect(0, 0, size.x, size.y); }   // dark sea, so the tiles show only on land
     if (nautical && state.bathy) {
       const b = state.bathy, step = 2, g = viewGeometry(map, step);
       this.off.width = g.W; this.off.height = g.H;
@@ -434,11 +439,12 @@ export class ChartLayer {
     // crisp vector land on top
     if (state.coast) {
       const path = landPath(map, state.coast);
-      ctx.fillStyle = landColor; ctx.fill(path, 'nonzero');
+      if (detail) { ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.fill(path, 'nonzero'); ctx.restore(); }   // a window onto the detailed land
+      else { ctx.fillStyle = landColor; ctx.fill(path, 'nonzero'); }
       ctx.lineWidth = nautical ? 1 : 0.9; ctx.strokeStyle = nautical ? '#6b5b3a' : '#9aa3ad'; ctx.stroke(path);
     }
     // place labels
-    if (state.places && map.getZoom() >= 8) {
+    if (state.places && map.getZoom() >= 8 && !detail) {
       ctx.font = '600 11px -apple-system,system-ui,sans-serif'; ctx.textAlign = 'center';
       for (const p of state.places) {
         if (p.z > map.getZoom()) continue;

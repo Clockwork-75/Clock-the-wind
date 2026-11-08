@@ -186,7 +186,7 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
       const hdg = p.hdg != null ? p.hdg : (i > 0 ? tr[i - 1].hdg : 0);
       const twa = angDiff(hdg, w.twd);
       const bsp = polar.speed(Math.abs(twa), w.tws) * o.efficiency * waveFactor(hs, Math.abs(twa));
-      const s = o.sails === false ? { label: atwaLabel(twa), color: atwaColor(twa) } : recommendSail(twa, w.tws);
+      const s = !o.sails ? { label: atwaLabel(twa), color: atwaColor(twa) } : recommendSail(twa, w.tws, o.sails === true ? 'melges40' : o.sails);
       return { ...p, hdg, tws: w.tws, twd: w.twd, gust: w.gust, twa, bsp, cur: Math.hypot(cu, cvv), hs, sail: s.label, sailColor: s.color };
     });
   }

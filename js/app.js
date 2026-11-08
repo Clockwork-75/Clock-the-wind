@@ -1,5 +1,6 @@
 import { Polar, parsePolarCSV, parsePolarAny } from './polar.js';
-import { recommendSail, SAILS } from './sails.js';
+import { recommendSail, SAILS, SAIL_SETS, sailColor } from './sails.js';
+import { M40_VPP, MAT1180_VPP, MAT1180_ORC } from './boatdata.js';
 import { decodeLandmask, isLand, snapToSea } from './landmask.js';
 import { loadBathy, routingMask, depthAt } from './bathy.js';
 import { sample, lastTime } from './field.js';
@@ -11,8 +12,10 @@ import { PRESETS, REGATTAS, PLACES } from './courses.js';
 import { speedDirFromUV, distNm, bearing, fmtLatLon, angDiff } from './geo.js';
 import { kv } from './db.js';
 import { playIntro } from './intro.js';
+import { buildClockW, clockwWindow, CLOCKW_ID, CLOCKW_META, isDerived } from './ensemble.js';
 playIntro();
 
+registerModel(CLOCKW_META);
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const TZ = 'Europe/Zagreb';
@@ -136,9 +139,40 @@ function applyBasemap() {
   }
   if (settings.seamarks) add(L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { pane: 'labels', maxZoom: 18, attribution: '© OpenSeaMap' }));
   document.body.dataset.basemap = state.basemap;
+  detailKey = '__'; updateLandDetail();
   chartLayer && chartLayer.draw();
   wxLayer && wxLayer.draw();
 }
+// ---- detailed land when zoomed in (like Windy): towns, roads, relief on land; the sea stays our chart + wind ----
+// Only over the offline basemaps (nautical / dark coast), only online, from zoom LAND_DETAIL_Z. Off: Postavke → Karta.
+const LAND_DETAIL_Z = 10;
+const DETAIL_TILES = {
+  nautical: { base: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', hill: 0.38 },
+  offline: { base: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', hill: 0.22 },
+};
+const HILLSHADE = 'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}';
+let detailLayers = [], detailKey = '';
+function updateLandDetail() {
+  const d = DETAIL_TILES[state.basemap];
+  const on = !!d && settings.landDetail !== false && navigator.onLine && map.getZoom() >= LAND_DETAIL_Z - 0.01;
+  const key = on ? state.basemap : '';
+  if (key !== detailKey) {
+    detailLayers.forEach(l => map.removeLayer(l)); detailLayers = [];
+    if (on) {
+      const attr = '© OpenStreetMap, © CARTO · reljef © Esri';
+      detailLayers.push(L.tileLayer(d.base, { subdomains: 'abcd', maxZoom: 19, attribution: attr }).addTo(map));
+      detailLayers.push(L.tileLayer(HILLSHADE, { maxZoom: 19, maxNativeZoom: 15, opacity: d.hill, className: 'ctw-hill' }).addTo(map));
+      detailLayers.push(L.tileLayer(d.labels, { pane: 'labels', subdomains: 'abcd', maxZoom: 19 }).addTo(map));
+    }
+    detailKey = key;
+  }
+  const changed = state.landDetail !== on;
+  state.landDetail = on;
+  document.body.classList.toggle('land-detail', on);
+  if (changed && chartLayer) chartLayer.draw();
+}
+map.on('zoomend', updateLandDetail);
+addEventListener('online', () => updateLandDetail()); addEventListener('offline', () => updateLandDetail());
 let wxLayer = null, chartLayer = null;
 wxLayer = new WeatherLayer(map, state);
 chartLayer = new ChartLayer(map, state);
@@ -164,7 +198,7 @@ const MODEL_COLORS = {
   italia_meteo_arpae_icon_2i: '#ff1744', icon_d2: '#ff9100', icon_eu: '#ffffff', ecmwf_ifs: '#e040fb', ecmwf: '#e040fb',
   gfs_seamless: '#ffee00', gfs: '#ffee00', knmi_harmonie_arome_europe: '#111111', meteofrance_arpege_europe: '#ff80ab',
   ukmo_global_deterministic_10km: '#8d6e63', ecmwf_aifs025_single: '#9e9e9e',
-  'mm:mix': '#ff6e40', 'mm:ecmwf-ifs': '#7c4dff', 'mm:mm-swiss1k': '#f8bbd0',
+  'mm:mix': '#ff6e40', 'mm:ecmwf-ifs': '#7c4dff', 'mm:mm-swiss1k': '#f8bbd0', clockw: '#18ffff',
 };
 const EXTRA_COLORS = ['#ff6e40', '#7c4dff', '#f8bbd0', '#ffab40', '#b71c1c', '#ce93d8'];   // imported GRIB files
 function mcol(id) {
@@ -203,22 +237,43 @@ function rebuildMask() {
 }
 
 // ---------------- boats (polar library) ----------------
+// Two boats of our own, each with two polars: the designer VPP (default, the most detailed) and the ORC certificate.
+// Imported polars (Postavke → Brodovi) are added below them.
+const BOAT_GROUPS = [
+  { id: 'clockwork', name: 'Clockwork', type: 'Melges 40', draft: 2.6 },
+  { id: 'leeloo', name: 'LeeLoo', type: 'Mat 11.80', draft: 2.6 },
+];
 let boats = [];
 async function loadBoats() {
-  boats = (await kv.get('boats').catch(() => null)) || [];
-  if (!boats.find(b => b.id === 'melges40')) {
-    const txt = await fetch('data/polar_melges40.csv').then(r => r.text());
-    boats.unshift({ id: 'melges40', name: 'Melges 40 Clockwork (ORC 2024)', src: parsePolarCSV(txt), sails: 'melges40', builtin: true });
-  }
-  selectBoat(settings.boatId);
+  const user = ((await kv.get('boats').catch(() => null)) || []).filter(b => !b.builtin);
+  const csv = await fetch('data/polar_melges40.csv').then(r => r.ok ? r.text() : null).catch(() => null);
+  boats = [
+    { id: 'melges40', group: 'clockwork', kind: 'vpp', name: 'Clockwork · Melges 40 – VPP (Botin)', src: M40_VPP, sails: 'melges40', builtin: true },
+    ...(csv ? [{ id: 'melges40-orc', group: 'clockwork', kind: 'orc', name: 'Clockwork · Melges 40 – ORC', src: parsePolarCSV(csv), sails: 'melges40', builtin: true }] : []),
+    { id: 'leeloo', group: 'leeloo', kind: 'vpp', name: 'LeeLoo · Mat 11.80 – VPP (North Sails)', src: MAT1180_VPP, sails: 'mat1180', builtin: true },
+    { id: 'leeloo-orc', group: 'leeloo', kind: 'orc', name: 'LeeLoo · Mat 11.80 – ORC 2025', src: MAT1180_ORC, sails: 'mat1180', builtin: true },
+    ...user,
+  ];
+  selectBoat(settings.boatId, true);
 }
-function selectBoat(id) {
+const boatGroup = b => BOAT_GROUPS.find(g => g.id === (b && b.group));
+function selectBoat(id, boot = false) {
+  const prev = state.boat;
   const b = boats.find(x => x.id === id) || boats[0];
-  settings.boatId = b.id; saveSettings();
+  settings.boatId = b.id;
+  // each boat keeps its own draft (Clockwork / LeeLoo); the land/shallow mask follows the chosen boat
+  const key = b.group || b.id;
+  settings.boatDrafts = settings.boatDrafts || {};
+  if (settings.boatDrafts[key] == null) settings.boatDrafts[key] = boot || !prev ? settings.draft : ((boatGroup(b) || {}).draft || settings.draft);
+  const draftChanged = Math.abs(settings.boatDrafts[key] - settings.draft) > 1e-6;
+  settings.draft = settings.boatDrafts[key];
+  saveSettings();
   state.boat = b; state.polar = new Polar(b.src, b.name);
-  markStale();
+  if (draftChanged && !boot) rebuildMask();
+  if (prev && prev.id !== b.id) markStale();
 }
 async function saveBoats() { await kv.set('boats', boats.filter(b => !b.builtin)); }
+const sailSetOf = b => b && SAIL_SETS[b.sails] ? b.sails : null;
 
 // ---------------- forecast set handling ----------------
 function useSet(set) {
@@ -227,6 +282,7 @@ function useSet(set) {
   const pref = ['italia_meteo_arpae_icon_2i', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
   if (!state.modelId || !set.fields[state.modelId]) state.modelId = pref.find(id => set.fields[id]) || set.models[0];
   state.wind = withFallback(set, state.modelId);
+  if (state.layer === 'conf' && !set.fields[CLOCKW_ID]) { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); renderLegend(); }
   drawArea();
   state.marine = set.fields.marine;
   set.models.forEach(id => { if (set.fields[id].meta) registerModel(set.fields[id].meta); });
@@ -242,7 +298,7 @@ const FILL_ORDER = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'icon_d2', 'knm
 function withFallback(set, id) {
   const f = set.fields[id]; if (!f) return f;
   const rank = x => { const i = FILL_ORDER.indexOf(x); return i < 0 ? 99 : i; };
-  const others = set.models.filter(m => m !== id && !m.startsWith('grib:')).sort((a, b) => rank(a) - rank(b)).map(m => set.fields[m]);
+  const others = set.models.filter(m => m !== id && !isDerived(m)).sort((a, b) => rank(a) - rank(b)).map(m => set.fields[m]);
   const prev = (set.prev || []).map(k => set.fields[k]).filter(Boolean);   // earlier downloads: only where nothing newer exists
   return { ...f, fallback: [...others, ...prev] };
 }
@@ -258,7 +314,7 @@ function inheritCoverage(nw, old) {
   if (!nw || !old || nw === old) return;
   const ne = setExtent(nw), t0 = nw.times[0], t1 = nw.times[nw.times.length - 1];
   const inside = (a, b) => b && a.s >= b.s && a.n <= b.n && a.w >= b.w && a.e <= b.e;
-  const cand = [...(old.models || []).filter(id => !id.startsWith('grib:')).map(id => [id, old.fields[id]]), ...(old.prev || []).map(k => [k.replace(/^prev\d*:/, ''), old.fields[k]])];
+  const cand = [...(old.models || []).filter(id => !isDerived(id)).map(id => [id, old.fields[id]]), ...(old.prev || []).map(k => [k.replace(/^prev\d*:/, ''), old.fields[k]])];
   const keep = [];
   for (const [id, f] of cand) {
     if (!f || !f.nx || !f.times) continue;
@@ -430,6 +486,10 @@ addEventListener('resize', drawTimeline);
 // ---------------- layers ui ----------------
 function redraw() { setTime(state.time); renderLegend(); particleLayer.seed(); }
 $$('#layerbar [data-layer]').forEach(b => b.onclick = () => {
+  if (b.dataset.layer === 'conf') {   // confidence exists only for our ClockW forecast
+    if (!state.set || !state.set.fields[CLOCKW_ID]) { toast('Pouzdanost postoji za ClockW prognozu – izradi je u kartici Prognoza (✦ ClockW)', 4500); return; }
+    if (state.modelId !== CLOCKW_ID) { state.modelId = CLOCKW_ID; state.wind = withFallback(state.set, CLOCKW_ID); renderChips(); }
+  }
   state.layer = settings.layer = b.dataset.layer; saveSettings();
   $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x === b));
   redraw();
@@ -691,7 +751,8 @@ function updatePointCard() {
     const m = modelById(id);
     const [tws, twd] = speedDirFromUV(out[0], out[1]);
     const valid = tws === tws;
-    return `<tr style="${id === state.modelId ? 'background:rgba(255,255,255,.06)' : ''}"><td><span class="dot" style="background:${mcol(m.id)}"></span>${m.name}</td>
+    const cf = id === CLOCKW_ID ? sample(s.fields[id], ['conf'], point.lat, point.lon, state.time, [])[0] : NaN;
+    return `<tr style="${id === state.modelId ? 'background:rgba(255,255,255,.06)' : ''}"><td><span class="dot" style="background:${mcol(m.id)}"></span>${id === CLOCKW_ID ? '✦ ' : ''}${m.name}${cf === cf ? ` <small class="cfb" style="color:${cf >= 70 ? '#4cd18a' : cf >= 45 ? '#f2cf35' : '#ff6b6b'}">${Math.round(cf)}%</small>` : ''}</td>
       <td>${valid ? `${dirArrow(twd)} ${Math.round(twd)}°` : '–'}</td><td><b>${valid ? tws.toFixed(1) : '–'}</b></td><td>${out[2] === out[2] ? out[2].toFixed(0) : '–'}</td>
       ${hasP ? `<td>${out[3] === out[3] ? out[3].toFixed(1) : '–'}</td>` : ''}${hasC ? `<td>${out[4] === out[4] ? Math.round(out[4]) : '–'}${out[5] > 0.5 ? ' ⚡' : ''}</td>` : ''}</tr>`;
   }).join('');
@@ -830,7 +891,7 @@ function extendTimes(set) {
 function longCovered(set) {
   if (!set || !set.models) return false;
   const t = Date.now() + 5 * 24 * H1;
-  const ids = set.models.filter(id => !id.startsWith('grib:') && set.fields[id] && set.fields[id].times && lastTime(set.fields[id]) > t);
+  const ids = set.models.filter(id => !isDerived(id) && set.fields[id] && set.fields[id].times && lastTime(set.fields[id]) > t);
   if (!ids.length) return false;
   const w = withFallback(set, ids[0]), v = map.getBounds(), out = [];
   for (let j = 0; j <= 6; j++) for (let i = 0; i <= 8; i++) {
@@ -935,6 +996,7 @@ ${AREA_UI()}
       <button id="btnPackage" class="btn block">📲 Spremi paket za iPhone (AirDrop)</button>
       ${state.newRuns.length ? `<button id="btnRefreshNew" class="btn primary block">Osvježi samo nove runove: ${state.newRuns.map(n => modelById(n.id).name).join(', ')}</button>
       <div class="note">Preuzimaju se samo modeli s novim runom, isto područje i vrijeme. Štedi API pozive.</div>` : ''}` : '<div class="note">Još nema preuzete prognoze.</div>'}
+    ${s ? clockwHtml() : ''}
     <h3>Izvor podataka</h3>
     <div class="seg"><button data-src="direct" class="${direct ? 'on' : ''}">📥 GRIB izravno</button><button data-src="cloud" class="${cloud ? 'on' : ''}">☁️ Paket iz oblaka</button><button data-src="openmeteo" class="${!direct && !cloud ? 'on' : ''}">📡 Open-Meteo</button></div>
     <div class="note">${direct ? `Originalne GRIB datoteke izravno od službenih meteoroloških centara (ECMWF, NOAA${state.native ? ', DWD' : ''}), <b>bez API limita</b>, samo kad klikneš Preuzmi.${state.native ? '' : ' DWD modeli (ICON-D2/EU) rade samo u Mac aplikaciji.'}`
@@ -1003,6 +1065,62 @@ ${AREA_UI()}
   const cr = el.querySelector('#btnCheckRuns');
   if (cr) cr.onclick = async () => { state.newRuns = await checkNewRuns(state.set); renderChips(); toast(state.newRuns.length ? `Noviji run: ${state.newRuns.map(n => modelById(n.id).name + ' ' + fmtRun(n.runInit)).join(', ')}` : 'Imaš najnovije runove svih modela'); renderDataTab(); };
   if (s) drawCoverage($('#covChart'));
+  bindClockW(el);
+}
+// ---------------- ClockW: our consensus forecast (built on request) ----------------
+const cwCandidates = () => state.set ? state.set.models.filter(id => !isDerived(id) && state.set.fields[id] && state.set.fields[id].times) : [];
+const cwHours = () => settings.cwHours === 48 ? 48 : 24;
+const cwSelected = () => { const c = cwCandidates(); return (Array.isArray(settings.cwModels) ? settings.cwModels.filter(id => c.includes(id)) : c); };
+// forecast: from now · regatta: from an hour before the start (if it is still ahead)
+function cwStart() { const now = Math.floor(Date.now() / H1) * H1; if (fcMode()) return now; const st = raceStart(); return st > now + H1 ? Math.floor(st / H1) * H1 - H1 : now; }
+let cwBusy = false;
+function clockwHtml() {
+  const s = state.set, cand = cwCandidates(), sel = cwSelected(), f = s.fields[CLOCKW_ID], info = f && f.clockw;
+  const win = cand.length ? clockwWindow(s, sel.length ? sel : cand, cwStart(), cwHours()) : null;
+  const share = info ? Object.entries(info.share).sort((a, b) => b[1] - a[1]) : [];
+  return `<h3>✦ ClockW – naša prognoza</h3>
+    <div class="note">Aplikacija od odabranih modela izrađuje <b>jednu, najvjerojatniju prognozu</b>: za svaku točku i sat gleda gdje se modeli slažu po smjeru i jačini, modelima koji odskaču od ostalih smanjuje težinu, a <b>uz obalu i otoke daje prednost modelima visoke rezolucije</b> (ICON-2I, ICON-D2, HARMONIE) jer jedini vide ubrzanja u kanalima i zavjetrine. Uz nju se računa i <b>karta pouzdanosti</b> (sloj ★ Pouzdanost). Izrađuje se samo kad stisneš gumb.</div>
+    ${cand.length < 2 ? '<div class="note warn">Za ClockW trebaju barem dva modela u prognozi – preuzmi prognozu s više modela.</div>' : `
+    <div class="row"><label>Modeli u ClockW</label></div>
+    ${cand.map(id => { const m = modelById(id); return `<label class="check"><input type="checkbox" data-cw="${id}" ${sel.includes(id) ? 'checked' : ''}><div><div class="t"><span class="dot" style="background:${mcol(id)}"></span>${m.name} <small style="color:var(--muted)">${m.res || ''}</small></div></div></label>`; }).join('')}
+    <div class="row"><label>Razdoblje</label></div>
+    <div class="seg"><button data-cwh="24" class="${cwHours() === 24 ? 'on' : ''}">24 sata</button><button data-cwh="48" class="${cwHours() === 48 ? 'on' : ''}">48 sati</button></div>
+    ${win ? `<div class="note">${fmtTime(win.t0)} → ${fmtTime(win.t1)} ${fcMode() ? '(od sada)' : '(od sata prije starta regate)'}${win.short ? ` · <b>odabrani modeli ne sežu punih ${cwHours()} h</b> – ClockW ide dokle sežu barem dva modela` : ''}</div>` : ''}
+    <button id="btnClockW" class="btn primary block" ${sel.length < 2 || cwBusy ? 'disabled' : ''}>✦ Izradi ClockW prognozu (${sel.length} modela · ${cwHours()} h)</button>
+    <div class="progress"><div id="cwBar"></div></div><div id="cwText" class="note"></div>`}
+    ${info ? `<div class="cwinfo"><b>✦ ClockW izrađena ${fmtTime(info.built)}</b> · ${fmtTime(f.times[0])} → ${fmtTime(f.validUntil)}${info.meanConf != null ? ` · prosječna pouzdanost <b>${Math.round(info.meanConf)} %</b>` : ''}
+      <div class="cwshare">${share.map(([id, v]) => `<div><span><span class="dot" style="background:${mcol(id)}"></span>${modelById(id).name}</span><i style="width:${Math.max(2, v * 100).toFixed(0)}%;background:${mcol(id)}"></i><em>${Math.round(v * 100)} %</em></div>`).join('')}</div>
+      <div class="note" style="margin:4px 0 0">Udio = koliko je svaki model u prosjeku utjecao na ClockW (manje = češće je odskakao od ostalih ili je grublje rezolucije uz obalu).</div>
+      <div class="row" style="gap:6px;margin-top:8px"><button id="cwShow" class="btn" style="flex:1">Prikaži ClockW</button><button id="cwConf" class="btn" style="flex:1">★ Karta pouzdanosti</button></div>
+      <button id="cwDel" class="btn block danger">Obriši ClockW</button></div>` : ''}`;
+}
+function bindClockW(el) {
+  el.querySelectorAll('[data-cw]').forEach(i => i.onchange = () => { settings.cwModels = [...el.querySelectorAll('[data-cw]:checked')].map(x => x.dataset.cw); saveSettings(); renderDataTab(); });
+  el.querySelectorAll('[data-cwh]').forEach(b => b.onclick = () => { settings.cwHours = +b.dataset.cwh; saveSettings(); renderDataTab(); });
+  const go = el.querySelector('#btnClockW'); if (go) go.onclick = doClockW;
+  const sh = el.querySelector('#cwShow'); if (sh) sh.onclick = () => { if (state.layer === 'conf') { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); } selectModel(CLOCKW_ID); renderLegend(); toast('Prikazana ClockW prognoza'); };
+  const cf = el.querySelector('#cwConf'); if (cf) cf.onclick = () => $('#layerbar [data-layer=conf]').click();
+  const del = el.querySelector('#cwDel'); if (del) armDelete(del, 'ClockW je obrisana', async () => { const s = state.set; if (!s) return; delete s.fields[CLOCKW_ID]; s.models = s.models.filter(x => x !== CLOCKW_ID); if (state.routes[CLOCKW_ID]) { delete state.routes[CLOCKW_ID]; drawRoutes(); } if (state.modelId === CLOCKW_ID) state.modelId = null; await saveForecast(s); useSet(s); renderDataTab(); });
+}
+async function doClockW() {
+  const s = state.set; if (!s || cwBusy) return;
+  const ids = cwSelected(); if (ids.length < 2) return toast('Odaberi barem dva modela za ClockW');
+  cwBusy = true;
+  const btn = $('#btnClockW'); if (btn) btn.disabled = true;
+  const prog = (f, t) => { const b = $('#cwBar'), x = $('#cwText'); if (b && f != null) b.style.width = (f * 100).toFixed(0) + '%'; if (x && t) x.textContent = t; };
+  try {
+    const t0 = performance.now();
+    const f = await buildClockW({ set: s, ids, t0: cwStart(), hours: cwHours(), landAt: state.landAt, progress: prog });
+    if (state.set !== s) return toast('Prognoza se promijenila tijekom izrade – pokreni ClockW ponovno', 4500);
+    s.fields[CLOCKW_ID] = f;
+    s.models = [CLOCKW_ID, ...s.models.filter(x => x !== CLOCKW_ID)];
+    if (state.routes[CLOCKW_ID]) markStale();
+    await saveForecast(s);
+    state.modelId = CLOCKW_ID; useSet(s); setTime(Math.max(f.times[0], Math.min(f.validUntil, state.time)));
+    console.log('ClockW', Math.round(performance.now() - t0), 'ms', f.nx + '×' + f.ny, f.times.length + ' h');
+    toast(`✦ ClockW izrađena: ${ids.length} modela, ${f.times.length - 1} h${f.clockw.meanConf != null ? `, pouzdanost ~${Math.round(f.clockw.meanConf)} %` : ''}`, 4500);
+  } catch (e) { console.error(e); prog(null, e.message); toast(e.message, 4500); }
+  finally { cwBusy = false; if ($('#tab-data').classList.contains('on')) renderDataTab(); }
 }
 function drawCoverage(cv) {
   const s = state.set, dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -1076,7 +1194,7 @@ async function doDownload(opts = {}) {
     if (longT1 && fcMode()) win = { ...win, t1: win.t0 + SHORT_DAYS * 24 * H1 };
     else if (opts.auto && state.set && state.set.times && state.set.times.length) {   // race mode: a refill keeps (at least) the time span already on screen
       // only the DETAILED span counts (days 4–15 of the models stay attached anyway) – otherwise a refill would fetch 15 days of everything
-      const T = state.set.times, own = Math.max(...state.set.models.filter(id => !id.startsWith('grib:') && state.set.fields[id] && state.set.fields[id].times).map(id => ownEnd(state.set.fields[id])), win.t1);
+      const T = state.set.times, own = Math.max(...state.set.models.filter(id => !isDerived(id) && state.set.fields[id] && state.set.fields[id].times).map(id => ownEnd(state.set.fields[id])), win.t1);
       win = { ...win, t0: Math.min(win.t0, Math.max(T[0], Date.now() - 6 * 3600000)), t1: Math.min(own, Math.max(win.t1, Date.now() + SHORT_DAYS * 24 * 3600000)) };   // detail for the race (+3 days); the rest stays attached
     }
     const set = await (useDirect ? downloadDirect : downloadForecast)({ bbox: area, modelIds: useDirect ? (dirIds.length ? dirIds : ['dir_ecmwf', 'dir_gfs']) : settings.dlModels, window: win, quality: settings.quality, settings, signal: dlAbort.signal, maxSeconds: 150,
@@ -1161,14 +1279,14 @@ function maybeFillWindow(delay = 1200) {
   const needDetail = () => { const s = state.set, v = map.getBounds(); if (!s) return false;
     if (s.globalOnly) return map.getZoom() >= 6.5;   // came back from a far-out view: regional detail again
     if (!s.thinned) return false;
-    const e = setExtent({ models: s.models.filter(id => !id.startsWith('grib:')), fields: s.fields }); if (!e) return false;
+    const e = setExtent({ models: s.models.filter(id => !isDerived(id)), fields: s.fields }); if (!e) return false;
     return (v.getEast() - v.getWest()) * (v.getNorth() - v.getSouth()) < 0.15 * (e.e - e.w) * (e.n - e.s); };
   // days 4–15 missing (e.g. a forecast from an older version): fetched once per forecast, never in a loop
   const courseOut = () => { const s = state.set; if (fcMode() || !s || course.marks.length < 2) return false; const cb = courseBBox();
     const g = s.models.filter(id => /ecmwf|gfs/.test(id) && s.fields[id] && s.fields[id].nx); if (!g.length) return false;
     return !g.some(id => { const e = extentOf(s.fields[id]); return cb.s >= e.s && cb.n <= e.n && cb.w >= e.w && cb.e <= e.e; }); };
   const farWait = () => { const s = state.set; if (!s) return false;   // only past the DETAILED part of every model
-    const own = Math.max(0, ...s.models.filter(id => s.fields[id] && s.fields[id].times && !id.startsWith('grib:')).map(id => ownEnd(s.fields[id])));
+    const own = Math.max(0, ...s.models.filter(id => s.fields[id] && s.fields[id].times && !isDerived(id)).map(id => ownEnd(s.fields[id])));
     return state.time > own + H1 && Date.now() - (+s.longTried || 0) < 30 * 60000 && !longCovered(s); };
   const uncov = () => !farWait() && uncoveredShare() >= 0.002;
   if (!uncov() && !needDetail() && !wantLong() && !courseOut()) return;
@@ -1325,6 +1443,25 @@ function getWorkers() {
   }
   return workers;
 }
+// boat picker: Clockwork / LeeLoo (+ imported boats), then which polar of that boat (designer VPP or ORC certificate)
+function boatPickerHtml() {
+  const b = state.boat, g = boatGroup(b);
+  const others = boats.filter(x => !x.group);
+  const variants = g ? boats.filter(x => x.group === g.id) : [];
+  return `<div class="seg boatseg">${BOAT_GROUPS.filter(gr => boats.some(x => x.group === gr.id)).map(gr => `<button data-bgroup="${gr.id}" class="${g && g.id === gr.id ? 'on' : ''}">⛵ ${gr.name} <small>${gr.type}</small></button>`).join('')}
+      ${others.map(x => `<button data-boat="${x.id}" class="${x.id === b.id ? 'on' : ''}">${x.name}</button>`).join('')}</div>
+    ${variants.length > 1 ? `<div class="seg small">${variants.map(x => `<button data-boat="${x.id}" class="${x.id === b.id ? 'on' : ''}">${x.kind === 'vpp' ? 'VPP (dizajnerski)' : 'ORC certifikat'}</button>`).join('')}</div>` : ''}
+    <div class="note">${b.kind === 'vpp' ? '<b>VPP</b>: puna tablica brzina i target kutova od dizajnera – najdetaljnije. Teoretski maksimum: za stvarnu formu posade spusti učinkovitost (npr. 92–96 %).' : b.kind === 'orc' ? '<b>ORC</b>: polar iz ORC certifikata – konzervativniji, manje točaka.' : 'Uvezeni polar.'}${sailSetOf(b) ? ` Jedra: ${SAIL_SETS[sailSetOf(b)].name}.` : ''}</div>`;
+}
+function bindBoatPicker(el, rerender) {
+  el.querySelectorAll('[data-bgroup]').forEach(btn => btn.onclick = () => {
+    const cur = state.boat, kind = cur.kind || 'vpp';
+    const pick = boats.find(x => x.group === btn.dataset.bgroup && x.kind === kind) || boats.find(x => x.group === btn.dataset.bgroup);
+    if (pick && pick.id !== cur.id) { selectBoat(pick.id); toast(`Brod: ${pick.name}`); }
+    rerender();
+  });
+  el.querySelectorAll('[data-boat]').forEach(btn => btn.onclick = () => { if (btn.dataset.boat !== state.boat.id) selectBoat(btn.dataset.boat); rerender(); });
+}
 function renderRoutingTab() {
   const el = $('#tab-routing'); const s = state.set;
   const start = raceStart();
@@ -1333,7 +1470,7 @@ function renderRoutingTab() {
   const stale = Object.values(state.routes).some(r => r.stale);
   el.innerHTML = `
     <h3>Brod</h3>
-    <div class="row"><select id="boatSel" class="field" style="flex:1;max-width:100%">${boats.map(b => `<option value="${b.id}" ${b.id === state.boat.id ? 'selected' : ''}>${b.name}</option>`).join('')}</select></div>
+    ${boatPickerHtml()}
     <div class="row"><label>Učinkovitost (% polara)</label><input type="number" id="eff" min="60" max="110" value="${settings.efficiency}"></div>
     <div class="row"><label>Gaz broda (m)</label><input type="number" id="draft" step="0.1" value="${settings.draft}"></div>
     <div class="row"><label>Sigurnosna rezerva dubine (m)</label><input type="number" id="dmargin" step="0.1" value="${settings.depthMargin}"></div>
@@ -1360,9 +1497,9 @@ function renderRoutingTab() {
     <p class="note">Ruta izbjegava kopno, otoke i plićine (EMODnet batimetrija ~135 m). Uvijek provjeri hridi, zabranjene zone i upute za jedrenje na službenoj karti.</p>`;
   const num = (id, key, after) => el.querySelector(id).onchange = e => { settings[key] = +e.target.value; saveSettings(); after && after(); };
   num('#eff', 'efficiency', markStale); num('#tackP', 'tackPenaltySec'); num('#gybeP', 'gybePenaltySec'); num('#dtMin', 'dtMin');
-  num('#draft', 'draft', () => { rebuildMask(); renderRoutingTab(); }); num('#dmargin', 'depthMargin', () => { rebuildMask(); renderRoutingTab(); });
+  num('#draft', 'draft', () => { settings.boatDrafts = settings.boatDrafts || {}; settings.boatDrafts[state.boat.group || state.boat.id] = settings.draft; saveSettings(); rebuildMask(); renderRoutingTab(); }); num('#dmargin', 'depthMargin', () => { rebuildMask(); renderRoutingTab(); });
   el.querySelector('#avoidSh').onchange = e => { settings.avoidShallow = e.target.checked; saveSettings(); rebuildMask(); renderRoutingTab(); };
-  el.querySelector('#boatSel').onchange = e => { selectBoat(e.target.value); renderRoutingTab(); };
+  bindBoatPicker(el, renderRoutingTab);
   el.querySelector('#useCur').onchange = e => { settings.useCurrents = e.target.checked; saveSettings(); };
   el.querySelector('#wavP').onchange = e => { settings.wavePenalty = e.target.checked; saveSettings(); };
   el.querySelector('#chgStart').onclick = () => openSheet('course');
@@ -1389,9 +1526,9 @@ async function runRouting(ids, override = {}) {
   if (!override.marks && navigator.onLine && state.set) {
     for (let i = 0; i < 360 && dlBusy; i++) await new Promise(r => setTimeout(r, 500));
     const cb = courseBBox(), REGIONAL = ['dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
-    const short = id => { const f = state.set.fields[id]; if (!f || !f.nx || id.startsWith('grib:') || REGIONAL.includes(id)) return false; const e = extentOf(f); return !(cb.s >= e.s && cb.n <= e.n && cb.w >= e.w && cb.e <= e.e); };
+    const short = id => { const f = state.set.fields[id]; if (!f || !f.nx || isDerived(id) || REGIONAL.includes(id)) return false; const e = extentOf(f); return !(cb.s >= e.s && cb.n <= e.n && cb.w >= e.w && cb.e <= e.e); };
     const need = fcMode() ? 0 : dlWindow().t1;   // start + estimated race time + reserve, for THIS course
-    const early = id => { const f = state.set.fields[id]; return !!f && !id.startsWith('grib:') && !REGIONAL.includes(id) && need && (f.validUntil || 0) < need - H1 && f.times[0] <= (override.startTime || raceStart()); };
+    const early = id => { const f = state.set.fields[id]; return !!f && !isDerived(id) && !REGIONAL.includes(id) && need && (f.validUntil || 0) < need - H1 && f.times[0] <= (override.startTime || raceStart()); };
     if (ids.some(short) || ids.some(early)) { toast('Dopunjavam prognozu za cijelu stazu…', 3000); await doDownload({ auto: true, bbox: union(viewBBox(1.0), cb) }); ids = ids.filter(id => state.set && state.set.fields[id]); if (!ids.length) return toast('Prognoza za stazu nije dostupna – preuzmi je u kartici Prognoza', 5000); }
   }
   const startTime = override.startTime || raceStart();
@@ -1404,7 +1541,7 @@ async function runRouting(ids, override = {}) {
   st.innerHTML = ids.map(id => `<div class="note"><span class="dot" style="background:${mcol(id)}"></span>${modelById(id).name}: <span id="rs-${id.replace(/[^\w-]/g, '_')}">čeka…</span><div class="progress"><div id="rp-${id.replace(/[^\w-]/g, '_')}"></div></div></div>`).join('');
   const key = id => id.replace(/[^\w-]/g, '_');
   const ws = getWorkers();
-  const opts = { efficiency: settings.efficiency / 100, tackPenaltySec: settings.tackPenaltySec, gybePenaltySec: settings.gybePenaltySec, dtMin: settings.dtMin, useCurrents: settings.useCurrents, wavePenalty: settings.wavePenalty, sails: state.boat.sails === 'melges40' };
+  const opts = { efficiency: settings.efficiency / 100, tackPenaltySec: settings.tackPenaltySec, gybePenaltySec: settings.gybePenaltySec, dtMin: settings.dtMin, useCurrents: settings.useCurrents, wavePenalty: settings.wavePenalty, sails: sailSetOf(state.boat) || false };
   state.routes = {};
   let next = 0;
   const t0 = performance.now();
@@ -1423,7 +1560,7 @@ async function runRouting(ids, override = {}) {
         w.addEventListener('message', onMsg);
         w.postMessage({ cmd: 'route', id: msgId, wind: rs.fields[id], marine: rs.fields.marine, polar: state.polar.serialize(), marks, startTime, opts });
       });
-      res.model = id; res.boat = state.boat.name; res.live = !!override.marks;
+      res.model = id; res.boat = state.boat.name; res.sailSet = sailSetOf(state.boat); res.live = !!override.marks;
       state.routes[id] = res;
       const b = $('#rp-' + key(id)); if (b) b.style.width = '100%';
       if (rsEl()) rsEl().textContent = res.ok ? `ETA ${fmtTime(res.eta)} (${fmtDur(res.stats.hours)})` : '✕ ' + res.error;
@@ -1585,8 +1722,11 @@ function showBoatInfo(id, refresh = false) {
 }
 
 // ---------------- race replay (PredictWind-style) ----------------
-const REPLAY_SPEEDS = [60, 120, 300, 600, 1200];   // × real time (1–20 min of race per second)
-const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? settings.replaySpeed : 300;
+// × real time: 0.5–10 min of race per second. Default 1.5 min/s (v2.3: 3.3× slower than the old 5 min/s)
+const REPLAY_SPEEDS = [30, 60, 90, 180, 300, 600];
+if (!localStorage.getItem('ctw.v23replay')) { settings.replaySpeed = 90; localStorage.setItem('ctw.v23replay', '1'); saveSettings(); }
+const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? settings.replaySpeed : 90;
+const speedLabel = v => `${String(v / 60).replace('.', ',')} min/s`;
 const rp = { on: false, raf: 0, last: 0, lastFull: 0 };
 function replayRange() {
   const o = okRoutes(); if (!o.length) return null;
@@ -1617,11 +1757,14 @@ function renderReplayBar() {
   if (settings.mode !== 'race' || !o.length) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   const sp = replaySpeed();
-  el.innerHTML = `<button id="rpPlay" class="rpbtn" title="${rp.on ? 'Pauza' : 'Pokreni utrku'}">${rp.on ? '⏸' : '▶'}</button>
-    <select id="rpSpeed" title="Brzina replaya">${REPLAY_SPEEDS.map(v => `<option value="${v}" ${v === sp ? 'selected' : ''}>${v / 60} min/s</option>`).join('')}</select>
+  el.innerHTML = `<button id="rpPlay" class="rpbtn" title="${rp.on ? 'Pauza' : 'Pokreni utrku'}" aria-label="${rp.on ? 'Pauza' : 'Pokreni utrku'}"><svg viewBox="0 0 24 24" aria-hidden="true">${rp.on ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>'}</svg></button>
+    <select id="rpSpeed" title="Brzina replaya">${REPLAY_SPEEDS.map(v => `<option value="${v}" ${v === sp ? 'selected' : ''}>${speedLabel(v)}</option>`).join('')}</select>
     <div id="rpRank" class="rprank"></div>
     ${o.length > 1 ? `<button id="rpView" class="rpbtn small" title="Prikaz ruta">${settings.routeView === 'one' ? '1 ruta' : 'Sve'}</button>` : ''}`;
-  el.querySelector('#rpPlay').onclick = () => rp.on ? replayPause() : replayPlay();
+  // reacts on touch-down anywhere on the (enlarged) button – no need to hit its centre or hold still until release
+  const pb = el.querySelector('#rpPlay');
+  pb.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); e.stopPropagation(); rp.on ? replayPause() : replayPlay(); });
+  pb.onclick = e => { if (e.detail === 0) rp.on ? replayPause() : replayPlay(); };   // keyboard (Enter/Space) still works
   el.querySelector('#rpSpeed').onchange = e => { settings.replaySpeed = +e.target.value; saveSettings(); };
   const v = el.querySelector('#rpView'); if (v) v.onclick = () => setRouteView(settings.routeView === 'one' ? 'all' : 'one');
   updateReplayRank();
@@ -1680,7 +1823,7 @@ function renderRouteDetail() {
   const r = state.routes[state.selected]; const el = $('#routeDetail');
   if (!r || !r.ok) { el.innerHTML = ''; return; }
   const s = r.stats, m = modelById(r.model);
-  const sails = Object.entries(s.sails).sort((a, b) => b[1] - a[1]).map(([k, h]) => `<span class="dot" style="background:${(SAILS[k] || {}).color || '#888'}"></span>${k} ${fmtDur(h)}`).join(' &nbsp; ');
+  const sails = Object.entries(s.sails).sort((a, b) => b[1] - a[1]).map(([k, h]) => `<span class="dot" style="background:${sailColor(k, r.sailSet || 'melges40')}"></span>${k} ${fmtDur(h)}`).join(' &nbsp; ');
   el.innerHTML = `
     <h3><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} – detalji</h3>
     <div class="kv">
@@ -1745,6 +1888,7 @@ function renderSettingsTab() {
     <div class="row"><label>Podloga</label><select id="basemap">
       ${opt('nautical', 'Nautička – dubine i izobate (offline)')}${opt('offline', 'Tamna obala (offline)')}
       ${opt('emodnet', 'EMODnet batimetrija + OSM obala (online)')}${opt('dark', 'Tamna (online)')}${opt('light', 'Svijetla (online)')}${opt('sat', 'Satelit (online)')}</select></div>
+    <div class="row"><label>Detaljno kopno pri zumiranju (mjesta, ceste, reljef – online)</label><input type="checkbox" id="landDet" ${settings.landDetail !== false ? 'checked' : ''}></div>
     <div class="row"><label>OpenSeaMap oznake (svjetionici, plutače)</label><input type="checkbox" id="seam" ${settings.seamarks ? 'checked' : ''}></div>
     <div class="row"><label>Boje vjetra/valova na karti</label><input type="checkbox" id="colors" ${state.colors !== false ? 'checked' : ''}></div>
     <div class="row"><label>Najviša oštrina iscrtavanja (HD)</label><input type="checkbox" id="hires" ${state.hiRes ? 'checked' : ''}></div>
@@ -1753,13 +1897,13 @@ function renderSettingsTab() {
     <div class="row"><label>Gustoća čestica</label><input type="range" id="pden" min="0.3" max="2" step="0.1" value="${settings.particleDensity}"></div>
     <div class="note">Izobate: ${ISOBATHS.join(', ')} m. Dubine: EMODnet Bathymetry DTM. Navionics karte su licencirane i ne mogu se ugraditi; za službenu navigaciju koristi plotter / Navionics.</div>
     <h3>Brodovi (polari)</h3>
-    ${boats.map(b => `<div class="row"><label><input type="radio" name="boat" value="${b.id}" ${b.id === state.boat.id ? 'checked' : ''}> ${b.name}${b.sails === 'melges40' ? ' · crossover' : ''}</label>${b.builtin ? '' : `<button class="mini" data-delboat="${b.id}">obriši</button>`}</div>`).join('')}
+    ${boats.map(b => `<div class="row"><label><input type="radio" name="boat" value="${b.id}" ${b.id === state.boat.id ? 'checked' : ''}> ${b.name}${sailSetOf(b) ? ' · crossover' : ''}</label>${b.builtin ? '' : `<button class="mini" data-delboat="${b.id}">obriši</button>`}</div>`).join('')}
     <canvas class="chart" id="polarChart" style="height:240px"></canvas>
     <div class="row"><label>Dodaj brod – polar datoteka</label></div>
     <div class="row"><input type="file" id="polarFile" accept=".csv,.txt,.pol,.json,text/plain"></div>
     <div class="note">Podržano: ORC CSV (kao Clockwork), Expedition/B&G/OpenCPN/Adrena TWA×TWS mreže (tab, zarez, točka-zarez ili razmak), transponirane mreže i PredictWind format „TWS TWA BSP TWA BSP…".</div>
-    ${state.boat.sails === 'melges40' ? `<h3>Crossover jedara</h3>
-    <div class="note">Digitalizirano iz North Sails charta (J1–J4, FRO, A1.5/A2/A4/A5, jib strut, 1. kratež). Za druge brodove ruta prikazuje kurs (kroz/bočni/krma).</div>
+    ${sailSetOf(state.boat) ? `<h3>Crossover jedara – ${state.boat.group === 'leeloo' ? 'LeeLoo' : 'Clockwork'}</h3>
+    <div class="note">${sailSetOf(state.boat) === 'mat1180' ? 'Iz North Sails MAT1180 crossover charta V1d (J1–J4, A0/MH, A1.5, A2, A4, A5, 1. kratež) – jedro za svaku ćeliju TWA × TWS.' : 'Digitalizirano iz North Sails charta (J1–J4, FRO, A1.5/A2/A4/A5, jib strut, 1. kratež).'} Za uvezene brodove ruta prikazuje kurs (kroz/bočni/krma).</div>
     <canvas class="chart" id="xoverChart" style="height:240px"></canvas>` : ''}
     <h3>Izvori podataka</h3>
     <div class="row"><label>Open-Meteo komercijalni API ključ</label></div>
@@ -1770,10 +1914,11 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.2.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
+  el.querySelector('#landDet').onchange = e => { settings.landDetail = e.target.checked; saveSettings(); updateLandDetail(); toast(e.target.checked ? `Detaljno kopno od zuma ${LAND_DETAIL_Z} (uz internet)` : 'Detaljno kopno isključeno'); };
   el.querySelector('#colors').onchange = e => { state.colors = settings.colors = e.target.checked; saveSettings(); wxLayer.draw(); };
   el.querySelector('#hires').onchange = e => { state.hiRes = settings.hiRes = e.target.checked; saveSettings(); wxLayer.draw(); };
   el.querySelector('#ovl').onchange = e => { state.colorOverLand = settings.colorOverLand = e.target.checked; saveSettings(); wxLayer.draw(); };
@@ -1782,7 +1927,7 @@ function renderSettingsTab() {
   el.querySelector('#apikey').onchange = e => { settings.apiKey = e.target.value.trim(); saveSettings(); };
   el.querySelector('#cloudUrl').onchange = e => { settings.cloudUrl = e.target.value.trim(); saveSettings(); };
   el.querySelectorAll('input[name=boat]').forEach(r => r.onchange = () => { selectBoat(r.value); renderSettingsTab(); });
-  el.querySelectorAll('[data-delboat]').forEach(b => b.onclick = async () => { boats = boats.filter(x => x.id !== b.dataset.delboat); await saveBoats(); selectBoat('melges40'); renderSettingsTab(); });
+  el.querySelectorAll('[data-delboat]').forEach(b => b.onclick = async () => { boats = boats.filter(x => x.id !== b.dataset.delboat); await saveBoats(); selectBoat(boats.some(x => x.id === settings.boatId) ? settings.boatId : 'melges40'); renderSettingsTab(); });
   el.querySelector('#polarFile').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
@@ -1823,12 +1968,13 @@ function drawXover(cv) {
   cv.width = w * dpr; cv.height = h * dpr; const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
   const X = a => 24 + (a - 30) / 150 * (w - 30), Y = v => h - 16 - v / 35 * (h - 24);
   // recommended sail per cell
-  for (let a = 30; a < 180; a += 2) for (let v = 2; v < 35; v += 0.5) { const r = recommendSail(a, v); c.fillStyle = r.color; c.globalAlpha = r.reef ? 0.55 : 0.85; c.fillRect(X(a), Y(v + 0.5), X(a + 2) - X(a) + 0.5, Y(v) - Y(v + 0.5) + 0.5); }
+  const set = sailSetOf(state.boat) || 'melges40', labels = {};
+  for (let a = 30; a < 180; a += 2) for (let v = 2; v < 35; v += 0.5) { const r = recommendSail(a, v, set); const L = labels[r.sail] || (labels[r.sail] = [0, 0, 0]); L[0] += a; L[1] += v; L[2]++; c.fillStyle = r.color; c.globalAlpha = r.reef ? 0.55 : 0.85; c.fillRect(X(a), Y(v + 0.5), X(a + 2) - X(a) + 0.5, Y(v) - Y(v + 0.5) + 0.5); }
   c.globalAlpha = 1; c.fillStyle = '#cfd8e3'; c.font = '10px system-ui';
   for (let a = 30; a <= 180; a += 30) c.fillText(a + '°', X(a) - 8, h - 3);
   for (let v = 5; v <= 35; v += 5) c.fillText(v, 4, Y(v) + 3);
   c.font = '700 11px system-ui'; c.fillStyle = '#111';
-  Object.entries(SAILS).forEach(([n, s]) => { const cxs = s.poly.reduce((q, p) => q + p[0], 0) / s.poly.length, cys = s.poly.reduce((q, p) => q + p[1], 0) / s.poly.length; c.fillText(n, X(cxs) - 8, Y(cys)); });
+  Object.entries(labels).forEach(([n, [sa, sv, k]]) => c.fillText(n, X(sa / k) - 8, Y(sv / k)));   // label at the centre of each sail's area
 }
 
 // ---------------- network status ----------------

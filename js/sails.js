@@ -1,3 +1,5 @@
+import { MAT1180_XOVER } from './boatdata.js';
+
 // Sail crossover for Melges 40 "Clockwork", digitised from the North Sails chart
 // (TFWB Relentless SAIL SELECTION CHART). Polygons are in (TWA deg, TWS kn) space.
 // Values are approximate (read off the chart, about ±2° / ±0.5 kn), editable in Postavke.
@@ -57,8 +59,7 @@ function score(name, twa, tws) {
   return Math.abs(tws - mid) / half;
 }
 
-export function recommendSail(twa, tws) {
-  twa = Math.abs(twa); if (twa > 180) twa = 360 - twa;
+function recommendMelges40(twa, tws) {
   const hits = Object.keys(SAILS).filter(n => inPoly(twa, tws, SAILS[n].poly));
   let pick;
   const kites = hits.filter(n => SAILS[n].cat === 'kite');
@@ -75,3 +76,29 @@ export function recommendSail(twa, tws) {
   const reef = tws >= lineAt(twa, REEF1);
   return { sail: pick, strut, reef, label: pick + (strut ? ' + strut' : '') + (reef ? ' · R1' : ''), color: SAILS[pick].color };
 }
+
+// ---- LeeLoo (Mat 11.80): North Sails MAT1180 crossover chart, one sail per TWA × TWS cell ----
+export const MAT_SAILS = {
+  J1: { cat: 'jib', color: '#ffcc99' }, J2: { cat: 'jib', color: '#fff27a' }, J3: { cat: 'jib', color: '#ffc400' }, J4: { cat: 'jib', color: '#ff6a00' },
+  A0: { cat: 'kite', color: '#1e6fd0' }, 'A1.5': { cat: 'kite', color: '#00ccff' }, A2: { cat: 'kite', color: '#ff9a00' },
+  A4: { cat: 'kite', color: '#ffff00' }, A5: { cat: 'kite', color: '#ff2a2a' },
+};
+// reef: the chart's "1 Reef" line (upwind only, from ~27.5 kn at 30–40° TWA)
+const MAT_REEF = [[0, 27.5], [40, 28], [50, 28.8], [60, 30], [66, 34], [72, 99], [180, 99]];
+function recommendMat1180(twa, tws) {
+  const X = MAT1180_XOVER, near = (arr, v) => { let b = 0; for (let i = 1; i < arr.length; i++) if (Math.abs(arr[i] - v) < Math.abs(arr[b] - v)) b = i; return b; };
+  const name = X.sail[near(X.twa, twa)][near(X.tws, tws)];
+  const reef = tws >= lineAt(twa, MAT_REEF);
+  return { sail: name, strut: false, reef, label: name + (reef ? ' · R1' : ''), color: MAT_SAILS[name].color };
+}
+
+// sail sets per boat: 'melges40' (Clockwork) · 'mat1180' (LeeLoo)
+export const SAIL_SETS = {
+  melges40: { name: 'North Sails – Melges 40', sails: SAILS, recommend: recommendMelges40 },
+  mat1180: { name: 'North Sails – MAT1180 V1d', sails: MAT_SAILS, recommend: recommendMat1180 },
+};
+export function recommendSail(twa, tws, set = 'melges40') {
+  twa = Math.abs(twa); if (twa > 180) twa = 360 - twa;
+  return (SAIL_SETS[set] || SAIL_SETS.melges40).recommend(twa, tws);
+}
+export const sailColor = (name, set = 'melges40') => { const s = (SAIL_SETS[set] || SAIL_SETS.melges40).sails[name] || SAILS[name] || MAT_SAILS[name]; return s ? s.color : '#888'; };

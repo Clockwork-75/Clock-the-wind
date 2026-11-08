@@ -69,6 +69,7 @@ export class Polar {
     if (!s.beatAngle) return this.curveFromGrid(col);
     const ba = s.beatAngle[col], bs = s.beatVMG[col] / Math.cos(ba * D2R);
     const ga = s.gybeAngle[col], gs = s.runVMG[col] / -Math.cos(ga * D2R);
+    if (s.full) return this.curveFull(col, ba, bs, ga, gs);
     const pts = [[0, 0], [ba * 0.62, 0], [ba * 0.85, bs * 0.72], [ba, bs]];
     for (const r of s.table) if (r.twa > ba && r.twa < ga) pts.push([r.twa, r.bsp[col]]);
     pts.push([ga, gs]);
@@ -82,6 +83,26 @@ export class Polar {
       const [a0, v0] = pts[i], [a1, v1] = pts[i + 1];
       const t = a1 === a0 ? 0 : Math.min(1, Math.max(0, (a - a0) / (a1 - a0)));
       out[a] = v0 + (v1 - v0) * t;
+    }
+    return out;
+  }
+
+  // complete VPP grid (designer VPP): every tabulated angle is real data – also below the beat angle and past the gybe
+  // angle – plus the exact upwind/downwind targets. Only the no-go zone and (if missing) dead downwind are estimated.
+  curveFull(col, ba, bs, ga, gs) {
+    const rows = this.src.table.filter(r => r.bsp[col] > 0);
+    const pts = rows.filter(r => Math.abs(r.twa - ba) > 1.5 && Math.abs(r.twa - ga) > 1.5).map(r => [r.twa, r.bsp[col]]);
+    pts.push([ba, bs], [ga, gs]);
+    pts.sort((a, b) => a[0] - b[0]);
+    const first = Math.min(pts[0][0], ba);
+    pts.unshift([0, 0], [first * 0.72, 0]);
+    const last = pts[pts.length - 1];
+    if (last[0] < 178) pts.push([180, last[1] * (last[0] >= 165 ? 0.95 : 0.85)]);   // VPP charts often stop at 160°
+    const out = new Float32Array(181);
+    for (let a = 0; a <= 180; a++) {
+      let i = 0; while (i < pts.length - 2 && pts[i + 1][0] < a) i++;
+      const [a0, v0] = pts[i], [a1, v1] = pts[i + 1];
+      out[a] = v0 + (v1 - v0) * Math.min(1, Math.max(0, (a - a0) / ((a1 - a0) || 1)));
     }
     return out;
   }

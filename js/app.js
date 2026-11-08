@@ -1948,6 +1948,32 @@ function exportGpx(r) {
 }
 
 // ---------------- settings tab ----------------
+// Postavke → Obriši ClockW modele: tick the ones to delete (all other forecasts, models and routes stay)
+function cwDeleteHtml() {
+  const ids = cwIds(state.set);
+  if (!ids.length) return '<div class="note">Nema izrađenih ClockW modela.</div>';
+  return `${ids.map(id => { const f = state.set.fields[id], info = f.clockw || {};
+      return `<label class="check"><input type="checkbox" data-cwsel="${id}"><div><div class="t"><span class="dot" style="background:${mcol(id)}"></span>${modelById(id).name}</div>
+        <div class="d">${(info.models || []).map(x => modelById(x).name).join(', ')} · vrijedi do ${fmtTime(f.validUntil)}</div></div></label>`; }).join('')}
+    <div class="row" style="gap:6px"><button class="btn" id="cwSelAll" style="flex:1">Odaberi sve</button><button class="btn" id="cwSelNone" style="flex:1">Poništi odabir</button></div>
+    <button id="cwDelSel" class="btn block danger" disabled>Obriši odabrane ClockW</button>
+    <div class="note">Briše samo označene ClockW modele – ostale prognoze, modeli i rute ostaju.</div>`;
+}
+function bindCwDelete(el) {
+  const box = el.querySelector('#cwDelBox'); if (!box) return;
+  const btn = box.querySelector('#cwDelSel'); if (!btn) return;
+  const sel = () => [...box.querySelectorAll('[data-cwsel]:checked')].map(x => x.dataset.cwsel);
+  const upd = () => { const n = sel().length; btn.disabled = !n; btn.classList.remove('armed'); btn.textContent = n ? `Obriši odabrane ClockW (${n})` : 'Obriši odabrane ClockW'; };
+  box.querySelectorAll('[data-cwsel]').forEach(i => i.onchange = upd);
+  box.querySelector('#cwSelAll').onclick = () => { box.querySelectorAll('[data-cwsel]').forEach(i => { i.checked = true; }); upd(); };
+  box.querySelector('#cwSelNone').onclick = () => { box.querySelectorAll('[data-cwsel]').forEach(i => { i.checked = false; }); upd(); };
+  armDelete(btn, 'Odabrani ClockW modeli su obrisani', async () => {
+    const ids = sel(); for (const id of ids) await removeClockW(id, false);
+    if (state.set) await saveForecast(state.set);
+    useSet(state.set);
+    box.innerHTML = cwDeleteHtml(); bindCwDelete(el);
+  });
+}
 function renderSettingsTab() {
   const el = $('#tab-settings');
   const p = state.polar;
@@ -1983,7 +2009,10 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.7 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.8 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <h3>Obriši ClockW modele</h3>
+    <div id="cwDelBox">${cwDeleteHtml()}</div>
+    <h3>Obriši sve</h3>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
@@ -2010,6 +2039,7 @@ function renderSettingsTab() {
   };
   el.querySelector('#introT').onchange = e => { try { localStorage.setItem('ctw.intro', e.target.checked ? 'on' : 'off'); } catch { /* ignore */ } };
   el.querySelector('#introPlay').onclick = () => playIntro({ force: true });
+  bindCwDelete(el);
   el.querySelector('#clearData').onclick = async () => { if (!confirm('Obrisati spremljene prognoze i rute?')) return; await kv.del('forecast:latest'); await kv.del('routes:savedByCourse'); await kv.del('routes:saved'); await kv.del('routes:latest'); state.routes = {}; state.routesSaved = false; drawRoutes(); useSet(null); toast('Obrisano'); };
   drawPolarChart($('#polarChart'));
   if ($('#xoverChart')) drawXover($('#xoverChart'));

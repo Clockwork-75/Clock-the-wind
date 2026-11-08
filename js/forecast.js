@@ -265,5 +265,9 @@ export async function checkNewRuns(set) {
     .map(id => ({ id, runInit: meta[id].runInit }));
 }
 
-export async function saveForecast(set) { await kv.set('forecast:latest', set); }
+// never lets a full storage break a download: the forecast is used anyway, only not kept for offline
+export async function saveForecast(set) {
+  try { await kv.set('forecast:latest', set); saveForecast.lastError = null; return true; }
+  catch (e) { console.warn('saveForecast', e); saveForecast.lastError = e; return false; }
+}
 export async function loadForecast() { return kv.get('forecast:latest'); }

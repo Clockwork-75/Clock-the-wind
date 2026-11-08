@@ -991,6 +991,7 @@ ${AREA_UI()}
       <canvas class="chart" id="covChart" style="height:${28 + s.models.length * 22}px"></canvas>
       <div class="note">Traka = razdoblje koje model pokriva (svjetliji dio = dugoročno, svakih 3–6 h); zelena zona = regata. ● uz ime = dostupan je noviji run.</div>
       ${s.errors && s.errors.length ? `<div class="note warn">${s.errors.join('<br>')}</div>` : ''}
+      ${state.cloudError && settings.source === 'cloud' ? `<div class="note warn">Zadnji pokušaj paketa iz oblaka nije uspio: ${state.cloudError}. Stisni ⬇︎ Preuzmi paket iz oblaka za ponovni pokušaj.</div>` : ''}
       ${s.empty && s.empty.length ? `<div class="note warn">Model ne pokriva ovo područje: ${s.empty.map(id => modelById(id).name).join(', ')}</div>` : ''}
       <button id="btnCheckRuns" class="btn block">Provjeri nove runove modela</button>
       <button id="btnPackage" class="btn block">📲 Spremi paket za iPhone (AirDrop)</button>
@@ -1180,7 +1181,9 @@ async function doDownload(opts = {}) {
       catch (e) {   // cloud not reachable (e.g. the package was never built on GitHub): official GRIBs instead, never a dead end
         if (e.name === 'AbortError') throw e;
         src = 'direct';
-        if (!opts.auto) { toast('Paket iz oblaka nije dostupan – preuzimam službene GRIB-ove (ECMWF, GFS)', 5000); txt.textContent = 'Paket iz oblaka nije dostupan – preuzimam izravno…'; }
+        // say it every time (also on automatic refills): otherwise only ECMWF + GFS appear and nobody knows why
+        state.cloudError = `${e.message} (${fmtTime(Date.now())})`;
+        toast(`Paket iz oblaka nije dostupan (${e.message}) – privremeno samo ECMWF i GFS`, 6000); txt.textContent = 'Paket iz oblaka nije dostupan – preuzimam izravno…';
       }
     }
     const useDirect = src === 'direct';
@@ -1305,11 +1308,12 @@ map.on('moveend', maybeFillWindow);
 // re-download only the models that have a newer run than the one stored; merge into the current set
 async function loadCloud(bar, txt, auto = false) {
   const set = await fetchCloudPackage(settings.cloudUrl || CLOUD_DEFAULT, state.native, (f, t) => { if (t && txt) txt.textContent = t; });
+  state.cloudError = null;
   set.mode = 'forecast'; set.longTried = Date.now();   // the package carries its own range (up to 15 days)
   const hasWaves = m => { if (!m || m.nx === 1 || !m.vars || !m.vars.wave) return false; const a = m.vars.wave; for (let i = 0; i < a.length; i += 7) if (a[i] === a[i]) return true; return false; };
   if (state.set && !hasWaves(set.fields.marine) && hasWaves(state.set.fields.marine)) set.fields.marine = state.set.fields.marine;
   keepGribs(set, state.set); inheritCoverage(set, state.set);
-  await saveForecast(set);
+  if (!(await saveForecast(set)) && !auto) toast('Prognoza je učitana, ali memorija uređaja je puna – nije spremljena za rad bez interneta', 6000);
   if (!auto) { state.routes = {}; drawRoutes(); }
   state.newRuns = [];
   useSet(set);
@@ -1914,7 +1918,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.2 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
@@ -1990,6 +1994,10 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   // v1.5: the forecast area follows the map window by default (an old 'Cijeli Jadran' choice is reset once)
   if (!localStorage.getItem('ctw.v15area')) { if (settings.areaSel !== 'custom') settings.areaSel = 'view'; localStorage.setItem('ctw.v15area', '1'); }
   if (!settings.source) settings.source = state.native ? 'direct' : 'cloud';
+  // v2.3.2: the cloud package (ICON-2I, ICON-D2, ICON-EU, ECMWF, GFS · up to 15 days · no limits) is the source for everyone
+  if (!localStorage.getItem('ctw.v232src')) { settings.source = 'cloud'; localStorage.setItem('ctw.v232src', '1'); }
+  // remove copies of earlier cloud packages that older versions left in the browser cache (they filled the storage)
+  if ('caches' in window) caches.keys().then(ks => ks.forEach(k => caches.open(k).then(c => c.keys().then(rs => rs.forEach(r => { if (/\.ctw(\?|$)|[?&]t=\d/.test(r.url)) c.delete(r); }))))).catch(() => {});
   if (state.native) {
     if (!settings.source) settings.source = 'direct';
     if (!settings.directModels) settings.directModels = DIRECT.map(m => m.id);

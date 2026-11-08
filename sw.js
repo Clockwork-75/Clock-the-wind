@@ -1,5 +1,5 @@
 // Clock the Wind service worker: app shell offline + cache-as-you-go map tiles.
-const SHELL = 'ctw-shell-v43';
+const SHELL = 'ctw-shell-v44';
 const TILES = 'ctw-tiles-v2';   // v2: old cache may hold CARTO "API key required" tiles
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
@@ -19,7 +19,9 @@ const isTile = u => /basemaps\.cartocdn\.com|arcgisonline\.com|openseamap\.org|e
 const isApi = u => /open-meteo\.com|meteomatics\.com/.test(u);
 self.addEventListener('fetch', e => {
   const url = e.request.url;
-  if (e.request.method !== 'GET' || isApi(url) || url.includes('/proxy')) return; // forecasts are cached in IndexedDB by the app
+  // forecasts are kept in IndexedDB by the app – never in the cache (each cloud package is ~11 MB; caching every
+  // download under its own ?t= address filled the phone's storage and then new forecasts could not be saved)
+  if (e.request.method !== 'GET' || isApi(url) || url.includes('/proxy') || /\.ctw(\?|$)|\.grib2?(\?|$)|[?&]t=\d/.test(url)) return;
   if (isTile(url)) {
     e.respondWith(caches.open(TILES).then(async c => {
       const hit = await c.match(url);

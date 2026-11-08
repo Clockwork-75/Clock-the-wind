@@ -147,6 +147,6 @@ export async function buildClockW({ set, ids, num = 1, t0, hours = 24, landAt, m
   // mean confidence over sea points of the first 12 hours (summary for the panel)
   let cs = 0, cn = 0; for (let o = 0; o < Math.min(T, 12) * N; o += 7) { const v = V.conf[o]; if (v === v && coast[o % N] < 1) { cs += v; cn++; } }
   const meta = clockwMeta(num);
-  return { ...grid, model: meta.id, times, vars: V, validUntil: times[T - 1], meta,
+  return { ...grid, model: meta.id, times, vars: V, validUntil: times[T - 1], meta, strictTime: true,
     run: { runInit: Date.now() }, clockw: { models, hours, built: Date.now(), share, meanConf: cn ? cs / cn : null, short: win.short } };
 }

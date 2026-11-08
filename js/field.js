@@ -33,6 +33,11 @@ function bil(a, off, f, x0, y0, tx, ty) {
 // A field may carry `ext`: the same model further ahead (days 4–15, coarser in time/space). Past the field's own
 // last step the extension is used; past the extension's end the last state stays (frozen, like Windy).
 export function sample(f, names, lat, lon, t, out = []) {
+  // ClockW: valid only for its own hours – before its start or after its end there is simply no ClockW
+  if (f.strictTime && (t < f.times[0] - 1800000 || t > (f.validUntil || f.times[f.times.length - 1]) + 1800000)) {
+    for (let i = 0; i < names.length; i++) out[i] = NaN;
+    return out;
+  }
   if (f.ext && t > f.times[f.times.length - 1]) {
     own(f.ext, names, lat, lon, t, out);
     if (f.fallback) fillFromFallback(f, names, lat, lon, t, out);

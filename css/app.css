@@ -412,3 +412,9 @@ body[data-basemap="offline"] .ctw-hill { mix-blend-mode: soft-light; }
 /* land-detail tiles missing (weak signal): land keeps the chart's own colour instead of going blank */
 body.land-detail[data-basemap="nautical"] #map, body.land-detail[data-basemap="nautical"] .leaflet-container { background: #f2e6c2; }
 body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="offline"] .leaflet-container { background: #3a3e44; }
+
+/* ✕ on ClockW tabs */
+.chip .chipx { margin-left: 6px; padding: 0 5px; border-radius: 6px; font-size: 11px; font-weight: 800; opacity: .7; background: rgba(255,255,255,.08); }
+.chip .chipx:hover { opacity: 1; background: rgba(255,90,90,.35); }
+.chip.armed { box-shadow: 0 0 0 2px #ff5a5a inset; }
+.chip.armed .chipx { opacity: 1; background: #d64541; color: #fff; }

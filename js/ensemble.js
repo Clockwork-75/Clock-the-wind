@@ -17,9 +17,10 @@
 import { sample } from './field.js';
 import { modelById } from './forecast.js';
 
-export const CLOCKW_ID = 'clockw';
-export const CLOCKW_META = { id: CLOCKW_ID, name: 'ClockW', res: 'konsenzus', color: '#18ffff', note: 'Naša prognoza: konsenzus odabranih modela' };
-export const isDerived = id => id === CLOCKW_ID || String(id).startsWith('grib:');
+// Several ClockW forecasts can exist side by side (ClockW1, ClockW2 … each from its own choice of models)
+export const isClockW = id => /^clockw\d*$/.test(String(id));
+export const clockwMeta = n => ({ id: 'clockw' + n, name: 'ClockW' + n, res: 'konsenzus', color: '#18ffff', note: 'Naša prognoza: konsenzus odabranih modela' });
+export const isDerived = id => isClockW(id) || String(id).startsWith('grib:');
 
 const H = 3600000;
 // model resolution in km (from the model list; otherwise from its grid)
@@ -63,7 +64,7 @@ export function clockwWindow(set, ids, t0, hours) {
   return { t0: start, t1: end, short: end < start + hours * H };
 }
 
-export async function buildClockW({ set, ids, t0, hours = 24, landAt, maxPts = 36000, progress = () => {}, signal }) {
+export async function buildClockW({ set, ids, num = 1, t0, hours = 24, landAt, maxPts = 36000, progress = () => {}, signal }) {
   const models = ids.filter(id => set.fields[id] && set.fields[id].times && !isDerived(id));
   if (models.length < 2) throw new Error('Za ClockW odaberi barem dva modela');
   const fs = models.map(id => set.fields[id]);
@@ -145,6 +146,7 @@ export async function buildClockW({ set, ids, t0, hours = 24, landAt, maxPts = 3
   const share = Object.fromEntries(models.map((id, k) => [id, agree[k] / tot]));
   // mean confidence over sea points of the first 12 hours (summary for the panel)
   let cs = 0, cn = 0; for (let o = 0; o < Math.min(T, 12) * N; o += 7) { const v = V.conf[o]; if (v === v && coast[o % N] < 1) { cs += v; cn++; } }
-  return { ...grid, model: CLOCKW_ID, times, vars: V, validUntil: times[T - 1], meta: CLOCKW_META,
+  const meta = clockwMeta(num);
+  return { ...grid, model: meta.id, times, vars: V, validUntil: times[T - 1], meta,
     run: { runInit: Date.now() }, clockw: { models, hours, built: Date.now(), share, meanConf: cn ? cs / cn : null, short: win.short } };
 }

@@ -12,10 +12,9 @@ import { PRESETS, REGATTAS, PLACES } from './courses.js';
 import { speedDirFromUV, distNm, bearing, fmtLatLon, angDiff } from './geo.js';
 import { kv } from './db.js';
 import { playIntro } from './intro.js';
-import { buildClockW, clockwWindow, CLOCKW_ID, CLOCKW_META, isDerived } from './ensemble.js';
+import { buildClockW, clockwWindow, isClockW, clockwMeta, isDerived } from './ensemble.js';
 playIntro();
 
-registerModel(CLOCKW_META);
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const TZ = 'Europe/Zagreb';
@@ -198,12 +197,14 @@ const MODEL_COLORS = {
   italia_meteo_arpae_icon_2i: '#ff1744', icon_d2: '#ff9100', icon_eu: '#ffffff', ecmwf_ifs: '#e040fb', ecmwf: '#e040fb',
   gfs_seamless: '#ffee00', gfs: '#ffee00', knmi_harmonie_arome_europe: '#111111', meteofrance_arpege_europe: '#ff80ab',
   ukmo_global_deterministic_10km: '#8d6e63', ecmwf_aifs025_single: '#9e9e9e',
-  'mm:mix': '#ff6e40', 'mm:ecmwf-ifs': '#7c4dff', 'mm:mm-swiss1k': '#f8bbd0', clockw: '#18ffff',
+  'mm:mix': '#ff6e40', 'mm:ecmwf-ifs': '#7c4dff', 'mm:mm-swiss1k': '#f8bbd0',
 };
+const CLOCKW_COLORS = ['#18ffff', '#64ffda', '#00b8d4', '#b2ff59', '#40c4ff', '#a7ffeb'];   // ClockW1, ClockW2, … (turquoise family)
 const EXTRA_COLORS = ['#ff6e40', '#7c4dff', '#f8bbd0', '#ffab40', '#b71c1c', '#ce93d8'];   // imported GRIB files
 function mcol(id) {
   const k = String(id).replace(/^dir_/, '');
   if (MODEL_COLORS[k]) return MODEL_COLORS[k];
+  const cw = /^clockw(\d*)$/.exec(k); if (cw) return CLOCKW_COLORS[((+cw[1] || 1) - 1) % CLOCKW_COLORS.length];
   let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return EXTRA_COLORS[h % EXTRA_COLORS.length];
 }
@@ -279,10 +280,16 @@ const sailSetOf = b => b && SAIL_SETS[b.sails] ? b.sails : null;
 function useSet(set) {
   state.set = set;
   if (!set) { renderChips(); return; }
+  if (set.fields.clockw) {   // 2.3: one 'clockw' → ClockW1 (own tab at the end)
+    const f = set.fields.clockw; delete set.fields.clockw; f.meta = clockwMeta(1); f.model = 'clockw1';
+    set.fields.clockw1 = f; set.models = [...set.models.filter(x => x !== 'clockw' && x !== 'clockw1'), 'clockw1'];
+    if (state.modelId === 'clockw') state.modelId = 'clockw1';
+  }
+  pruneClockW(set);
   const pref = ['italia_meteo_arpae_icon_2i', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
   if (!state.modelId || !set.fields[state.modelId]) state.modelId = pref.find(id => set.fields[id]) || set.models[0];
   state.wind = withFallback(set, state.modelId);
-  if (state.layer === 'conf' && !set.fields[CLOCKW_ID]) { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); renderLegend(); }
+  if (state.layer === 'conf' && !cwIds(set).length) { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); renderLegend(); }
   drawArea();
   state.marine = set.fields.marine;
   set.models.forEach(id => { if (set.fields[id].meta) registerModel(set.fields[id].meta); });
@@ -307,6 +314,7 @@ function withFallback(set, id) {
 // imported GRIB files stay when a new forecast arrives
 function keepGribs(set, old) {
   if (!old) return;
+  keepClockW(set, old);
   for (const id of old.models.filter(x => x.startsWith('grib:'))) if (!set.fields[id]) { set.fields[id] = old.fields[id]; set.models.push(id); }
 }
 const extentOf = f => ({ s: f.lat0, n: f.lat0 + f.dlat * (f.ny - 1), w: f.lon0, e: f.lon0 + f.dlon * (f.nx - 1) });
@@ -494,8 +502,9 @@ addEventListener('resize', drawTimeline);
 function redraw() { setTime(state.time); renderLegend(); particleLayer.seed(); }
 $$('#layerbar [data-layer]').forEach(b => b.onclick = () => {
   if (b.dataset.layer === 'conf') {   // confidence exists only for our ClockW forecast
-    if (!state.set || !state.set.fields[CLOCKW_ID]) { toast('Pouzdanost postoji za ClockW prognozu – izradi je u kartici Prognoza (✦ ClockW)', 4500); return; }
-    if (state.modelId !== CLOCKW_ID) { state.modelId = CLOCKW_ID; state.wind = withFallback(state.set, CLOCKW_ID); renderChips(); }
+    const cws = cwIds(state.set);
+    if (!cws.length) { toast('Pouzdanost postoji za ClockW prognozu – izradi je u kartici Prognoza (✦ ClockW)', 4500); return; }
+    if (!isClockW(state.modelId)) { const id = cws[cws.length - 1]; state.modelId = id; state.wind = withFallback(state.set, id); renderChips(); }
   }
   state.layer = settings.layer = b.dataset.layer; saveSettings();
   $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x === b));
@@ -758,8 +767,8 @@ function updatePointCard() {
     const m = modelById(id);
     const [tws, twd] = speedDirFromUV(out[0], out[1]);
     const valid = tws === tws;
-    const cf = id === CLOCKW_ID ? sample(s.fields[id], ['conf'], point.lat, point.lon, state.time, [])[0] : NaN;
-    return `<tr style="${id === state.modelId ? 'background:rgba(255,255,255,.06)' : ''}"><td><span class="dot" style="background:${mcol(m.id)}"></span>${id === CLOCKW_ID ? '✦ ' : ''}${m.name}${cf === cf ? ` <small class="cfb" style="color:${cf >= 70 ? '#4cd18a' : cf >= 45 ? '#f2cf35' : '#ff6b6b'}">${Math.round(cf)}%</small>` : ''}</td>
+    const cf = isClockW(id) ? sample(s.fields[id], ['conf'], point.lat, point.lon, state.time, [])[0] : NaN;
+    return `<tr style="${id === state.modelId ? 'background:rgba(255,255,255,.06)' : ''}"><td><span class="dot" style="background:${mcol(m.id)}"></span>${isClockW(id) ? '✦ ' : ''}${m.name}${cf === cf ? ` <small class="cfb" style="color:${cf >= 70 ? '#4cd18a' : cf >= 45 ? '#f2cf35' : '#ff6b6b'}">${Math.round(cf)}%</small>` : ''}</td>
       <td>${valid ? `${dirArrow(twd)} ${Math.round(twd)}°` : '–'}</td><td><b>${valid ? tws.toFixed(1) : '–'}</b></td><td>${out[2] === out[2] ? out[2].toFixed(0) : '–'}</td>
       ${hasP ? `<td>${out[3] === out[3] ? out[3].toFixed(1) : '–'}</td>` : ''}${hasC ? `<td>${out[4] === out[4] ? Math.round(out[4]) : '–'}${out[5] > 0.5 ? ' ⚡' : ''}</td>` : ''}</tr>`;
   }).join('');
@@ -1082,33 +1091,60 @@ const cwSelected = () => { const c = cwCandidates(); return (Array.isArray(setti
 // forecast: from now · regatta: from an hour before the start (if it is still ahead)
 function cwStart() { const now = Math.floor(Date.now() / H1) * H1; if (fcMode()) return now; const st = raceStart(); return st > now + H1 ? Math.floor(st / H1) * H1 - H1 : now; }
 let cwBusy = false;
+// all ClockW forecasts of a set, in creation order (ClockW1, ClockW2, …)
+function cwIds(set) { return set && set.models ? set.models.filter(id => isClockW(id) && set.fields[id]) : []; }
+// lowest free number, so names stay short (ClockW1 deleted → the next one is ClockW1 again)
+function cwNextNumber(set) { const used = new Set(cwIds(set).map(id => +id.replace('clockw', '') || 1)); let n = 1; while (used.has(n)) n++; return n; }
 function clockwHtml() {
-  const s = state.set, cand = cwCandidates(), sel = cwSelected(), f = s.fields[CLOCKW_ID], info = f && f.clockw;
+  const s = state.set, cand = cwCandidates(), sel = cwSelected(), list = cwIds(s);
   const win = cand.length ? clockwWindow(s, sel.length ? sel : cand, cwStart(), cwHours()) : null;
-  const share = info ? Object.entries(info.share).sort((a, b) => b[1] - a[1]) : [];
+  const cards = list.map(id => {
+    const f = s.fields[id], info = f.clockw || {}, m = modelById(id);
+    const share = info.share ? Object.entries(info.share).sort((a, b) => b[1] - a[1]) : [];
+    return `<div class="cwinfo" style="border-color:${mcol(id)}88"><b><span class="dot" style="background:${mcol(id)}"></span>✦ ${m.name}</b> · izrađena ${fmtTime(info.built || f.run.runInit)} · vrijedi ${fmtTime(f.times[0])} → ${fmtTime(f.validUntil)}${info.meanConf != null ? ` · pouzdanost <b>${Math.round(info.meanConf)} %</b>` : ''}
+      <div class="note" style="margin:4px 0 2px">Modeli: <b>${(info.models || []).map(x => modelById(x).name).join(', ')}</b></div>
+      <div class="cwshare">${share.map(([mid, v]) => `<div><span><span class="dot" style="background:${mcol(mid)}"></span>${modelById(mid).name}</span><i style="width:${Math.max(2, v * 100).toFixed(0)}%;background:${mcol(mid)}"></i><em>${Math.round(v * 100)} %</em></div>`).join('')}</div>
+      <div class="row" style="gap:6px;margin-top:8px"><button class="btn" data-cwshow="${id}" style="flex:1">Prikaži</button><button class="btn" data-cwconf="${id}" style="flex:1">★ Pouzdanost</button><button class="btn danger" data-cwdel="${id}" style="flex:1">Obriši</button></div></div>`;
+  }).join('');
   return `<h3>✦ ClockW – naša prognoza</h3>
-    <div class="note">Aplikacija od odabranih modela izrađuje <b>jednu, najvjerojatniju prognozu</b>: za svaku točku i sat gleda gdje se modeli slažu po smjeru i jačini, modelima koji odskaču od ostalih smanjuje težinu, a <b>uz obalu i otoke daje prednost modelima visoke rezolucije</b> (ICON-2I, ICON-D2, HARMONIE) jer jedini vide ubrzanja u kanalima i zavjetrine. Uz nju se računa i <b>karta pouzdanosti</b> (sloj ★ Pouzdanost). Izrađuje se samo kad stisneš gumb.</div>
+    <div class="note">Na zahtjev, od modela koje odabereš, aplikacija izrađuje <b>najvjerojatniju prognozu</b>: gdje se modeli slažu po smjeru i jačini, modeli koji odskaču gube težinu, a <b>uz obalu i otoke prednost imaju modeli visoke rezolucije</b> (ICON-2I, ICON-D2, HARMONIE). Svaka izrada dodaje novi tab gore (<b>ClockW1, ClockW2…</b>) uz ostale modele; ostaje dok joj ne istekne vrijeme ili je ne obrišeš. U Routingu je biraš kao i svaki drugi model.</div>
+    ${cards ? `<div class="row"><label>Izrađene ClockW prognoze</label></div>${cards}` : ''}
     ${cand.length < 2 ? '<div class="note warn">Za ClockW trebaju barem dva modela u prognozi – preuzmi prognozu s više modela.</div>' : `
-    <div class="row"><label>Modeli u ClockW</label></div>
+    <div class="row"><label>Nova ClockW – modeli</label></div>
     ${cand.map(id => { const m = modelById(id); return `<label class="check"><input type="checkbox" data-cw="${id}" ${sel.includes(id) ? 'checked' : ''}><div><div class="t"><span class="dot" style="background:${mcol(id)}"></span>${m.name} <small style="color:var(--muted)">${m.res || ''}</small></div></div></label>`; }).join('')}
     <div class="row"><label>Razdoblje</label></div>
     <div class="seg"><button data-cwh="24" class="${cwHours() === 24 ? 'on' : ''}">24 sata</button><button data-cwh="48" class="${cwHours() === 48 ? 'on' : ''}">48 sati</button></div>
     ${win ? `<div class="note">${fmtTime(win.t0)} → ${fmtTime(win.t1)} ${fcMode() ? '(od sada)' : '(od sata prije starta regate)'}${win.short ? ` · <b>odabrani modeli ne sežu punih ${cwHours()} h</b> – ClockW ide dokle sežu barem dva modela` : ''}</div>` : ''}
-    <button id="btnClockW" class="btn primary block" ${sel.length < 2 || cwBusy ? 'disabled' : ''}>✦ Izradi ClockW prognozu (${sel.length} modela · ${cwHours()} h)</button>
-    <div class="progress"><div id="cwBar"></div></div><div id="cwText" class="note"></div>`}
-    ${info ? `<div class="cwinfo"><b>✦ ClockW izrađena ${fmtTime(info.built)}</b> · ${fmtTime(f.times[0])} → ${fmtTime(f.validUntil)}${info.meanConf != null ? ` · prosječna pouzdanost <b>${Math.round(info.meanConf)} %</b>` : ''}
-      <div class="cwshare">${share.map(([id, v]) => `<div><span><span class="dot" style="background:${mcol(id)}"></span>${modelById(id).name}</span><i style="width:${Math.max(2, v * 100).toFixed(0)}%;background:${mcol(id)}"></i><em>${Math.round(v * 100)} %</em></div>`).join('')}</div>
-      <div class="note" style="margin:4px 0 0">Udio = koliko je svaki model u prosjeku utjecao na ClockW (manje = češće je odskakao od ostalih ili je grublje rezolucije uz obalu).</div>
-      <div class="row" style="gap:6px;margin-top:8px"><button id="cwShow" class="btn" style="flex:1">Prikaži ClockW</button><button id="cwConf" class="btn" style="flex:1">★ Karta pouzdanosti</button></div>
-      <button id="cwDel" class="btn block danger">Obriši ClockW</button></div>` : ''}`;
+    <button id="btnClockW" class="btn primary block" ${sel.length < 2 || cwBusy ? 'disabled' : ''}>✦ Izradi ClockW${cwNextNumber(s)} (${sel.length} modela · ${cwHours()} h)</button>
+    <div class="progress"><div id="cwBar"></div></div><div id="cwText" class="note"></div>`}`;
 }
 function bindClockW(el) {
   el.querySelectorAll('[data-cw]').forEach(i => i.onchange = () => { settings.cwModels = [...el.querySelectorAll('[data-cw]:checked')].map(x => x.dataset.cw); saveSettings(); renderDataTab(); });
   el.querySelectorAll('[data-cwh]').forEach(b => b.onclick = () => { settings.cwHours = +b.dataset.cwh; saveSettings(); renderDataTab(); });
   const go = el.querySelector('#btnClockW'); if (go) go.onclick = doClockW;
-  const sh = el.querySelector('#cwShow'); if (sh) sh.onclick = () => { if (state.layer === 'conf') { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); } selectModel(CLOCKW_ID); renderLegend(); toast('Prikazana ClockW prognoza'); };
-  const cf = el.querySelector('#cwConf'); if (cf) cf.onclick = () => $('#layerbar [data-layer=conf]').click();
-  const del = el.querySelector('#cwDel'); if (del) armDelete(del, 'ClockW je obrisana', async () => { const s = state.set; if (!s) return; delete s.fields[CLOCKW_ID]; s.models = s.models.filter(x => x !== CLOCKW_ID); if (state.routes[CLOCKW_ID]) { delete state.routes[CLOCKW_ID]; drawRoutes(); } if (state.modelId === CLOCKW_ID) state.modelId = null; await saveForecast(s); useSet(s); renderDataTab(); });
+  el.querySelectorAll('[data-cwshow]').forEach(b => b.onclick = () => { if (state.layer === 'conf') { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); } selectModel(b.dataset.cwshow); renderLegend(); toast(`Prikazana ${modelById(b.dataset.cwshow).name}`); });
+  el.querySelectorAll('[data-cwconf]').forEach(b => b.onclick = () => { selectModel(b.dataset.cwconf); $('#layerbar [data-layer=conf]').click(); });
+  el.querySelectorAll('[data-cwdel]').forEach(b => armDelete(b, `${modelById(b.dataset.cwdel).name} je obrisana`, async () => { await removeClockW(b.dataset.cwdel); renderDataTab(); }));
+}
+async function removeClockW(id, save = true) {
+  const s = state.set; if (!s || !s.fields[id]) return;
+  delete s.fields[id]; s.models = s.models.filter(x => x !== id);
+  if (state.routes[id]) { delete state.routes[id]; drawRoutes(); }
+  if (state.routeModels) state.routeModels = state.routeModels.filter(x => x !== id);
+  if (state.modelId === id) state.modelId = null;
+  if (save) await saveForecast(s);
+  useSet(s);
+}
+// a ClockW whose last hour has passed is removed by itself
+function pruneClockW(set) {
+  if (!set) return false; let k = 0;
+  for (const id of cwIds(set)) if ((set.fields[id].validUntil || 0) < Date.now() - H1) { delete set.fields[id]; set.models = set.models.filter(x => x !== id); if (state.modelId === id) state.modelId = null; k++; }
+  return k > 0;
+}
+// ClockW forecasts survive a new forecast download (manual or automatic) – they stay until expiry or deletion
+function keepClockW(nw, old) {
+  if (!nw || !old || nw === old) return;
+  for (const id of cwIds(old)) if (!nw.fields[id] && (old.fields[id].validUntil || 0) >= Date.now() - H1) { nw.fields[id] = old.fields[id]; nw.models.push(id); }
 }
 async function doClockW() {
   const s = state.set; if (!s || cwBusy) return;
@@ -1117,16 +1153,17 @@ async function doClockW() {
   const btn = $('#btnClockW'); if (btn) btn.disabled = true;
   const prog = (f, t) => { const b = $('#cwBar'), x = $('#cwText'); if (b && f != null) b.style.width = (f * 100).toFixed(0) + '%'; if (x && t) x.textContent = t; };
   try {
-    const t0 = performance.now();
-    const f = await buildClockW({ set: s, ids, t0: cwStart(), hours: cwHours(), landAt: state.landAt, progress: prog });
-    if (state.set !== s) return toast('Prognoza se promijenila tijekom izrade – pokreni ClockW ponovno', 4500);
-    s.fields[CLOCKW_ID] = f;
-    s.models = [CLOCKW_ID, ...s.models.filter(x => x !== CLOCKW_ID)];
-    if (state.routes[CLOCKW_ID]) markStale();
-    await saveForecast(s);
-    state.modelId = CLOCKW_ID; useSet(s); setTime(Math.max(f.times[0], Math.min(f.validUntil, state.time)));
-    console.log('ClockW', Math.round(performance.now() - t0), 'ms', f.nx + '×' + f.ny, f.times.length + ' h');
-    toast(`✦ ClockW izrađena: ${ids.length} modela, ${f.times.length - 1} h${f.clockw.meanConf != null ? `, pouzdanost ~${Math.round(f.clockw.meanConf)} %` : ''}`, 4500);
+    const t0 = performance.now(), n = cwNextNumber(s);
+    const f = await buildClockW({ set: s, ids, num: n, t0: cwStart(), hours: cwHours(), landAt: state.landAt, progress: prog });
+    const cur = state.set; if (!cur) return;
+    keepClockW(cur, s);                                   // a refill during the build: keep the others
+    const id = f.meta.id;
+    cur.fields[id] = f; cur.models = [...cur.models.filter(x => x !== id), id];   // its own tab, after all the others
+    registerModel(f.meta);
+    await saveForecast(cur);
+    useSet(cur);                                          // the model you were looking at stays on screen
+    console.log(id, Math.round(performance.now() - t0), 'ms', f.nx + '×' + f.ny, f.times.length + ' h');
+    toast(`✦ ${f.meta.name} izrađena (${ids.length} modela, ${f.times.length - 1} h${f.clockw.meanConf != null ? `, pouzdanost ~${Math.round(f.clockw.meanConf)} %` : ''}) – tab gore`, 5000);
   } catch (e) { console.error(e); prog(null, e.message); toast(e.message, 4500); }
   finally { cwBusy = false; if ($('#tab-data').classList.contains('on')) renderDataTab(); }
 }
@@ -1477,7 +1514,7 @@ function renderRoutingTab() {
   const el = $('#tab-routing'); const s = state.set;
   const start = raceStart();
   const routable = s ? s.models.filter(id => s.fields[id].validUntil > start && s.fields[id].times[0] <= start) : [];
-  if (!state.routeModels) state.routeModels = routable.slice();
+  if (!state.routeModels) state.routeModels = routable.filter(id => !isClockW(id));   // ClockW: only when you tick it
   const stale = Object.values(state.routes).some(r => r.stale);
   el.innerHTML = `
     <h3>Brod</h3>
@@ -1930,7 +1967,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.5 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.6 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <button id="clearData" class="btn warn block">Obriši spremljene prognoze i rute</button>`;
   el.querySelector('#basemap').onchange = e => { state.basemap = settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
@@ -2037,7 +2074,7 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   // model-run watcher: tells you when a newer run is available than the one you raced with
   const watch = async () => { if (state.set && navigator.onLine) { state.newRuns = await checkNewRuns(state.set).catch(() => []); renderChips(); $('#btnRefresh').classList.toggle('badge', state.newRuns.length > 0); } };
   watch(); setInterval(watch, 20 * 60000);
-  setInterval(() => state.set && setTime(state.time), 60000); // keep countdown fresh
+  setInterval(() => { if (!state.set) return; if (pruneClockW(state.set)) { saveForecast(state.set); useSet(state.set); } setTime(state.time); }, 60000); // keep countdown fresh · expired ClockW go
 })();
 window.ctw = { state, settings, course, map,
   fn: { courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },

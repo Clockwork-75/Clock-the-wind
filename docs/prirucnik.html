@@ -243,7 +243,8 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
     <li>Preuzmi prognozu s više modela (kartica <b class="ui">Prognoza</b>). Što više dobrih modela, to bolje (npr. ICON-2I, ICON-D2, HARMONIE, ICON-EU, ECMWF).</li>
     <li>U kartici <b class="ui">Prognoza</b>, odlomak <b>✦ ClockW – naša prognoza</b>, označi modele koji ulaze u izračun (najmanje dva).</li>
     <li>Odaberi <b class="ui">24 sata</b> ili <b class="ui">48 sati</b>. U načinu „Samo prognoza“ računa se od sada, a u načinu regate od sata prije starta.</li>
-    <li>Stisni <b class="ui">✦ Izradi ClockW prognozu</b>. Traje nekoliko sekundi. ClockW se pojavi kao prvi tab gore (tirkizna boja) i odmah se prikaže.</li>
+    <li>Stisni <b class="ui">✦ Izradi ClockW1</b>. Traje nekoliko sekundi. Pojavi se novi tab gore, iza ostalih modela (<b>ClockW1</b>, tirkizno). Prikaz ostaje na modelu koji gledaš – na ClockW prijeđeš dodirom na njen tab.</li>
+    <li>Možeš izraditi i više ClockW prognoza od različitih modela (<b>ClockW1</b>, <b>ClockW2</b>…). Od kojih je modela koja izrađena piše u kartici Prognoza, odlomak ClockW.</li>
   </ol>
   <h3>Kako radi</h3>
   <ul>
@@ -256,9 +257,8 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   <p>Uz ClockW se računa <b>pouzdanost 0–100 %</b>: koliko su modeli blizu rezultata. Sloj <b class="ui">★ Pouzdanost</b> (desna traka) boji kartu: zeleno = modeli se slažu, crveno = razilaze se. U panelu piše prosječna pouzdanost i <b>udio svakog modela</b>: koliko je utjecao na ClockW (mali udio = često je odskakao ili je pregrub uz obalu).</p>
   <h3>Korištenje</h3>
   <ul>
-    <li>ClockW je model kao i ostali: prikaz, prognoza u točki, <b>routing</b>, usporedba i replay.</li>
-    <li>Spremljena je s prognozom i radi offline. Kod novog ručnog preuzimanja prognoze nestaje, jer je izrađena iz starih podataka; izradi je ponovno.</li>
-    <li><b class="ui">Obriši ClockW</b> (dva dodira) je uklanja.</li>
+    <li>Svaka ClockW je model kao i ostali: prikaz, prognoza u točki, usporedba i replay. U <b>Routingu</b> je uključuješ kvačicom kad želiš (nije uključena sama).</li>
+    <li>Ostaje (i offline, i kod novih preuzimanja prognoze) <b>dok joj ne istekne vrijeme</b> – tada se sama ukloni – ili dok je ne obrišeš gumbom <b class="ui">Obriši</b> uz nju (dva dodira).</li>
   </ul>
   <div class="tip">ClockW je statistički konsenzus modela, a ne novi meteorološki model. Ne može izmisliti efekt otoka koji nijedan model ne vidi, nego daje prednost modelima koji ga vide. Najkorisnija je kad su u njoj barem dva visoko-rezolucijska modela.</div>
 </section>

@@ -1,0 +1,19 @@
+# Diagnostic only (on demand): checks ClockW against its models on the real cloud package.
+name: ClockW provjera
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Preuzmi paket iz oblaka
+        run: curl -sSfL -o /tmp/latest.ctw "https://clockwork-75.github.io/Clock-the-wind/data/latest.ctw?t=$(date +%s)" && ls -la /tmp/latest.ctw
+      - name: Usporedi ClockW s modelima
+        run: node tools/diag/clockw_check.mjs /tmp/latest.ctw

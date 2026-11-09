@@ -1818,7 +1818,10 @@ function routeAt(r, t) {
   if (t >= tr[tr.length - 1].t) return tr[tr.length - 1];
   let i = 1; while (tr[i].t < t) i++;
   const a = tr[i - 1], b = tr[i], f = (t - a.t) / (b.t - a.t);
-  return { ...a, lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
+  // wind and speed between two route points change smoothly (as the wind on the map does), not in 10-minute steps
+  const lin = k => (a[k] === a[k] && b[k] === b[k] && a[k] != null && b[k] != null) ? a[k] + (b[k] - a[k]) * f : a[k];
+  const twd = (a.twd === a.twd && b.twd === b.twd) ? (a.twd + ((((b.twd - a.twd) % 360) + 540) % 360 - 180) * f + 360) % 360 : a.twd;
+  return { ...a, lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f, tws: lin('tws'), gust: lin('gust'), bsp: lin('bsp'), twd };
 }
 function updateBoats() {
   const n = Object.keys(boatMarkers).length;
@@ -2102,7 +2105,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 3.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 3.2 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

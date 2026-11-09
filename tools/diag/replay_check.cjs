@@ -2,14 +2,17 @@
 // replay. While the replay runs, record what the MAP shows (model, time, wind sampled from the map's field at the
 // followed boat, a checksum of the colour canvas, number of redraws) next to what the BOAT shows (route wind at that time).
 // If the map is frozen, the map wind / checksum stay put while the boat's wind changes.
-let chromium; try { ({ chromium } = require('playwright')); } catch { ({ chromium } = require('playwright-core')); }
+let pw; try { pw = require('playwright'); } catch { pw = require('playwright-core'); }
+const useWebkit = process.env.ENGINE === 'webkit';
+const chromium = useWebkit ? pw.webkit : pw.chromium;
 const base = process.argv[2] || 'http://localhost:8080/';
 const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta later in the week)
 (async () => {
-  const b = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+  const b = await chromium.launch(!useWebkit && process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+  console.log('ENGINE', useWebkit ? 'WebKit (Safari)' : 'Chromium');
   for (const [label, vp, slow] of [['Mac', { width: 1440, height: 900 }, 1], ['iPad (CPU 4x sporiji)', { width: 1180, height: 820, deviceScaleFactor: 2 }, 4]]) {
     const p = await b.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.deviceScaleFactor || 1 });
-    if (slow > 1) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: slow }); }
+    if (slow > 1 && !useWebkit) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: slow }); }
     p.on('pageerror', e => console.log('PAGE ERROR', e.message));
     p.on('console', m => { if (m.type() === 'error' || m.text().startsWith('routing took')) console.log('console:', m.text().slice(0, 200)); });
     await p.addInitScript(() => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'race', source: 'cloud', replaySpeed: 120 })); });

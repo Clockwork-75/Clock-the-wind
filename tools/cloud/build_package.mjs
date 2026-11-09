@@ -71,8 +71,12 @@ async function ecmwf() {
   const msgs = [];
   await pool(steps, 6, async h => {
     const idx = await get(base(run, h) + '.index'); if (!idx) return;
-    const want = new Set(['10u', '10v', '10fg']);
-    for (const j of idx.toString().trim().split('\n').map(l => JSON.parse(l)).filter(j => want.has(j.param))) {
+    // gusts: '10fg' (max since the previous step) – later steps can carry it under another name ('10fg3', '10fg6');
+    // take whichever the step has, otherwise the gusts end early and the map would show stale ones
+    const idxs = idx.toString().trim().split('\n').map(l => JSON.parse(l));
+    const g = ['10fg', '10fg3', '10fg6', 'i10fg'].find(n => idxs.some(j => j.param === n));
+    const want = new Set(['10u', '10v', ...(g ? [g] : [])]);
+    for (const j of idxs.filter(j => want.has(j.param))) {
       const b = await get(base(run, h) + '.grib2', { Range: `bytes=${j._offset}-${j._offset + j._length - 1}` });
       if (b) addMsgs(b, msgs, WIDE);
     }

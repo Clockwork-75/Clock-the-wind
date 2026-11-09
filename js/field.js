@@ -127,8 +127,11 @@ export function fillTimeGaps(f) {
   const T = f.times.length, N = (f.nx || 1) * (f.ny || 1);
   for (const k in f.vars) {
     const a = f.vars[k]; if (!a || a.length !== T * N) continue;
-    const ok = new Uint8Array(T);
-    for (let ti = 0; ti < T; ti++) { const o = ti * N; for (let i = 0; i < N; i += Math.max(1, (N / 64) | 0)) if (a[o + i] === a[o + i]) { ok[ti] = 1; break; } }
+    const ok = new Uint8Array(T), step = Math.max(1, (N / 64) | 0);
+    for (let ti = 0; ti < T; ti++) { const o = ti * N; let any = false, mx = 0;
+      for (let i = 0; i < N; i += step) { const x = a[o + i]; if (x === x) { any = true; if (Math.abs(x) > mx) mx = Math.abs(x); } }
+      // a gust field that is zero everywhere (ICON at the analysis hour) has no gusts either
+      ok[ti] = any && !(k === 'gust' && mx < 0.5) ? 1 : 0; }
     if (!ok.some(Boolean) || ok.every(Boolean)) continue;
     for (let ti = 0; ti < T; ti++) {
       if (ok[ti]) continue;
@@ -136,9 +139,13 @@ export function fillTimeGaps(f) {
       let n = ti + 1; while (n < T && !ok[n]) n++;
       const o = ti * N;
       if (p >= 0 && n < T) { const w = (f.times[ti] - f.times[p]) / (f.times[n] - f.times[p]); for (let i = 0; i < N; i++) { const A = a[p * N + i], B = a[n * N + i]; a[o + i] = A === A && B === B ? A + (B - A) * w : (A === A ? A : B); } }
-      else { const src = (p >= 0 ? p : n) * N; for (let i = 0; i < N; i++) a[o + i] = a[src + i]; }
+      else if (n < T && f.times[n] - f.times[ti] <= 3 * 3600000) { for (let i = 0; i < N; i++) a[o + i] = a[n * N + i]; }   // the first hour: from the next step
+      else for (let i = 0; i < N; i++) a[o + i] = NaN;   // never carry old values forward – no data is shown as no data
     }
   }
+  // gusts are never weaker than the mean wind (some models' surface gust is below the 10 m wind over the sea)
+  const G = f.vars.gust, U = f.vars.u, V = f.vars.v;
+  if (G && U && V && G.length === U.length) for (let i = 0; i < G.length; i++) { const g = G[i]; if (g !== g) continue; const w = Math.hypot(U[i], V[i]); if (w > g) G[i] = w; }
   f._gapsFilled = true;
   if (f.ext) fillTimeGaps(f.ext);
 }

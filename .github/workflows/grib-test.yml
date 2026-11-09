@@ -36,7 +36,8 @@ jobs:
           done
           # GRIB1 (like Saildocs) converted from the GFS file, and a gzip-compressed copy
           (sudo apt-get update -qq && sudo apt-get install -y -qq cdo) >/dev/null 2>&1 || echo "cdo install failed"
-          cdo -s -f grb copy grib/a_gfs.grb2 grib/d_grib1_gfs.grb || echo "GRIB1 conversion failed"
+          # GRIB1 with the standard WMO codes Saildocs uses (U=33, V=34 at 10 m); cdo alone writes them as 2/3
+          cdo -s -f grb copy grib/a_gfs.grb2 tmp1.grb && cdo -s -f grb -setltype,105 -chcode,2,33,3,34 tmp1.grb grib/d_grib1_gfs.grb || echo "GRIB1 conversion failed"
           gzip -c grib/a_gfs.grb2 > grib/e_gfs.grb2.gz || true
           ls -la grib
       - name: Pokreni aplikaciju i uvezi GRIB-ove u pregledniku

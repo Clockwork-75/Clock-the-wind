@@ -378,11 +378,14 @@ function setupTimeline() {
 }
 // timeline rows (44 px): day labels 0–10 · one thin bar per model 11–21 (how far each model reaches) ·
 // wind strip 23–31 · hour ticks 33–43. Past ~5 days the forecast is a trend: that part is hatched.
-const TL = { bars: 11, barsH: 10, strip: 23, stripH: 8, ticks: 33 };
+const TL_FULL = { bars: 11, barsH: 10, strip: 23, stripH: 8, ticks: 33 }, TL_PHONE = { bars: 9, barsH: 7, strip: 17, stripH: 7, ticks: 25 };
+let TL = TL_FULL;
+const isPhone = () => innerWidth <= 700;
 const DOW = ['ned', 'pon', 'uto', 'sri', 'čet', 'pet', 'sub'];
 const tzHour = t => +new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', hour12: false }).format(t) % 24;
 const tzDay = t => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric' }).formatToParts(t); const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[p.find(x => x.type === 'weekday').value]; return { dow: DOW[wd], d: p.find(x => x.type === 'day').value }; };
 function drawTimeline() {
+  TL = isPhone() ? TL_PHONE : TL_FULL;
   const s = state.set; const cv = $('#tlCanvas');
   const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   cv.width = w * dpr; cv.height = h * dpr;
@@ -526,6 +529,10 @@ $$('#layerbar [data-layer]').forEach(b => b.onclick = () => {
   redraw();
 });
 $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === state.layer));
+// iPhone: layer bar out of the way until called (handle at the right edge); the layout follows the timeline height
+$('#lbHandle').onclick = e => { e.stopPropagation(); document.body.classList.toggle('lb-open'); };
+const syncPhoneLayout = () => { const t = $('#timeline'); if (t) document.documentElement.style.setProperty('--tlh', Math.round(t.getBoundingClientRect().height) + 'px'); };
+addEventListener('resize', syncPhoneLayout); setTimeout(syncPhoneLayout, 0); setTimeout(syncPhoneLayout, 800);
 const syncToggles = () => {
   $('#tglParticles').classList.toggle('on', state.particles);
   $('#tglArrows').classList.toggle('on', state.arrows !== 'none');
@@ -761,6 +768,7 @@ map.on('moveend', () => { const n = $('#areaNote'); if (n && $('#tab-data').clas
 
 // ---------------- map clicks ----------------
 map.on('click', e => {
+  if (isPhone() && document.body.classList.contains('lb-open')) { document.body.classList.remove('lb-open'); return; }   // a tap on the map closes the layer bar
   if (pick) { areaPickClick(e.latlng); return; }
   if (state.editing) {
     const m = { name: `Oznaka ${course.marks.length}`, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) };
@@ -2062,7 +2070,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.9 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.10 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

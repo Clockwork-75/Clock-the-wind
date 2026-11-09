@@ -429,3 +429,28 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
 .mark-ic .sidetag { position: absolute; left: 22px; top: -2px; font: 800 10px -apple-system,system-ui; padding: 1px 4px; border-radius: 6px; color: #fff; }
 .mark-ic .sidetag.S { background: #1f9d55; }
 .mark-ic .sidetag.P { background: #d64541; }
+
+/* ---- v2.3.9 · iPhone only: more map – timeline flush with the bottom edge and slimmer, model tabs 10 % slimmer,
+   layer bar at the right edge, hidden until called with the handle ---- */
+#lbHandle { display: none; }
+@media (max-width: 700px) {
+  #timeline { left: 0; right: 0; bottom: 0; border-radius: 14px 14px 0 0; padding: 4px 8px calc(3px + var(--sab)) 6px; gap: 8px; }
+  #timeline .iconbtn.big { width: 38px; height: 38px; }
+  #timeline .iconbtn.big svg { width: 18px; height: 18px; }
+  #tlTrack { height: 34px; margin-top: 2px; }
+  .tl-time { font-size: 13.5px; }
+  .tl-head { gap: 8px; }
+  #timeline .mini { padding: 2px 7px; font-size: 11px; }
+  #topbar { height: 43px; }
+  .chip { padding: 5px 8px; font-size: 11.5px; }
+  .chip i { width: 10px; height: 10px; }
+  #layerbar { right: 0; border-radius: 12px 0 0 12px; transform: translateX(110%); transition: transform .2s ease; }
+  body.lb-open #layerbar { transform: none; }
+  #lbHandle { display: grid; place-items: center; position: fixed; z-index: 1001; right: 0; top: calc(108px + var(--sat)); width: 30px; height: 44px; border-radius: 10px 0 0 10px; padding: 0; }
+  #lbHandle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+  body.lb-open #lbHandle { right: calc(50px + var(--sar)); }
+  #legend { bottom: calc(var(--tlh, 70px) + 6px); }
+  #pointCard { bottom: calc(var(--tlh, 70px) + 8px); }
+  #replayBar { bottom: calc(var(--tlh, 70px) + 58px); right: calc(8px + var(--sar)); }
+  #sheet { bottom: 0; }
+}

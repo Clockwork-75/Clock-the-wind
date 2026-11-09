@@ -52,7 +52,7 @@ const base = process.argv[2] || 'http://localhost:8080/';
         const f0 = s.fields[id]; if (!f0 || !f0.times) continue;
         const wind = sc.k === 1 ? f0 : scale(f0, sc.k);
         const row = { course: pr.id, model: id.replace('dir_', '').replace('italia_meteo_arpae_', ''), k: sc.k, start: new Date(sc.start).toISOString().slice(5, 13) };
-        for (const m of ['sea', 'classic', 'hybrid', 'both']) {
+        for (const m of ['sea', 'classic', 'hybrid', 'both', 'best']) {
           const t0 = performance.now();
           const r = route({ wind, marine, polar, mask, marks, startTime: sc.start, opts: { ...common, prune: m } });
           const ms = Math.round(performance.now() - t0);
@@ -60,16 +60,16 @@ const base = process.argv[2] || 'http://localhost:8080/';
         }
         rows.push(row);
         const f = x => x.err ? 'ERR ' + x.err : `${x.h.toFixed(2)}h ${x.ms}ms${x.land ? ' LAND' + x.land : ''}${x.bad ? ' POLAR' + x.bad : ''}${x.marksOk ? '' : ' MARKS!'}${x.over ? ' over ' + x.over : ''}`;
-        console.log(`## ${row.course.padEnd(12)} ${row.model.padEnd(10)} ×${sc.k} ${row.start} | sea ${f(row.sea)} | classic ${f(row.classic)} | hybrid ${f(row.hybrid)} | both ${f(row.both)}`);
+        console.log(`## ${row.course.padEnd(12)} ${row.model.padEnd(10)} ×${sc.k} ${row.start} | sea ${f(row.sea)} | classic ${f(row.classic)} | hybrid ${f(row.hybrid)} | both ${f(row.both)} | best ${f(row.best)}`);
       }
     }
     // summary: per method, how often it is best / how much slower than the best found
     const sum = {};
-    for (const m of ['sea', 'classic', 'hybrid', 'both']) sum[m] = { ok: 0, err: 0, best: 0, worseMin: [], land: 0, polarBad: 0, marksBad: 0, ms: 0 };
+    for (const m of ['sea', 'classic', 'hybrid', 'both', 'best']) sum[m] = { ok: 0, err: 0, best: 0, worseMin: [], land: 0, polarBad: 0, marksBad: 0, ms: 0 };
     for (const r of rows) {
-      const ok = ['sea', 'classic', 'hybrid', 'both'].filter(m => !r[m].err);
+      const ok = ['sea', 'classic', 'hybrid', 'both', 'best'].filter(m => !r[m].err);
       const best = Math.min(...ok.map(m => r[m].h));
-      for (const m of ['sea', 'classic', 'hybrid', 'both']) {
+      for (const m of ['sea', 'classic', 'hybrid', 'both', 'best']) {
         const x = r[m], S = sum[m]; S.ms += x.ms;
         if (x.err) { S.err++; continue; }
         S.ok++; if (x.h <= best + 1e-3) S.best++; S.worseMin.push((x.h - best) * 60);
@@ -82,7 +82,7 @@ const base = process.argv[2] || 'http://localhost:8080/';
     for (const sc of scen) for (const pr of PRESETS) {
       const rr = rows.filter(r => r.course === pr.id && r.k === sc.k && r.start === new Date(sc.start).toISOString().slice(5, 13));
       const order = m => rr.filter(r => !r[m].err).sort((a, b) => a[m].h - b[m].h).map(r => r.model).join('>');
-      if (order('sea') !== order('both')) orderChanges.push(`${pr.id} ×${sc.k} ${rr[0] && rr[0].start}: sea ${order('sea')} | both ${order('both')}`);
+      if (order('sea') !== order('best')) orderChanges.push(`${pr.id} ×${sc.k} ${rr[0] && rr[0].start}: sea ${order('sea')} | best ${order('best')}`);
     }
     return { routes: rows.length, summary: sum, orderChanges };
   });

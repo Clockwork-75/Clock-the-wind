@@ -14,8 +14,9 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
     useCurrents: true, wavePenalty: true, maxHours: 96, sectorDeg: 1.5, arriveNm: 0.15,
     // isochrone pruning per sector: 'sea' = point closest to the mark by water (around islands),
     // 'classic' = point farthest from the leg start (Expedition / LuckGrib / SailGrib), 'hybrid' = both points per sector,
-    // 'both' = every leg routed with 'sea' and with 'classic' separately, the earlier arrival is kept
-    prune: 'both',
+    // 'both' = every leg routed with 'sea' and with 'classic' separately, the earlier arrival is kept,
+    // 'best' = every leg routed with all three ('sea', 'classic', 'hybrid'), the earliest arrival is kept
+    prune: 'best',
     ...opts,
   };
   const tEnd = wind.validUntil || wind.times[wind.times.length - 1];
@@ -40,9 +41,10 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
   for (let leg = 1; leg < marks.length; leg++) {
     const tgt = marks[leg];
     let res;
-    if (o.prune === 'both') {
-      const a = runLeg(cur, tgt, t, lastSign, 'sea', [0, 0.5]), c = runLeg(cur, tgt, t, lastSign, 'classic', [0.5, 0.5]);
-      res = !a.ok ? c : !c.ok ? a : (c.eta < a.eta ? c : a);
+    if (o.prune === 'both' || o.prune === 'best') {
+      const ms = o.prune === 'best' ? ['sea', 'classic', 'hybrid'] : ['sea', 'classic'];
+      const rs = ms.map((m, i) => runLeg(cur, tgt, t, lastSign, m, [i / ms.length, 1 / ms.length]));
+      res = rs.filter(r => r.ok).sort((a, b) => a.eta - b.eta)[0] || rs[0];
     } else res = runLeg(cur, tgt, t, lastSign, o.prune);
     if (res.iso) isochrones.push(...res.iso);
     if (!res.ok) return { ok: false, error: res.error, track, isochrones, legs };
@@ -96,9 +98,11 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
       const nb = Math.ceil(360 / secDeg);
       const buckets = new Array(nb);
       const all = [];
+      let withWind = 0;
       for (const p of front) {
         const w = windAt(p.lat, p.lon, p.t);
         if (!w) continue;
+        withWind++;
         const [cu, cvv, hs] = currentAt(p.lat, p.lon, p.t);
         const toT = bearing(p.lat, p.lon, tgt.lat, tgt.lon);
         const dT = distNm(p.lat, p.lon, tgt.lat, tgt.lon);
@@ -175,7 +179,7 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
         const c = all[k]; if (kept.has(c)) continue;
         if (!segmentHitsLand(mask, c.parent.lat, c.parent.lon, c.lat, c.lon) && !isLand(mask, c.lat, c.lon)) { next.push(c); kept.add(c); added++; k += 3; }
       }
-      if (!next.length) return { ok: false, error: 'Nema prolaza – sve opcije udaraju u kopno ili nema vjetra.' };
+      if (!next.length) return { ok: false, error: withWind ? 'Nema prolaza – sve opcije udaraju u kopno ili nema vjetra.' : 'Model ne pokriva ovo područje (nema vjetra na poziciji broda) – odaberi drugi model.' };
       // drop points that are clearly going backwards (much farther from target than start)
       front = next.filter(c => c.sea < seaOrigin * 1.25 + 12);
       if ((step + 1) % Math.max(1, Math.round(60 / o.dtMin)) === 0) {

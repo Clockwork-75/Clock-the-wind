@@ -251,7 +251,8 @@ function parseGrib1(b, o, msgs) {
   const bds = p, bl = u24(b, bds), bflag = b[bds + 3];
   const E = s16(b, bds + 4), R = ibm(b, bds + 6), nbits = b[bds + 10];
   const unused = bflag & 0x0f;
-  const n = bitmap ? bitmap.reduce((a, c) => a + c, 0) : Math.floor(((bl - 11) * 8 - unused) / Math.max(1, nbits));
+  // 0 bits = every point has the reference value (a constant field): one value per grid point, nothing to read
+  const n = bitmap ? bitmap.reduce((a, c) => a + c, 0) : nbits === 0 ? grid.npts : Math.floor(((bl - 11) * 8 - unused) / nbits);
   const name = GRIB1[param];
   if (name && (bflag & 0x40)) throw new Error('GRIB1 kompleksno pakiranje nije podržano – izvezi GRIB s jednostavnim pakiranjem');
   const okLevel = (name === 'U' || name === 'V') ? ANY_LEVEL || (ltype === 105 && lev === 10) || ltype === 1 : true;

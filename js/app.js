@@ -1486,8 +1486,9 @@ async function importGribUrl(url) {
   const name = decodeURIComponent(url.split('?')[0].split('/').pop() || 'grib').slice(0, 40) || 'grib';
   await importGribs([new File([buf], name)]);
 }
+let lastImportMsg = '';   // the import result stays visible after the Prognoza tab re-renders
 async function importGribs(files) {
-  const txt = $('#dlText');
+  const txt = new Proxy({}, { set: (o, k, v) => { if (k === 'textContent') { lastImportMsg = v; const el = $('#dlText'); if (el) el.textContent = v; } return true; } });
   for (const file of files) {
     try {
       txt.textContent = `Čitam ${file.name}…`;
@@ -1522,6 +1523,7 @@ async function importGribs(files) {
     } catch (e) { console.error(e); txt.textContent = `${file.name}: ${e.message}`; toast(e.message, 5000); }
   }
   renderDataTab();
+  const el = $('#dlText'); if (el && lastImportMsg) el.textContent = lastImportMsg;
 }
 async function cacheTiles() {
   if (!('caches' in window)) return toast('Preglednik ne podržava offline spremanje');

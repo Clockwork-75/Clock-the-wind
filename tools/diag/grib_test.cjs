@@ -31,7 +31,7 @@ const dir = process.argv[2], base = process.argv[3] || 'http://localhost:8080/';
   for (const [u, l] of links) await run(`${l} ${u.slice(0, 90)}`, async p => { await p.fill('#gribUrl', u); await p.click('#btnGribUrl'); });
   for (const r of results) {
     console.log('\n=== ' + r.label);
-    console.log('  poruka: ' + r.text.slice(0, 220));
+    console.log('  poruka: ' + r.text.slice(0, 220) + (r.toast ? '  | obavijest: ' + r.toast.slice(0, 160) : ''));
     if (r.gribs.length) r.gribs.forEach(x => console.log('  OK  ' + x)); else console.log('  NIJE UVEZENO');
     if (r.errs.length) console.log('  GREŠKA STRANICE: ' + r.errs.join(' | '));
   }

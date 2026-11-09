@@ -1783,7 +1783,7 @@ function drawRoutes() {
     hit.on('mousemove', e => hit.setTooltipContent(routePointHtml(id, nearestOnRoute(r, e.latlng))));
     hit.on('mouseover', e => hit.setTooltipContent(routePointHtml(id, nearestOnRoute(r, e.latlng))));
     // click / tap: every boat jumps to that moment – you see where each model's boat is at the same time
-    hit.on('click', e => { L.DomEvent.stopPropagation(e); replayPause(); const t = nearestOnRoute(r, e.latlng); state.selected = id; drawRoutes(); setTime(t); showBoatInfo(id); });
+    hit.on('click', e => { L.DomEvent.stopPropagation(e); replayPause(); const t = nearestOnRoute(r, e.latlng); state.selected = id; drawRoutes.followWind = true; drawRoutes(); setTime(t); showBoatInfo(id); });
     if (sel) {
       // hourly ticks with sail colour
       let lastH = -1;
@@ -1798,7 +1798,7 @@ function drawRoutes() {
       icon: L.divIcon({ className: 'man ' + p.kind, html: `<span style="border-color:${col}">${p.kind === 'tack' ? 'T' : 'G'}</span>`, iconSize: [0, 0] }) })
       .bindTooltip(`${p.kind === 'tack' ? 'Okret kroz vjetar (tack)' : 'Kroz krmu (gybe)'} · ${modelById(id).name} · ${fmtTime(p.t, false)} · TWS ${p.tws.toFixed(0)} kn`).addTo(routeLayer));
     const mk = L.marker(ll[0], { pane: 'routes', zIndexOffset: 1000, icon: L.divIcon({ className: 'boat', html: boatHtml(col, best), iconSize: [0, 0] }) })
-      .on('click', e => { L.DomEvent.stopPropagation(e); replayPause(); showBoatInfo(id); }).addTo(routeLayer);
+      .on('click', e => { L.DomEvent.stopPropagation(e); replayPause(); if (state.selected !== id) { state.selected = id; drawRoutes.followWind = true; drawRoutes(); } else { drawRoutes.followWind = true; windOfRoute(); } showBoatInfo(id); }).addTo(routeLayer);
     boatMarkers[id] = mk;
     if (best && entries.length > 1) {
       const p = r.track[Math.floor(r.track.length * 0.42)];
@@ -1806,6 +1806,7 @@ function drawRoutes() {
         html: `<div><span class="dot" style="background:${col}"></span>★ NAJBRŽA · ${modelById(id).name} <span class="w">· cilj</span> ${fmtTime(r.eta, false)}</div>` }) }).addTo(routeLayer);
     }
   }
+  if (rp.on || drawRoutes.followWind) { drawRoutes.followWind = false; windOfRoute(); }
   updateBoats();
   drawTimeline();
   renderReplayBar();
@@ -1865,6 +1866,14 @@ function replayPause() { if (!rp.on) return; rp.on = false; clearInterval(rp.raf
 // the wind on the map must be valid at race time: if the model on screen has no data then (e.g. ICON-2I ending before a
 // regatta days ahead – its last state would stay frozen), show the model of the route being followed instead
 const coversTime = (id, t) => { const f = state.set && state.set.fields[id]; return !!f && f.times && t >= f.times[0] - 1800000 && t <= lastTime(f) + 1800000; };
+function windOfRoute() {
+  if (settings.mode !== 'race' || !state.set) return;
+  const ok = okRoutes(); if (!ok.length) return;
+  const sel = ok.find(r => r.model === state.selected) || ok[0];
+  const id = sel.model;
+  if (id === state.modelId || !state.set.fields[id]) return;
+  state.modelId = id; state.wind = withFallback(state.set, id); renderChips(); wxLayer.draw();
+}
 function followRouteWind(t) {
   if (!state.set || coversTime(state.modelId, t)) return;
   const cand = [state.selected, ...okRoutes().map(r => r.model)].filter(Boolean);
@@ -1875,6 +1884,7 @@ function followRouteWind(t) {
 }
 function replayPlay() {
   const R = replayRange(); if (!R) return;
+  windOfRoute();                               // replay: the wind of the route being followed (★ fastest by default)
   followRouteWind(Math.max(state.time, R.t0));
   if (playing) { clearInterval(playing); playing = null; }
   if (boatPopup) map.closePopup(boatPopup);
@@ -1923,9 +1933,11 @@ function updateReplayRank() {
   const vis = Object.keys(boatMarkers);
   const o = okRoutes().filter(r => vis.includes(r.model));
   const best = okRoutes()[0];
-  el.innerHTML = o.slice(0, 4).map((r, i) => `<span class="rk ${r === best ? 'best' : ''} ${state.time >= r.eta ? 'done' : ''}" data-id="${r.model}"><i style="background:${mcol(r.model)}"></i>${r === best ? '★ ' : (i + 1) + '. '}${modelById(r.model).name} <em>${r === best ? '<span class="w">cilj </span>' + fmtTime(r.eta, false) : '+' + fmtDur((r.eta - best.eta) / 3600000)}</em>${state.time >= r.eta ? ' 🏁' : ''}</span>`).join('')
+  const html = o.slice(0, 4).map((r, i) => `<span class="rk ${r === best ? 'best' : ''} ${state.time >= r.eta ? 'done' : ''}" data-id="${r.model}"><i style="background:${mcol(r.model)}"></i>${r === best ? '★ ' : (i + 1) + '. '}${modelById(r.model).name} <em>${r === best ? '<span class="w">cilj </span>' + fmtTime(r.eta, false) : '+' + fmtDur((r.eta - best.eta) / 3600000)}</em>${state.time >= r.eta ? ' 🏁' : ''}</span>`).join('')
     + (o.length > 4 ? `<span class="rk">+${o.length - 4}</span>` : '');
-  el.querySelectorAll('.rk[data-id]').forEach(s => s.onclick = () => { state.selected = s.dataset.id; drawRoutes(); showBoatInfo(s.dataset.id); });
+  if (el._html === html) return;   // unchanged: keep the same chips, so a tap during the replay always hits them
+  el._html = html; el.innerHTML = html;
+  el.querySelectorAll('.rk[data-id]').forEach(s => s.onclick = () => { state.selected = s.dataset.id; drawRoutes.followWind = true; drawRoutes(); showBoatInfo(s.dataset.id); });
 }
 
 // ---------------- compare tab ----------------
@@ -1955,7 +1967,7 @@ function renderCompareTab() {
     <div class="note">${state.routesSaved ? '✓ <b>Rute su spremljene</b> – ostaju i nakon zatvaranja aplikacije, dok ih ne obrišeš.' : '<b>Rute nisu spremljene</b> – nestat će kad zatvoriš aplikaciju. Spremi ih ako ih trebaš kasnije (npr. na moru).'}</div>
     <button id="btnSaveRoutes" class="btn block" ${state.routesSaved ? 'disabled' : ''}>💾 Spremi rute</button>
     <button id="btnClearRoutes2" class="btn block danger">🗑 Obriši rute (zauvijek)</button>`;
-  el.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { state.selected = tr.dataset.id; drawRoutes(); renderCompareTab(); });
+  el.querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { state.selected = tr.dataset.id; drawRoutes.followWind = true; drawRoutes(); renderCompareTab(); });
   el.querySelectorAll('[data-rv]').forEach(b => b.onclick = () => setRouteView(b.dataset.rv));
   armDelete(el.querySelector('#btnClearRoutes2'), 'Rute su obrisane (staza je ostala)', async () => { await clearRoutes(); renderCompareTab(); });
   el.querySelector('#btnSaveRoutes').onclick = async () => { await saveRoutes(); renderCompareTab(); };

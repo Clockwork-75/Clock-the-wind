@@ -1862,8 +1862,20 @@ function replayRange() {
   return { t0: Math.min(...o.map(r => r.startTime || r.track[0].t)), t1: Math.max(...o.map(r => r.eta)) };
 }
 function replayPause() { if (!rp.on) return; rp.on = false; clearInterval(rp.raf); setTime(state.time); renderReplayBar(); }
+// the wind on the map must be valid at race time: if the model on screen has no data then (e.g. ICON-2I ending before a
+// regatta days ahead – its last state would stay frozen), show the model of the route being followed instead
+const coversTime = (id, t) => { const f = state.set && state.set.fields[id]; return !!f && f.times && t >= f.times[0] - 1800000 && t <= lastTime(f) + 1800000; };
+function followRouteWind(t) {
+  if (!state.set || coversTime(state.modelId, t)) return;
+  const cand = [state.selected, ...okRoutes().map(r => r.model)].filter(Boolean);
+  const id = cand.find(x => coversTime(x, t)) || state.set.models.find(x => !isClockW(x) && coversTime(x, t));
+  if (!id || id === state.modelId) return;
+  state.modelId = id; state.wind = withFallback(state.set, id); renderChips();
+  toast(`Prikaz vjetra: ${modelById(id).name} – prati rutu (prethodni model nema prognozu za vrijeme regate)`, 4000);
+}
 function replayPlay() {
   const R = replayRange(); if (!R) return;
+  followRouteWind(Math.max(state.time, R.t0));
   if (playing) { clearInterval(playing); playing = null; }
   if (boatPopup) map.closePopup(boatPopup);
   if (state.time >= R.t1 || state.time < R.t0) setTime(R.t0);
@@ -1874,7 +1886,7 @@ function replayPlay() {
     if (!rp.on) return clearInterval(rp.raf);
     const dt = Math.min(100, now - rp.last); rp.last = now;
     const t = Math.min(R.t1, state.time + dt * replaySpeed());
-    if (now - rp.lastFull > 250 || t >= R.t1) { rp.lastFull = now; setTime(t); }   // full redraw (wind field) ~4×/s
+    if (now - rp.lastFull > 250 || t >= R.t1) { rp.lastFull = now; followRouteWind(t); setTime(t); }   // full redraw (wind field) ~4×/s
     else { state.time = t; updateBoats(); }                                       // boats every frame
     if (t >= R.t1) { rp.on = false; clearInterval(rp.raf); renderReplayBar(); }
   };
@@ -2071,7 +2083,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.11 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 3.0 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

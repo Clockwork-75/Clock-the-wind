@@ -86,3 +86,38 @@ function fillFromFallback(f, names, lat, lon, t, out) {
     if (!still) return;
   }
 }
+
+// 0..1: how far inside its own grid a point lies – the colours fade out over the last stretch of a model's area
+// (at least ~0.12° or 1.2 grid cells) instead of ending in a hard rectangle
+export function coverage(f, lat, lon, t) {
+  if (!f) return 0;
+  const g = f.ext && t > f.times[f.times.length - 1] ? f.ext : f;
+  const x = (lon - g.lon0) / g.dlon, y = (lat - g.lat0) / g.dlat;
+  const e = Math.min(x + 0.5, g.nx - 0.5 - x, y + 0.5, g.ny - 0.5 - y);   // grid cells to the outer edge
+  if (e <= 0) return 0;
+  const fade = Math.max(1.2, 0.12 / Math.min(g.dlat, g.dlon));
+  return e >= fade ? 1 : e / fade;
+}
+
+// time steps where a variable has no values at all (e.g. ECMWF gusts at the analysis hour) are filled from the
+// neighbouring steps, so a layer does not blink empty or fall back to another source for one hour
+export function fillTimeGaps(f) {
+  if (!f || !f.vars || !f.times || f._gapsFilled) return;
+  const T = f.times.length, N = (f.nx || 1) * (f.ny || 1);
+  for (const k in f.vars) {
+    const a = f.vars[k]; if (!a || a.length !== T * N) continue;
+    const ok = new Uint8Array(T);
+    for (let ti = 0; ti < T; ti++) { const o = ti * N; for (let i = 0; i < N; i += Math.max(1, (N / 64) | 0)) if (a[o + i] === a[o + i]) { ok[ti] = 1; break; } }
+    if (!ok.some(Boolean) || ok.every(Boolean)) continue;
+    for (let ti = 0; ti < T; ti++) {
+      if (ok[ti]) continue;
+      let p = ti - 1; while (p >= 0 && !ok[p]) p--;
+      let n = ti + 1; while (n < T && !ok[n]) n++;
+      const o = ti * N;
+      if (p >= 0 && n < T) { const w = (f.times[ti] - f.times[p]) / (f.times[n] - f.times[p]); for (let i = 0; i < N; i++) { const A = a[p * N + i], B = a[n * N + i]; a[o + i] = A === A && B === B ? A + (B - A) * w : (A === A ? A : B); } }
+      else { const src = (p >= 0 ? p : n) * N; for (let i = 0; i < N; i++) a[o + i] = a[src + i]; }
+    }
+  }
+  f._gapsFilled = true;
+  if (f.ext) fillTimeGaps(f.ext);
+}

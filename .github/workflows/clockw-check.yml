@@ -1,39 +1,30 @@
-# Diagnostic only (on demand): real routing audit on the real cloud package (no app changes).
+# Diagnostic only (on demand): the app on the real cloud package – screenshots (iPhone / iPad / Mac) and checks.
+# The screenshots are pushed to the branch diag-shots for review; the app itself is not changed.
 name: ClockW provjera
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Replay (Jabuka, stvarni paket iz oblaka) - start danas i za 3 dana
+      - name: Vizualna provjera (stvarni paket iz oblaka)
         run: |
           npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -1
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
-          node tools/diag/replay_check.cjs http://localhost:8080/ 0
-          node tools/diag/replay_check.cjs http://localhost:8080/ 3
-  safari:
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Replay u WebKitu (Safari) na Macu
+          node tools/diag/visual_check.cjs http://localhost:8080/
+      - name: Snimke na granu diag-shots
+        if: always()
         run: |
-          npm init -y >/dev/null && npm i playwright@1.56.0 2>&1 | tail -1
-          npx playwright install webkit 2>&1 | tail -2
-          python3 -m http.server 8080 >/dev/null 2>&1 &
-          sleep 2
-          ENGINE=webkit node tools/diag/replay_check.cjs http://localhost:8080/ 0
-          ENGINE=webkit node tools/diag/replay_check.cjs http://localhost:8080/ 3
+          cd shots
+          git init -q && git checkout -q -b diag-shots && git add . 
+          git -c user.name=ctw-ci -c user.email=ci@users.noreply.github.com commit -qm "snimke $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" diag-shots

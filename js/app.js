@@ -3,11 +3,11 @@ import { recommendSail, SAILS, SAIL_SETS, sailColor } from './sails.js';
 import { M40_VPP, MAT1180_VPP, MAT1180_ORC } from './boatdata.js';
 import { decodeLandmask, isLand, snapToSea } from './landmask.js';
 import { loadBathy, routingMask, depthAt } from './bathy.js';
-import { sample, lastTime } from './field.js';
+import { sample, lastTime, fillTimeGaps } from './field.js';
 import { MODELS, MM_MODELS, ALADIN, QUALITY, MARINE_STEP, modelById, registerModel, gridFor, raceWindow, estimateCalls, downloadForecast, checkNewRuns, saveForecast, loadForecast } from './forecast.js';
 import { decodeGrib, gribToField } from './grib.js';
 import { DIRECT, directUsable, nativeAvailable, downloadDirect, exportPackage, isPackage, importPackage, fetchCloudPackage, CLOUD_DEFAULT } from './direct.js';
-import { WeatherLayer, ParticleLayer, ChartLayer, DepthLayer, LAYERS, decodeCoast, colorFor, ISOBATHS } from './layers.js';
+import { WeatherLayer, ParticleLayer, ChartLayer, DepthLayer, LAYERS, decodeCoast, decodeWorld, colorFor, ISOBATHS } from './layers.js';
 import { PRESETS, REGATTAS, PLACES } from './courses.js';
 import { speedDirFromUV, distNm, bearing, fmtLatLon, angDiff } from './geo.js';
 import { kv } from './db.js';
@@ -219,6 +219,7 @@ const fromLocalInput = s => { const guess = Date.parse(s + 'Z'); const d = new D
 // ---------------- static assets (bathymetry, coast, boats) ----------------
 async function loadStatic() {
   try { const cj = await fetch('data/coast.json').then(r => r.ok ? r.json() : null); if (cj) state.coast = decodeCoast(cj); } catch (e) { console.warn('coast', e); }
+  try { const wj = await fetch('data/world.json').then(r => r.ok ? r.json() : null); if (wj) state.world = decodeWorld(wj); } catch (e) { console.warn('world', e); }
   try {
     state.bathy = await loadBathy();
     state.landAt = (lat, lon) => { const b = state.bathy, r = Math.floor((b.lat1 - lat) / b.dlat), c = Math.floor((lon - b.lon0) / b.dlon); return r >= 0 && r < b.NR && c >= 0 && c < b.NC && b.codes[r * b.NC + c] === 0; };
@@ -288,6 +289,7 @@ function useSet(set) {
   }
   pruneClockW(set);
   for (const id of cwIds(set)) set.fields[id].strictTime = true;
+  for (const id of set.models) fillTimeGaps(set.fields[id]);
   const pref = ['italia_meteo_arpae_icon_2i', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
   if (!state.modelId || !set.fields[state.modelId]) state.modelId = pref.find(id => set.fields[id]) || set.models[0];
   state.wind = withFallback(set, state.modelId);
@@ -302,15 +304,9 @@ function useSet(set) {
   renderChips();
   redraw();
 }
-// display copy of a model that borrows from the next best models wherever it has no data
-const FILL_ORDER = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'meteofrance_arpege_europe', 'ukmo_global_deterministic_10km', 'ecmwf_aifs025_single', 'gfs_seamless', 'dir_gfs'];
-function withFallback(set, id) {
-  const f = set.fields[id]; if (!f) return f;
-  const rank = x => { const i = FILL_ORDER.indexOf(x); return i < 0 ? 99 : i; };
-  const others = set.models.filter(m => m !== id && !isDerived(m)).sort((a, b) => rank(a) - rank(b)).map(m => set.fields[m]);
-  const prev = (set.prev || []).map(k => set.fields[k]).filter(Boolean);   // earlier downloads: only where nothing newer exists
-  return { ...f, fallback: [...others, ...prev] };
-}
+// the map shows only the chosen model's own data (and its own days 4–15): never pieces of other models or of older
+// downloads – that mosaic made hard rectangular seams. Where the model has no data the colours fade out softly.
+function withFallback(set, id) { return set.fields[id]; }
 // A new download never shrinks what is coloured: the previous forecast stays underneath as a reserve,
 // wherever (and whenever) the new one has no data. Old pieces fully covered by the new download are dropped.
 // imported GRIB files stay when a new forecast arrives
@@ -339,7 +335,7 @@ function inheritCoverage(nw, old) {
 let areaRect = null;
 function drawArea() {
   if (areaRect) { map.removeLayer(areaRect); areaRect = null; }
-  const b = state.set && state.set.bbox; if (!b) return;
+  const b = state.set && state.set.bbox; if (!b || !state.showArea) return;   // only while the area is being chosen
   areaRect = L.rectangle([[b.s, b.w], [b.n, b.e]], { pane: 'routes', color: '#ffffff', weight: 1.5, opacity: 0.7, dashArray: '6 6', fill: false, interactive: false }).addTo(map);
 }
 function selectModel(id) {
@@ -1294,7 +1290,7 @@ async function doDownload(opts = {}) {
     const st = fcMode() ? Math.round(Date.now() / H1) * H1 : raceStart();
     const inAdriatic = b => b.s >= ADRIATIC.s - 0.3 && b.n <= ADRIATIC.n + 0.3 && b.w >= ADRIATIC.w - 0.3 && b.e <= ADRIATIC.e + 0.3;
     let src = settings.source;
-    if (src === 'cloud' && opts.auto && !inAdriatic(area)) src = 'direct';
+    if (src === 'cloud' && opts.auto && !inAdriatic(area)) return null;   // outside the cloud package: keep it (the map shows the land there)
     if (src === 'cloud') {
       try { await loadCloud(bar, txt, opts.auto); return; }
       catch (e) {   // cloud not reachable (e.g. the package was never built on GitHub): official GRIBs instead, never a dead end
@@ -2206,12 +2202,20 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   if (set) await showSavedRoutes();   // routes come back only if you saved them for this regatta
   particleLayer.start();
   map.invalidateSize();
+  // the map must always fill the screen: after turning the iPad, Split View or a toolbar change iOS sometimes reports the
+  // new size late – the map then kept the old width and the right part of the screen stayed white
+  const refit = () => { const el = map.getContainer(), sz = map.getSize(); if (Math.abs(el.clientWidth - sz.x) > 1 || Math.abs(el.clientHeight - sz.y) > 1) { map.invalidateSize({ pan: false }); chartLayer.draw(); depthLayer.draw(); wxLayer.draw(); } };
+  if ('ResizeObserver' in window) new ResizeObserver(() => requestAnimationFrame(refit)).observe(map.getContainer());
+  for (const ev of ['orientationchange', 'resize', 'pageshow']) addEventListener(ev, () => [50, 300, 800, 1600].forEach(d => setTimeout(refit, d)));
+  if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(refit, 100));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(refit, 100); });
   if (settings.mode !== 'race') routeLayer.remove();
   updateModePill();
   const home = () => { const b = state.set && state.set.bbox; if (settings.mode === 'forecast' && b) map.fitBounds([[b.s, b.w], [b.n, b.e]]); else zoomCourse(); };
   home();
   wxLayer.draw();
   setTimeout(() => { map.invalidateSize(); if (map.getZoom() < 7) home(); maybeFillWindow(200); }, 600);
+  if (settings.source === 'cloud' && navigator.onLine && (!state.set || state.set.source !== 'cloud')) setTimeout(() => doDownload().catch(() => {}), 1200);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn('sw', e));
   // model-run watcher: tells you when a newer run is available than the one you raced with
   const watch = async () => { if (state.set && navigator.onLine) { state.newRuns = await checkNewRuns(state.set).catch(() => []); renderChips(); $('#btnRefresh').classList.toggle('badge', state.newRuns.length > 0); } };
@@ -2220,4 +2224,4 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
 })();
 window.ctw = { state, settings, course, map,
   fn: { courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
-    markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer } };
+    markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };

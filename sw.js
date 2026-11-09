@@ -6,7 +6,7 @@ const ASSETS = [
   'js/app.js', 'js/polar.js', 'js/sails.js', 'js/geo.js', 'js/landmask.js', 'js/field.js', 'js/forecast.js',
   'js/db.js', 'js/layers.js', 'js/courses.js', 'js/router.js', 'js/router.worker.js', 'js/grib.worker.js', 'js/bathy.js', 'js/grib.js', 'js/intro.js', 'js/direct.js', 'js/ensemble.js', 'js/boatdata.js', 'img/clockwork-logo.png',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css',
-  'data/landmask.bin', 'data/coast.json', 'data/depth.bin.gz', 'data/polar_melges40.csv',
+  'data/landmask.bin', 'data/coast.json', 'data/world.json', 'data/depth.bin.gz', 'data/polar_melges40.csv',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-512.png',
 ];
 self.addEventListener('install', e => {

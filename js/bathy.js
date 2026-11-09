@@ -43,17 +43,19 @@ export function routingMask(b, minDepth) {
 export function isobaths(b, south, north, west, east, levels, stride = 1) {
   const r0 = Math.max(0, Math.floor((b.lat1 - north) / b.dlat)), r1 = Math.min(b.NR - 2, Math.ceil((b.lat1 - south) / b.dlat));
   const c0 = Math.max(0, Math.floor((west - b.lon0) / b.dlon)), c1 = Math.min(b.NC - 2, Math.ceil((east - b.lon0) / b.dlon));
-  const D = (r, c) => { const v = DEPTH_LUT[b.codes[r * b.NC + c]]; return v < 0 ? 0 : v; };
+  // no-data cells (code 255, mostly inland outside the survey) have no depth: contours never run through them
+  const D = (r, c) => { const k = b.codes[r * b.NC + c]; if (k === 255) return NaN; const v = DEPTH_LUT[k]; return v < 0 ? 0 : v; };
   const out = levels.map(() => []);
-  for (let r = r0; r < r1; r += stride) {
+  for (let r = r0; r + stride <= b.NR - 1 && r < r1; r += stride) {
     const la = b.lat1 - (r + 0.5) * b.dlat, la2 = la - b.dlat * stride;
-    for (let c = c0; c < c1; c += stride) {
+    for (let c = c0; c + stride <= b.NC - 1 && c < c1; c += stride) {
       const lo = b.lon0 + (c + 0.5) * b.dlon, lo2 = lo + b.dlon * stride;
       const a = D(r, c), bb = D(r, c + stride), cc = D(r + stride, c + stride), d = D(r + stride, c);
+      if (a !== a || bb !== bb || cc !== cc || d !== d) continue;
       levels.forEach((L, k) => {
         const idx = (a > L ? 8 : 0) | (bb > L ? 4 : 0) | (cc > L ? 2 : 0) | (d > L ? 1 : 0);
         if (idx === 0 || idx === 15) return;
-        const t = (p, q) => (L - p) / (q - p || 1e-9);
+        const t = (p, q) => q === p ? 0.5 : Math.max(0, Math.min(1, (L - p) / (q - p)));   // always on the cell edge
         const top = [la, lo + (lo2 - lo) * t(a, bb)], right = [la + (la2 - la) * t(bb, cc), lo2];
         const bottom = [la2, lo + (lo2 - lo) * t(d, cc)], left = [la + (la2 - la) * t(a, d), lo];
         const seg = (p, q) => out[k].push(p[0], p[1], q[0], q[1]);

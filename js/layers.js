@@ -1,5 +1,5 @@
 // Map rendering: weather colour field, arrows/barbs, Windy-style particles, offline land + coastline.
-import { sample } from './field.js';
+import { sample, coverage } from './field.js';
 import { isLand } from './landmask.js';
 import { DEPTH_LUT, isobaths } from './bathy.js';
 import { speedDirFromUV } from './geo.js';
@@ -91,7 +91,7 @@ export class WeatherLayer {
     const f = layer.src === 'marine' ? state.marine : state.wind;
     if (!f) return;
     if (state.colors !== false) {
-      const step = state.hiRes ? 2 : 3;
+      const step = state.hiRes ? 1.5 : 2;   // CSS px per sample; the image is smoothed when scaled up
       const g = viewGeometry(map, step);
       this.off.width = g.W; this.off.height = g.H;
       const octx = this.off.getContext('2d');
@@ -101,20 +101,22 @@ export class WeatherLayer {
       for (let y = 0; y < g.H; y++) {
         const lat = g.lats[y];
         for (let x = 0; x < g.W; x++) {
+          const cov = coverage(f, lat, g.lons[x], t);
+          if (cov <= 0) continue;
           sample(f, layer.vars, lat, g.lons[x], t, out);
           const v = layer.value(out);
           if (v !== v) continue;
           const i = layer.scale.idx(v) * 4, o = (y * g.W + x) * 4;
-          d[o] = lut[i]; d[o + 1] = lut[i + 1]; d[o + 2] = lut[i + 2]; d[o + 3] = lut[i + 3] * op;
+          d[o] = lut[i]; d[o + 1] = lut[i + 1]; d[o + 2] = lut[i + 2]; d[o + 3] = lut[i + 3] * op * cov;
         }
       }
       octx.putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(this.off, -step / 2, -step / 2, g.W * step, g.H * step);
       // crisp cut along the vector coastline (colours only over the sea)
-      if (!state.colorOverLand && state.coast) {
+      if (!state.colorOverLand && hasLand(state)) {
         ctx.save(); ctx.globalCompositeOperation = 'destination-out';
-        ctx.fill(landPath(map, state.coast), 'nonzero');
+        fillLand(ctx, map, state, '#000');
         ctx.restore();
       }
     }
@@ -175,6 +177,7 @@ export class WeatherLayer {
       for (let x = gap / 2; x < size.x; x += gap) {
         const ll = map.containerPointToLatLng([x, y]);
         if (state.landAt && state.landAt(ll.lat, ll.lng)) continue;
+        if (coverage(f, ll.lat, ll.lng, state.time) < 0.5) continue;   // no arrows in the faded edge of the model's area
         let spd, dirTo;
         if (kind === 'waves') {
           sample(f, ['wave', 'waveDir'], ll.lat, ll.lng, state.time, out);
@@ -294,35 +297,86 @@ export class ParticleLayer {
   }
 }
 
-// ---------- vector land path (cached per view) ----------
-let _lp = { key: '', path: null };
-export function landPath(map, coast) {
+// ---------- vector land (cached per view) ----------
+// Three sources, each used where it is best and clipped so that they never overlap:
+//   HR  – detailed Adriatic coast (OpenStreetMap + GSHHG, data/coast.json), inside its own box
+//   EU  – Natural Earth 1:10m, Europe + Mediterranean (data/world.json), outside the Adriatic box
+//   W   – Natural Earth 1:50m, the whole world, outside the Europe box (or everywhere when zoomed far out)
+// Rings cut by a data box have straight edges along it: they are filled but never stroked (no false coastlines).
+const _lp = {};
+function ringsPath(map, set, id) {
   const b = map.getBounds(), z = map.getZoom(), c = map.getCenter(), sz = map.getSize();
-  const key = `${z}|${c.lat.toFixed(6)}|${c.lng.toFixed(6)}|${sz.x}x${sz.y}|${coast.length}`;
-  if (_lp.key === key) return _lp.path;
-  const pb = b.pad(0.1), path = new Path2D();
+  const key = `${z}|${c.lat.toFixed(6)}|${c.lng.toFixed(6)}|${sz.x}x${sz.y}|${set.lines.length}`;
+  if (_lp[id] && _lp[id].key === key) return _lp[id];
+  const pb = b.pad(0.1), fill = new Path2D(), stroke = new Path2D();
   const N = pb.getNorth(), S = pb.getSouth(), E = pb.getEast(), W = pb.getWest();
   const o = map.latLngToContainerPoint([c.lat, c.lng]);
   const scale = 256 * Math.pow(2, z) / 360, cx = o.x - c.lng * scale;
-  const merc = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+  const merc = lat => Math.log(Math.tan(Math.PI / 4 + Math.max(-85, Math.min(85, lat)) * Math.PI / 360));
   const mc = merc(c.lat), ys = 256 * Math.pow(2, z) / (2 * Math.PI);
-  const minPx = 0.6;
-  for (const ln of coast) {
+  const cb = set.clip, eps = 1e-5;
+  const onEdge = (x1, y1, x2, y2) => cb && ((Math.abs(x1 - cb[0]) < eps && Math.abs(x2 - cb[0]) < eps) || (Math.abs(x1 - cb[2]) < eps && Math.abs(x2 - cb[2]) < eps) ||
+    (Math.abs(y1 - cb[1]) < eps && Math.abs(y2 - cb[1]) < eps) || (Math.abs(y1 - cb[3]) < eps && Math.abs(y2 - cb[3]) < eps));
+  const onBox = (x, y) => cb && (Math.abs(x - cb[0]) < eps || Math.abs(x - cb[2]) < eps || Math.abs(y - cb[1]) < eps || Math.abs(y - cb[3]) < eps);
+  for (const ln of set.lines) {
     if (ln.bb[0] > N || ln.bb[1] < S || ln.bb[2] > E || ln.bb[3] < W) continue;
-    // skip rings smaller than a pixel
-    if ((ln.bb[3] - ln.bb[2]) * scale < minPx && (ln.bb[1] - ln.bb[0]) * scale < minPx) continue;
-    let px = -1e9, py = -1e9, first = true;
-    for (let i = 0; i < ln.pts.length; i += 2) {
-      const x = cx + ln.pts[i] * scale, y = o.y - (merc(ln.pts[i + 1]) - mc) * ys;
-      if (!first && Math.abs(x - px) < 0.4 && Math.abs(y - py) < 0.4 && i < ln.pts.length - 2) continue;
-      if (first) { path.moveTo(x, y); first = false; } else path.lineTo(x, y);
-      px = x; py = y;
+    if ((ln.bb[3] - ln.bb[2]) * scale < 0.6 && (ln.bb[1] - ln.bb[0]) * scale < 0.6) continue;   // smaller than a pixel
+    const P = ln.pts, n = P.length / 2;
+    let px = -1e9, py = -1e9, plon = 0, plat = 0, first = true, pen = false;
+    for (let k = 0; k <= n; k++) {
+      const i = (k % n) * 2, lon = P[i], lat = P[i + 1];
+      const x = cx + lon * scale, y = o.y - (merc(lat) - mc) * ys;
+      if (!first && k < n && k > 0 && Math.abs(x - px) < 0.35 && Math.abs(y - py) < 0.35 && !onBox(lon, lat)) continue;   // points on the data box are always kept
+      if (first) { fill.moveTo(x, y); first = false; }
+      else {
+        fill.lineTo(x, y);
+        if (onEdge(plon, plat, lon, lat)) pen = false;
+        else { if (!pen) stroke.moveTo(px, py); stroke.lineTo(x, y); pen = true; }
+      }
+      px = x; py = y; plon = lon; plat = lat;
     }
-    path.closePath();
+    fill.closePath();
   }
-  _lp = { key, path };
-  return path;
+  return (_lp[id] = { key, fill, stroke });
 }
+// screen rectangle of a lon/lat box
+function boxRect(map, bx) {   // whole pixels: neighbouring pieces meet without an anti-aliased seam
+  const a = map.latLngToContainerPoint([bx[3], bx[0]]), b = map.latLngToContainerPoint([bx[1], bx[2]]);
+  // 1 px inside the data box: the anti-aliased outer edge of the inner data is cut off and the outer data fills up to it
+  const x0 = Math.round(a.x) + 1, y0 = Math.round(a.y) + 1;
+  return [x0, y0, Math.round(b.x) - 1 - x0, Math.round(b.y) - 1 - y0];
+}
+// the land pieces for this view: [{path, clip: [inside rect] | null, outside: [rects]}]
+function landPieces(map, state) {
+  const out = [], z = map.getZoom(), world = state.world, hr = state.coast;
+  const far = z < 4.5 || !world || !world.eu;
+  if (world && world.w) out.push({ id: 'w', set: world.w, outside: far ? [] : [world.eu.clip] });
+  if (!far) out.push({ id: 'eu', set: world.eu, inside: world.eu.clip, outside: hr ? [hr.clip] : [] });
+  if (hr && (!far || !world)) out.push({ id: 'hr', set: hr, inside: hr.clip, outside: [] });
+  return out.map(p => ({ ...p, path: ringsPath(map, p.set, p.id) }));
+}
+function withPiece(ctx, map, size, pc, fn) {
+  ctx.save();
+  if (pc.inside || (pc.outside && pc.outside.length)) {
+    const r = new Path2D();
+    if (pc.inside) r.rect(...boxRect(map, pc.inside)); else r.rect(-10, -10, size.x + 20, size.y + 20);
+    for (const bx of pc.outside || []) r.rect(...boxRect(map, bx));
+    ctx.clip(r, 'evenodd');
+  }
+  fn(pc.path);
+  ctx.restore();
+}
+// fill all land (colour, or with 'destination-out' a cut-out); stroke only real coastlines
+export function fillLand(ctx, map, state, style) {
+  const size = map.getSize();
+  for (const pc of landPieces(map, state)) withPiece(ctx, map, size, pc, p => { if (style) ctx.fillStyle = style; ctx.fill(p.fill, 'nonzero'); });
+}
+export function strokeLand(ctx, map, state, color, w) {
+  const size = map.getSize();
+  ctx.lineWidth = w; ctx.strokeStyle = color; ctx.lineJoin = 'round';
+  for (const pc of landPieces(map, state)) withPiece(ctx, map, size, pc, p => ctx.stroke(p.stroke));
+}
+export const hasLand = state => !!(state.coast || state.world);
 
 // ---------- chart layer: offline nautical chart (depth shading, isobaths) or plain land ----------
 const DEPTH_STYLE = [ // [maxDepth m, rgb] Navionics-like: shallow = blue, deep = white
@@ -437,11 +491,10 @@ export class ChartLayer {
       if (!state.ovDepth) drawIsobaths(ctx, map, b, false);
     }
     // crisp vector land on top
-    if (state.coast) {
-      const path = landPath(map, state.coast);
-      if (detail) { ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.fill(path, 'nonzero'); ctx.restore(); }   // a window onto the detailed land
-      else { ctx.fillStyle = landColor; ctx.fill(path, 'nonzero'); }
-      ctx.lineWidth = nautical ? 1 : 0.9; ctx.strokeStyle = nautical ? '#6b5b3a' : '#9aa3ad'; ctx.stroke(path);
+    if (hasLand(state)) {
+      if (detail) { ctx.save(); ctx.globalCompositeOperation = 'destination-out'; fillLand(ctx, map, state, '#000'); ctx.restore(); }   // a window onto the detailed land
+      else fillLand(ctx, map, state, landColor);
+      strokeLand(ctx, map, state, nautical ? '#6b5b3a' : '#9aa3ad', nautical ? 1 : 0.9);
     }
     // place labels
     if (state.places && map.getZoom() >= 8 && !detail) {
@@ -456,19 +509,30 @@ export class ChartLayer {
     }
   }
   drawCoastStroke(ctx, color, w) {
-    if (!this.state.coast) return;
-    ctx.lineWidth = w; ctx.strokeStyle = color; ctx.stroke(landPath(this.map, this.state.coast));
+    if (!hasLand(this.state)) return;
+    strokeLand(ctx, this.map, this.state, color, w);
   }
 }
 
 export function decodeCoast(json) {
-  return json.lines.map(l => {
+  const lines = decodeLines(json.lines, json.scale);
+  const ext = [180, 90, -180, -90];   // the HR coast was cut to its box: that box is its clip
+  for (const l of lines) { ext[0] = Math.min(ext[0], l.bb[2]); ext[1] = Math.min(ext[1], l.bb[0]); ext[2] = Math.max(ext[2], l.bb[3]); ext[3] = Math.max(ext[3], l.bb[1]); }
+  return { lines, clip: ext };
+}
+export function decodeWorld(json) {
+  const o = {};
+  for (const st of json.sets) o[st.id] = { lines: decodeLines(st.lines, json.scale), clip: st.clip || null };
+  return o;
+}
+function decodeLines(arr, sc) {
+  return arr.map(l => {
     const pts = new Float64Array(l.p.length);
     let lon = 0, lat = 0, bb = [-90, 90, -180, 180]; // n,s,e,w
     let n = -90, s = 90, e = -180, w = 180;
     for (let i = 0; i < l.p.length; i += 2) {
       lon += l.p[i]; lat += l.p[i + 1];
-      pts[i] = lon / json.scale; pts[i + 1] = lat / json.scale;
+      pts[i] = lon / sc; pts[i + 1] = lat / sc;
       n = Math.max(n, pts[i + 1]); s = Math.min(s, pts[i + 1]); e = Math.max(e, pts[i]); w = Math.min(w, pts[i]);
     }
     bb = [s, n, w, e];

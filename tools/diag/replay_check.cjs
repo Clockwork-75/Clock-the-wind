@@ -27,7 +27,13 @@ const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta late
       await c.fn.runRouting(ids);
       const ok = c.fn.okRoutes();
       return { start: new Date(c.course.start).toISOString(), setTimes: [new Date(c.state.set.times[0]).toISOString(), new Date(c.state.set.times[c.state.set.times.length - 1]).toISOString(), c.state.set.times.length],
-        routes: ok.map(r => `${r.model} ${((r.eta - r.startTime) / H).toFixed(2)}h`), selected: c.state.selected, modelOnMap: c.state.modelId };
+        routes: ok.map(r => `${r.model} ${((r.eta - r.startTime) / H).toFixed(2)}h`), selected: c.state.selected, modelOnMap: c.state.modelId,
+        data: await (async () => { const { sample } = await import('/js/field.js'); const { speedDirFromUV } = await import('/js/geo.js');
+          const f = c.state.set.fields[c.state.selected], T = f.times, st = c.course.start;
+          const own = `vlastito ${new Date(T[0]).toISOString().slice(5, 13)}→${new Date(T[T.length - 1]).toISOString().slice(5, 13)} (${T.length} koraka)`;
+          const ext = f.ext ? `ext ${new Date(f.ext.times[0]).toISOString().slice(5, 13)}→${new Date(f.ext.times[f.ext.times.length - 1]).toISOString().slice(5, 13)} korak ${((f.ext.times[1] - f.ext.times[0]) / H)}h` : 'bez ext';
+          const ser = []; for (let h = 0; h <= 6; h++) { const o = sample(f, ['u', 'v'], 43.42, 15.61, st + h * H, []); const [w, d] = speedDirFromUV(o[0], o[1]); ser.push(`+${h}h ${w.toFixed(1)}/${d.toFixed(0)}°`); }
+          return `${own}; ${ext}; fiksna točka po satima: ${ser.join(' ')}`; })() };
     }, dayOffset);
     console.log(label, JSON.stringify(info));
     // count redraws of the colour layer

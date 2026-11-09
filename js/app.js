@@ -1770,7 +1770,7 @@ function drawRoutes() {
     const col = mcol(id), sel = id === state.selected, best = id === ideal;
     const ll = r.track.map(p => [p.lat, p.lon]);
     if (sel && state.showIso !== false) r.isochrones.forEach(iso => L.polyline(iso, { pane: 'routes', color: col, weight: 0.8, opacity: 0.35, interactive: false }).addTo(routeLayer));
-    const RW = 0.85;   // v2.3.9: routes 15 % thinner
+    const RW = 0.6;    // v2.3.11: routes 40 % thinner than 2.3.8
     const w = (best ? 5.5 : sel ? 4.5 : 3) * RW;
     if (best) L.polyline(ll, { pane: 'routes', color: '#ffd400', weight: w + 14 * RW, opacity: 0.38, interactive: false }).addTo(routeLayer);   // golden glow = fastest
     // dark casing keeps every model colour readable over any wind colour

@@ -1858,7 +1858,7 @@ const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? setting
 const speedLabel = v => `${v} s/s`;
 // how long the whole replay takes at speed v (from the first start to the last finish)
 const replayDur = v => { const R = replayRange(); if (!R) return ''; const m = (R.t1 - R.t0) / v / 60000; return m < 1 ? `${Math.round(m * 60)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1).replace('.', ',')} h`; };
-const rp = { on: false, raf: 0, last: 0, lastFull: 0 };
+const rp = { on: false, raf: 0, last: 0, lastFull: 0, every: 250 };
 function replayRange() {
   const o = okRoutes(); if (!o.length) return null;
   return { t0: Math.min(...o.map(r => r.startTime || r.track[0].t)), t1: Math.max(...o.map(r => r.eta)) };
@@ -1895,9 +1895,14 @@ function replayPlay() {
   const tick = () => {
     const now = performance.now();
     if (!rp.on) return clearInterval(rp.raf);
-    const dt = Math.min(100, now - rp.last); rp.last = now;
+    // race time follows the real clock at the chosen speed, also when a redraw of the wind field takes long (iPad, big
+    // screen): earlier each step was capped at 0.1 s, so slow redraws made the whole race crawl
+    const dt = Math.min(1000, now - rp.last); rp.last = now;
     const t = Math.min(R.t1, state.time + dt * replaySpeed());
-    if (now - rp.lastFull > 250 || t >= R.t1) { rp.lastFull = now; followRouteWind(t); setTime(t); }   // full redraw (wind field) ~4×/s
+    if (now - rp.lastFull > rp.every || t >= R.t1) {                              // full redraw: wind colours, arrows, particles' field
+      rp.lastFull = now; followRouteWind(t); setTime(t);
+      const cost = performance.now() - now; rp.every = Math.max(250, Math.min(1500, cost * 2.5));   // leave time for the boats
+    }
     else { state.time = t; updateBoats(); }                                       // boats every frame
     if (t >= R.t1) { rp.on = false; clearInterval(rp.raf); renderReplayBar(); }
   };

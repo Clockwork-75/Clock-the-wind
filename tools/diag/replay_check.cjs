@@ -7,8 +7,9 @@ const base = process.argv[2] || 'http://localhost:8080/';
 const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta later in the week)
 (async () => {
   const b = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
-  for (const [label, vp] of [['Mac/iPad', { width: 1180, height: 820 }]]) {
-    const p = await b.newPage({ viewport: vp });
+  for (const [label, vp, slow] of [['Mac', { width: 1440, height: 900 }, 1], ['iPad (CPU 4x sporiji)', { width: 1180, height: 820, deviceScaleFactor: 2 }, 4]]) {
+    const p = await b.newPage({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.deviceScaleFactor || 1 });
+    if (slow > 1) { const cdp = await p.context().newCDPSession(p); await cdp.send('Emulation.setCPUThrottlingRate', { rate: slow }); }
     p.on('pageerror', e => console.log('PAGE ERROR', e.message));
     p.on('console', m => { if (m.type() === 'error' || m.text().startsWith('routing took')) console.log('console:', m.text().slice(0, 200)); });
     await p.addInitScript(() => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'race', source: 'cloud', replaySpeed: 120 })); });
@@ -28,7 +29,7 @@ const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta late
     console.log(label, JSON.stringify(info));
     // count redraws of the colour layer
     await p.evaluate(() => { const w = window.ctw.fn.wx(); window.__draws = 0; const d = w.draw.bind(w); w.draw = () => { window.__draws++; d(); }; });
-    await p.evaluate(() => window.ctw.fn.replayPlay());
+    await p.evaluate(() => { window.__t0 = window.ctw.state.time; window.__w0 = performance.now(); window.ctw.fn.replayPlay(); });
     const rows = [];
     for (let k = 0; k < 12; k++) {
       await p.waitForTimeout(1500);
@@ -40,11 +41,12 @@ const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta late
         const o = sample(s.wind, ['u', 'v'], q.lat, q.lon, s.time, []); const [mw, md] = speedDirFromUV(o[0], o[1]);
         const cv = document.querySelector('.leaflet-pane canvas') ;
         let sum = 0; try { const all = [...document.querySelectorAll('canvas')]; const big = all.sort((a, b) => b.width * b.height - a.width * a.height)[0]; const d = big.getContext('2d').getImageData(0, 0, big.width, big.height).data; for (let i = 0; i < d.length; i += 997) sum = (sum + d[i] * (i % 13 + 1)) % 1e9; } catch (e) { sum = 'x' + e.message; }
-        return `${new Date(s.time).toISOString().slice(5, 16)} karta=${s.modelId.replace('dir_', '')} vjetar karte na brodu ${mw.toFixed(1)}kn/${md.toFixed(0)}° | brod(${s.selected.replace('dir_', '')}) ${q.tws.toFixed(1)}kn/${q.twd.toFixed(0)}° | crtanja ${window.__draws} | canvas ${sum} | replay ${s && document.querySelector('#rpPlay') ? 'on' : '?'}`;
+        const rate = ((s.time - window.__t0) / 1000) / ((performance.now() - window.__w0) / 1000);
+        return `${new Date(s.time).toISOString().slice(5, 16)} brzina ${rate.toFixed(0)} s/s · karta=${s.modelId.replace('dir_', '')} vjetar karte na brodu ${mw.toFixed(1)}kn/${md.toFixed(0)}° | brod(${s.selected.replace('dir_', '')}) ${q.tws.toFixed(1)}kn/${q.twd.toFixed(0)}° | crtanja ${window.__draws} | canvas ${sum} | replay ${s && document.querySelector('#rpPlay') ? 'on' : '?'}`;
       }));
     }
     rows.forEach(r => console.log('  ' + r));
-    await p.screenshot({ path: `replay_${label.replace('/', '_')}.png` });
+    
     await p.close();
   }
   await b.close();

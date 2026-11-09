@@ -378,7 +378,7 @@ function setupTimeline() {
 }
 // timeline rows (44 px): day labels 0–10 · one thin bar per model 11–21 (how far each model reaches) ·
 // wind strip 23–31 · hour ticks 33–43. Past ~5 days the forecast is a trend: that part is hatched.
-const TL_FULL = { bars: 11, barsH: 10, strip: 23, stripH: 8, ticks: 33 }, TL_PHONE = { bars: 9, barsH: 7, strip: 17, stripH: 7, ticks: 25 };
+const TL_FULL = { bars: 10, barsH: 8, strip: 19, stripH: 7, ticks: 28 }, TL_PHONE = { bars: 9, barsH: 7, strip: 17, stripH: 7, ticks: 25 };
 let TL = TL_FULL;
 const isPhone = () => innerWidth <= 700;
 const DOW = ['ned', 'pon', 'uto', 'sri', 'čet', 'pet', 'sub'];

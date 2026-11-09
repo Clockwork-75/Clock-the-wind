@@ -47,6 +47,7 @@ fs.mkdirSync('shots', { recursive: true });
   await p.waitForTimeout(1500); console.log('B0', await info()); const b0 = await grab('B0');
   await p.waitForTimeout(60000); console.log('B1', await info()); const b1 = await grab('B1');
   console.log('B) replay 60 s @120 s/s (≈2 h):', diff(b0, b1));
+  console.log('PROVJERA PRIKAZA (tijekom replaya):\n' + await p.evaluate(() => window.ctw.fn.viewCheck().join('\n')));
   await p.evaluate(() => window.ctw.fn.replayPause());
   await b.close();
 })();

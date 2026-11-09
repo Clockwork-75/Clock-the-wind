@@ -43,16 +43,24 @@ export function colorFor(layer, v) {
 }
 
 // ---------- helper: custom canvas pane that tracks the viewport ----------
+// resize an offscreen canvas only when its size changes (a new bitmap otherwise); the caller overwrites or clears it
+const sizeTo = (cv, W, H) => { if (cv.width !== W) cv.width = W; if (cv.height !== H) cv.height = H; };
 function makeCanvasPane(map, name, z) {
   const pane = map.createPane(name);
   pane.style.zIndex = z;
   pane.style.pointerEvents = 'none';
   const canvas = L.DomUtil.create('canvas', 'ctw-canvas', pane);
   const ctx = canvas.getContext('2d');
+  // the backing store is (re)allocated only when the size really changes: assigning canvas.width – even the same value –
+  // allocates a new full-screen bitmap, and iOS Safari, with its hard canvas-memory limit, stops drawing into the canvas
+  // when the replay redraws several times a second (the last picture stayed frozen on the map)
   const fit = () => {
     const size = map.getSize(), dpr = window.devicePixelRatio || 1;
-    canvas.width = size.x * dpr; canvas.height = size.y * dpr;
-    canvas.style.width = size.x + 'px'; canvas.style.height = size.y + 'px';
+    const W = Math.round(size.x * dpr), H = Math.round(size.y * dpr);
+    if (canvas.width !== W || canvas.height !== H) {
+      canvas.width = W; canvas.height = H;
+      canvas.style.width = size.x + 'px'; canvas.style.height = size.y + 'px';
+    }
     L.DomUtil.setPosition(canvas, map.containerPointToLayerPoint([0, 0]));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
@@ -93,7 +101,7 @@ export class WeatherLayer {
     if (state.colors !== false) {
       const step = state.hiRes ? 1.5 : 2;   // CSS px per sample; the image is smoothed when scaled up
       const g = viewGeometry(map, step);
-      this.off.width = g.W; this.off.height = g.H;
+      sizeTo(this.off, g.W, g.H);
       const octx = this.off.getContext('2d');
       const img = octx.createImageData(g.W, g.H);
       const d = img.data, lut = layer.scale.lut, out = [];
@@ -129,7 +137,7 @@ export class WeatherLayer {
     // rain: semi-transparent colour only where it actually rains
     if (state.ovRain && state.layer !== 'rain' && state.wind) {
       const step = 4, g = viewGeometry(map, step), L = LAYERS.rain;
-      const off = document.createElement('canvas'); off.width = g.W; off.height = g.H;
+      const off = this.offRain || (this.offRain = document.createElement('canvas')); sizeTo(off, g.W, g.H);
       const octx = off.getContext('2d'), img = octx.createImageData(g.W, g.H), d = img.data, lut = L.scale.lut;
       for (let y = 0; y < g.H; y++) for (let x = 0; x < g.W; x++) {
         sample(state.wind, ['precip'], g.lats[y], g.lons[x], state.time, out);
@@ -248,7 +256,7 @@ export class ParticleLayer {
     this.parts = [];
     this.running = false;
     map.on('movestart zoomstart', () => { this.p.ctx.clearRect(0, 0, 1e5, 1e5); this.pause = true; });
-    map.on('moveend zoomend resize', () => { this.p.fit(); this.seed(); this.pause = false; });
+    map.on('moveend zoomend resize', () => { this.p.fit(); this.p.ctx.clearRect(0, 0, 1e5, 1e5); this.seed(); this.pause = false; });
     this.p.fit();
   }
   seed() {
@@ -383,7 +391,7 @@ const LM = { data: null };
 export function buildLandMask(map, state) {
   if (!hasLand(state)) { LM.data = null; return; }
   const sz = map.getSize(), q = 4, W = Math.ceil(sz.x / q), H = Math.ceil(sz.y / q);
-  const cv = LM.cv || (LM.cv = document.createElement('canvas')); cv.width = W; cv.height = H;
+  const cv = LM.cv || (LM.cv = document.createElement('canvas')); sizeTo(cv, W, H);
   const ctx = cv.getContext('2d', { willReadFrequently: true });
   ctx.setTransform(1 / q, 0, 0, 1 / q, 0, 0); ctx.clearRect(0, 0, sz.x, sz.y);
   fillLand(ctx, map, state, '#000');
@@ -494,7 +502,7 @@ export class ChartLayer {
     if (detail && plain) { ctx.fillStyle = '#12314f'; ctx.fillRect(0, 0, size.x, size.y); }   // dark sea, so the tiles show only on land
     if (nautical && state.bathy) {
       const b = state.bathy, step = 2, g = viewGeometry(map, step);
-      this.off.width = g.W; this.off.height = g.H;
+      sizeTo(this.off, g.W, g.H);
       const octx = this.off.getContext('2d'), img = octx.createImageData(g.W, g.H), d = img.data, lut = state.coast ? this.lutVec : this.lut;
       for (let y = 0; y < g.H; y++) {
         const r = Math.floor((b.lat1 - g.lats[y]) / b.dlat);

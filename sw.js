@@ -1,5 +1,5 @@
 // Clock the Wind service worker: app shell offline + cache-as-you-go map tiles.
-const SHELL = 'ctw-shell-v50';
+const SHELL = 'ctw-shell-v51';
 const TILES = 'ctw-tiles-v2';   // v2: old cache may hold CARTO "API key required" tiles
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',

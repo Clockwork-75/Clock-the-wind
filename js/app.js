@@ -385,7 +385,7 @@ function drawTimeline() {
   TL = isPhone() ? TL_PHONE : TL_FULL;
   const s = state.set; const cv = $('#tlCanvas');
   const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
-  cv.width = w * dpr; cv.height = h * dpr;
+  const W = Math.round(w * dpr), Hh = Math.round(h * dpr); if (cv.width !== W) cv.width = W; if (cv.height !== Hh) cv.height = Hh;   // no new bitmap on every replay frame (iOS canvas memory)
   const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
   if (!s) return;
   const t0 = s.times[0], t1 = s.times[s.times.length - 1], X = t => (t - t0) / (t1 - t0) * (w - 2) + 1;
@@ -1858,7 +1858,12 @@ const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? setting
 const speedLabel = v => v >= 300 ? `${v / 60} min/s` : `${v} s/s`;
 // how long the whole replay takes at speed v (from the first start to the last finish)
 const replayDur = v => { const R = replayRange(); if (!R) return ''; const m = (R.t1 - R.t0) / v / 60000; return m < 1 ? `${Math.round(m * 60)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1).replace('.', ',')} h`; };
-const rp = { on: false, raf: 0, last: 0, lastFull: 0, every: 250 };
+const rp = { on: false, raf: 0, last: 0, lastFull: 0, every: 250, full: 0 };
+// the last errors on this device (shown by Postavke → Provjera prikaza)
+const errLog = [];
+function noteErr(e) { const m = (e && (e.message || e.reason && e.reason.message || e.reason)) || String(e); errLog.push(`${fmtTime(Date.now(), false)} ${String(m).slice(0, 120)}`); if (errLog.length > 6) errLog.shift(); console.error(e); }
+addEventListener('error', e => noteErr(e.error || e.message));
+addEventListener('unhandledrejection', e => noteErr(e.reason));
 function replayRange() {
   const o = okRoutes(); if (!o.length) return null;
   return { t0: Math.min(...o.map(r => r.startTime || r.track[0].t)), t1: Math.max(...o.map(r => r.eta)) };
@@ -1874,6 +1879,31 @@ function windOfRoute() {
   const id = sel.model;
   if (id === state.modelId || !state.set.fields[id]) return;
   state.modelId = id; state.wind = withFallback(state.set, id); renderChips(); wxLayer.draw();
+}
+// Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
+function viewCheck() {
+  const st = state, s = st.set, H = 3600000, L = [];
+  L.push(`Verzija 3.7 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
+  const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
+  L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
+  L.push(`Podaci: ${fmtTime(ft[0])} → ${fmtTime(ft[ft.length - 1])} (${ft.length} koraka, ${step} h)${f.ext ? ` + dani 4–15 do ${fmtTime(f.ext.times[f.ext.times.length - 1])}` : ''} · vrijedi do ${fmtTime(lastTime(f))}`);
+  const t = st.time, k = ft.findIndex(x => x >= t);
+  L.push(`Vrijeme na karti: ${fmtTime(t)} · start ${fmtTime(raceStart())} · koraci oko njega: ${k < 0 ? 'iza kraja modela' : ft.slice(Math.max(0, k - 1), k + 2).map(x => fmtTime(x, false)).join(', ')}`);
+  const b = map.getBounds(), pts = [[0.3, 0.3], [0.5, 0.5], [0.7, 0.4], [0.4, 0.7]].map(([a, d]) => [b.getSouth() + (b.getNorth() - b.getSouth()) * a, b.getWest() + (b.getEast() - b.getWest()) * d]);
+  const at = tt => pts.map(([la, lo]) => { const o = sample(f, ['u', 'v'], la, lo, tt, []); return o[0] === o[0] ? Math.hypot(o[0], o[1]).toFixed(1) + '/' + Math.round((Math.atan2(-o[0], -o[1]) * 180 / Math.PI + 360) % 360) + '°' : '–'; });
+  const a = at(t), z = at(t + 2 * H);
+  L.push(`Vjetar (kn/smjer) sada: ${a.join(' ')} · za 2 h: ${z.join(' ')} → podaci se ${a.join() === z.join() ? 'NE mijenjaju' : 'mijenjaju'}`);
+  // pixels: draw now and +2 h, compare the wind canvas, put the time back
+  const cv = document.querySelector('.leaflet-wx-pane > canvas');
+  const hash = () => { try { const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let h = 0, n = 0; for (let i = 0; i < d.length; i += 4 * 53) { h = (h * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13) % 1000000007; if (d[i + 3]) n++; } return [h, n]; } catch (e) { return [String(e.message), 0]; } };
+  const wasOn = rp.on; if (wasOn) replayPause();
+  wxLayer.draw(); const h0 = hash();
+  const t0 = st.time; setTime(t0 + 2 * H); const h1 = hash(); setTime(t0);
+  L.push(`Slika vjetra: platno ${cv ? cv.width + '×' + cv.height : 'nema'}, obojenih uzoraka ${h0[1]} · nacrtano za +2 h ${h0[0] === h1[0] ? 'ISTO' : 'drugačije'}`);
+  L.push(`Replay: ${rp.on ? 'radi' : 'stoji'} · iscrtavanja ${rp.full} · svakih ${Math.round(rp.every)} ms · brzina ${replaySpeed()} s/s`);
+  L.push(errLog.length ? 'Greške: ' + errLog.join(' | ') : 'Greške: nema');
+  return L;
 }
 function followRouteWind(t) {
   if (!state.set || coversTime(state.modelId, t)) return;
@@ -1900,7 +1930,9 @@ function replayPlay() {
     const dt = Math.min(1000, now - rp.last); rp.last = now;
     const t = Math.min(R.t1, state.time + dt * replaySpeed());
     if (now - rp.lastFull > rp.every || t >= R.t1) {                              // full redraw: wind colours, arrows, particles' field
-      rp.lastFull = now; followRouteWind(t); setTime(t);
+      rp.lastFull = now;
+      try { followRouteWind(t); } catch (e) { noteErr(e); }
+      try { setTime(t); rp.full++; } catch (e) { noteErr(e); state.time = t; }   // never stops the replay or freezes the map
       const cost = performance.now() - now; rp.every = Math.max(250, Math.min(1500, cost * 2.5));   // leave time for the boats
     }
     else { state.time = t; updateBoats(); }                                       // boats every frame
@@ -2102,7 +2134,9 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 3.6 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <button id="viewCheck" class="btn block">Provjera prikaza</button>
+    <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
+    <div class="note">Verzija 3.7 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>
@@ -2111,6 +2145,7 @@ function renderSettingsTab() {
   el.querySelector('#seam').onchange = e => { settings.seamarks = e.target.checked; saveSettings(); applyBasemap(); };
   el.querySelector('#landDet').onchange = e => { settings.landDetail = e.target.checked; saveSettings(); updateLandDetail(); toast(e.target.checked ? `Detaljno kopno od zuma ${LAND_DETAIL_Z} (uz internet)` : 'Detaljno kopno isključeno'); };
   el.querySelector('#colors').onchange = e => { state.colors = settings.colors = e.target.checked; saveSettings(); wxLayer.draw(); };
+  el.querySelector('#viewCheck').onclick = () => { const o = el.querySelector('#viewCheckOut'); try { o.textContent = viewCheck().join('\n'); } catch (e) { o.textContent = 'Provjera nije uspjela: ' + e.message; } };
   el.querySelector('#hires').onchange = e => { state.hiRes = settings.hiRes = e.target.checked; saveSettings(); wxLayer.draw(); };
   el.querySelector('#ovl').onchange = e => { state.colorOverLand = settings.colorOverLand = e.target.checked; saveSettings(); wxLayer.draw(); };
   el.querySelector('#opac').oninput = e => { state.opacity = settings.opacity = +e.target.value; saveSettings(); wxLayer.draw(); };
@@ -2217,6 +2252,9 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   wxLayer.draw();
   setTimeout(() => { map.invalidateSize(); if (map.getZoom() < 7) home(); maybeFillWindow(200); }, 600);
   if (settings.source === 'cloud' && navigator.onLine && (!state.set || state.set.source !== 'cloud')) setTimeout(() => doDownload().catch(() => {}), 1200);
+  // a saved cloud forecast older than 3 h: fetch the newer package quietly (routes and view stay)
+  else if (settings.source === 'cloud' && navigator.onLine && state.set && Date.now() - (+state.set.created || 0) > 3 * 3600000)
+    setTimeout(() => loadCloud(null, null, true).then(() => toast('Prognoza osvježena iz oblaka', 2500)).catch(() => {}), 1500);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     // a new version takes over by itself: when the new service worker is active the app reloads once (no double restart)
     const hadCtl = !!navigator.serviceWorker.controller; let reloaded = false;
@@ -2229,5 +2267,5 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   setInterval(() => { if (!state.set) return; if (pruneClockW(state.set)) { saveForecast(state.set); useSet(state.set); } setTime(state.time); }, 60000); // keep countdown fresh · expired ClockW go
 })();
 window.ctw = { state, settings, course, map,
-  fn: { courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
+  fn: { viewCheck, courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
     markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };

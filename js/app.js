@@ -187,7 +187,8 @@ const fmtTime = (t, withDay = true) => {
   const dayIdx = new Date(d.toLocaleString('en-US', { timeZone: TZ })).getDay();
   return (withDay ? `${DAYS[dayIdx]} ${g('day')}.${g('month')}. ` : '') + `${g('hour')}:${g('minute')}`;
 };
-const fmtRun = t => { const d = new Date(t); return `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}. ${String(d.getUTCHours()).padStart(2, '0')}z`; };
+// model run time, shown in local (Croatian) time like every other time in the app – e.g. the 00z run is "09.11. 01h"
+const fmtRun = t => { const p = new Intl.DateTimeFormat('hr-HR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', hour12: false }).formatToParts(new Date(t)); const g = k => (p.find(x => x.type === k) || {}).value; return `${g('day')}.${g('month')}. ${g('hour')}h`; };
 const raceStart = () => course.start || defaultStart();
 // Model colours on the map: each model in the current forecast gets its own slot from a palette chosen to stand out
 // against the wind colours (no blues/greens) and against each other. Used everywhere (chips, routes, boats, tables).

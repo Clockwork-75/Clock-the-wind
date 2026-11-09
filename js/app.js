@@ -1687,7 +1687,7 @@ async function runRouting(ids, override = {}) {
       res.model = id; res.boat = state.boat.name; res.sailSet = sailSetOf(state.boat); res.live = !!override.marks;
       state.routes[id] = res;
       const b = $('#rp-' + key(id)); if (b) b.style.width = '100%';
-      if (rsEl()) rsEl().textContent = res.ok ? `ETA ${fmtTime(res.eta)} (${fmtDur(res.stats.hours)})` : '✕ ' + res.error;
+      if (rsEl()) rsEl().textContent = res.ok ? `ETA ${fmtTime(res.eta)} (${fmtDur(res.stats.hours)})${res.overPolar ? ` · ⚠ vjetar do ${Math.round(res.overPolar.maxTws)} kn, polar do ${res.overPolar.top} kn` : ''}` : '✕ ' + res.error;
       drawRoutes();
     }
   })()));
@@ -1953,13 +1953,13 @@ function renderCompareTab() {
     ${ok.length > 1 ? `<div class="seg"><button data-rv="all" class="${settings.routeView !== 'one' ? 'on' : ''}">Sve rute</button><button data-rv="one" class="${settings.routeView === 'one' ? 'on' : ''}">Samo odabrana</button></div>` : ''}
     <table class="cmp"><tr><th>Model</th><th>Cilj</th><th>Zaostatak</th><th>Odstup.</th><th>nm</th><th>Ø kn</th><th>T/G</th></tr>
     ${ok.map(r => { const m = modelById(r.model), s = r.stats, d = deviation(r, ideal); return `<tr data-id="${r.model}" class="${r.model === state.selected ? 'sel' : ''}">
-      <td><span class="dot" style="background:${mcol(m.id)}"></span>${r === ideal ? '★ ' : ''}${m.name}</td><td class="${r === ideal ? 'best' : ''}">${fmtTime(r.eta, false)}</td>
+      <td><span class="dot" style="background:${mcol(m.id)}"></span>${r === ideal ? '★ ' : ''}${m.name}${r.overPolar ? ' <span title="Vjetar iznad granice polara" style="color:var(--warn,#f2a03d)">⚠</span>' : ''}</td><td class="${r === ideal ? 'best' : ''}">${fmtTime(r.eta, false)}</td>
       <td>${r === ideal ? '<b>idealna</b>' : '+' + fmtDur((r.eta - bestEta) / 3600000)}</td>
       <td>${r === ideal ? '–' : `do ${d.max.toFixed(1)} nm<br><small style="color:var(--muted)">Ø ${d.mean.toFixed(1)}</small>`}</td>
       <td>${s.dist.toFixed(1)}</td><td>${s.avgSog.toFixed(1)}</td><td>${s.tacks}/${s.gybes}</td></tr>`; }).join('')}
     ${rs.filter(r => !r.ok).map(r => `<tr><td><span class="dot" style="background:${mcol(r.model)}"></span>${modelById(r.model).name}</td><td colspan="6" style="text-align:left;color:var(--bad);white-space:normal">${r.error}</td></tr>`).join('')}
     </table>
-    <p class="note">Dodirni red za odabir rute. <b>Odstupanje</b> = koliko daleko ruta ide od idealne (najveće / prosječno). <b>T/G</b> = broj okreta kroz vjetar / kroz krmu. ▶ na karti pokreće utrku brodića.</p>
+    <p class="note">Dodirni red za odabir rute. ${ok.some(r => r.overPolar) ? '<b>⚠</b> = na ruti je vjetar jači od granice polara broda. ' : ''}<b>Odstupanje</b> = koliko daleko ruta ide od idealne (najveće / prosječno). <b>T/G</b> = broj okreta kroz vjetar / kroz krmu. ▶ na karti pokreće utrku brodića.</p>
     ${ok.length > 1 ? `<p class="note">Raspon dolaska između modela: <b>${fmtDur(spread)}</b>. ${spread > 2 ? 'Modeli se znatno razilaze – prati razvoj i plan B.' : 'Modeli se dobro slažu.'}</p>` : ''}
     <div class="row"><label>Prikaži izokrone odabrane rute</label><input type="checkbox" id="isoT" ${state.showIso !== false ? 'checked' : ''}></div>
     <div id="routeDetail"></div>
@@ -1986,6 +1986,7 @@ function renderRouteDetail() {
       <div><b>${s.tacks}</b><span>okreta kroz vjetar</span></div><div><b>${s.gybes}</b><span>kroz krmu</span></div><div><b>${s.sailChanges}</b><span>promjena jedara</span></div>
     </div>
     <div class="note" style="margin-top:10px">Jedra: ${sails}</div>
+    ${r.overPolar ? `<div class="note" style="border-left:3px solid #f2a03d;padding-left:8px"><b>⚠ Vjetar iznad granice polara.</b> Na ruti ima vjetra do <b>${r.overPolar.maxTws.toFixed(0)} kn</b> (oko ${fmtDur(r.overPolar.hours)}), a polar broda ide samo do <b>${r.overPolar.top} kn</b>. Iznad toga brzina se računa kao pri ${r.overPolar.top} kn – stvarna brzina (surfanje) može biti veća, a sigurnost i izbor jedara treba procijeniti sam.</div>` : ''}
     <canvas class="chart" id="routeChart"></canvas>
     <div class="note">Graf: TWS (puna), udari (točkasta), BSP (bijela), TWA (siva, desna skala), ispod traka jedara.</div>
     <h3>Točke rute</h3>

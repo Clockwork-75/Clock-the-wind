@@ -12,6 +12,10 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
   const o = {
     dtMin: 10, headingStep: 3, efficiency: 1.0, tackPenaltySec: 25, gybePenaltySec: 20,
     useCurrents: true, wavePenalty: true, maxHours: 96, sectorDeg: 1.5, arriveNm: 0.15,
+    // isochrone pruning per sector: 'sea' = point closest to the mark by water (around islands),
+    // 'classic' = point farthest from the leg start (Expedition / LuckGrib / SailGrib), 'hybrid' = both points per sector,
+    // 'both' = every leg routed with 'sea' and with 'classic' separately, the earlier arrival is kept
+    prune: 'both',
     ...opts,
   };
   const tEnd = wind.validUntil || wind.times[wind.times.length - 1];
@@ -35,7 +39,12 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
 
   for (let leg = 1; leg < marks.length; leg++) {
     const tgt = marks[leg];
-    const res = runLeg(cur, tgt, t, lastSign);
+    let res;
+    if (o.prune === 'both') {
+      const a = runLeg(cur, tgt, t, lastSign, 'sea', [0, 0.5]), c = runLeg(cur, tgt, t, lastSign, 'classic', [0.5, 0.5]);
+      res = !a.ok ? c : !c.ok ? a : (c.eta < a.eta ? c : a);
+    } else res = runLeg(cur, tgt, t, lastSign, o.prune);
+    if (res.iso) isochrones.push(...res.iso);
     if (!res.ok) return { ok: false, error: res.error, track, isochrones, legs };
     // stitch
     for (const p of res.path) if (!track.length || track[track.length - 1].t !== p.t) track.push(p);
@@ -44,7 +53,12 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
     track[track.length - 1].mark = tgt.name || `Oznaka ${leg}`;
   }
   const full = smoothSails(enrich(track));
-  return { ok: true, track: full, isochrones, legs, snaps, startTime, eta: t, stats: stats(full, startTime, t) };
+  // wind above the polar's last TWS column: the polar can only repeat that column there (speed held, not extrapolated)
+  const polarTop = polar.src && polar.src.tws ? polar.src.tws[polar.src.tws.length - 1] : 40;
+  let overH = 0, overMax = 0;
+  for (let i = 0; i < full.length - 1; i++) if (full[i].tws > polarTop + 0.5) { overH += (full[i + 1].t - full[i].t) / 3600000; overMax = Math.max(overMax, full[i].tws); }
+  const overPolar = overH > 0 ? { top: polarTop, maxTws: overMax, hours: overH } : null;
+  return { ok: true, track: full, isochrones, legs, snaps, startTime, eta: t, stats: stats(full, startTime, t), overPolar };
 
   function windAt(lat, lon, time) {
     sample(wind, W, lat, lon, time, wv);
@@ -64,7 +78,8 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
     return 1 - Math.min(0.2, 0.05 * hs * (0.4 + up));
   }
 
-  function runLeg(from, tgt, t0, sign0) {
+  function runLeg(from, tgt, t0, sign0, prune, pg = [0, 1]) {
+    const iso = [];
     const dt = o.dtMin * 60000;
     const distTotal = distNm(from.lat, from.lon, tgt.lat, tgt.lon);
     const sea = seaField(mask, from, tgt);            // shortest distance to the mark *by water* (around islands)
@@ -129,16 +144,28 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
           }
         }
       }
-      if (best && best.eta <= tn) return finish(best);
+      if (best && best.eta <= tn) return finish(best, iso);
       // prune: per sector keep the best candidate that does not cross land
       const next = [];
       for (let b = 0; b < nb; b++) {
         const arr = buckets[b];
         if (!arr) continue;
-        arr.sort((x, y) => y.score - x.score);
-        for (let k = 0; k < Math.min(arr.length, 6); k++) {
-          const c = arr[k];
-          if (!segmentHitsLand(mask, c.parent.lat, c.parent.lon, c.lat, c.lon) && !isLand(mask, c.lat, c.lon)) { next.push(c); break; }
+        let seaPick = null;
+        if (prune !== 'classic') {
+          arr.sort((x, y) => y.score - x.score);
+          for (let k = 0; k < Math.min(arr.length, 6); k++) {
+            const c = arr[k];
+            if (!segmentHitsLand(mask, c.parent.lat, c.parent.lon, c.lat, c.lon) && !isLand(mask, c.lat, c.lon)) { next.push(c); seaPick = c; break; }
+          }
+        }
+        if (prune !== 'sea') {
+          // classic isochrone: the point that got farthest from the leg start in this direction
+          arr.sort((x, y) => y.dS - x.dS);
+          for (let k = 0; k < Math.min(arr.length, 6); k++) {
+            const c = arr[k];
+            if (c === seaPick) break;   // same point as the sea pick: nothing to add
+            if (!segmentHitsLand(mask, c.parent.lat, c.parent.lon, c.lat, c.lon) && !isLand(mask, c.lat, c.lon)) { next.push(c); break; }
+          }
         }
       }
       // always also keep the points closest to the mark by water (harbour entrances, narrow channels)
@@ -158,25 +185,25 @@ export function route({ wind, marine, polar, mask, marks, startTime, opts = {}, 
         const gap = Math.max(0.8, avgR * 0.12);
         let piece = [];
         for (let k = 0; k < pts.length; k++) {
-          if (k && distNm(pts[k - 1].lat, pts[k - 1].lon, pts[k].lat, pts[k].lon) > gap) { if (piece.length > 1) isochrones.push(piece); piece = []; }
+          if (k && distNm(pts[k - 1].lat, pts[k - 1].lon, pts[k].lat, pts[k].lon) > gap) { if (piece.length > 1) iso.push(piece); piece = []; }
           piece.push([pts[k].lat, pts[k].lon]);
         }
-        if (piece.length > 1) isochrones.push(piece);
+        if (piece.length > 1) iso.push(piece);
       }
       if (!front.length) return { ok: false, error: 'Nema prolaza – ruta je odsječena kopnom ili plićinama.' };
-      if (onProgress && step % 6 === 0) onProgress(Math.min(0.99, 1 - Math.min(...front.map(c => c.sea)) / Math.max(0.1, seaOrigin)));
+      if (onProgress && step % 6 === 0) onProgress(pg[0] + pg[1] * Math.min(0.99, 1 - Math.min(...front.map(c => c.sea)) / Math.max(0.1, seaOrigin)));
     }
-    return best ? finish(best) : { ok: false, error: 'Ruta nije pronađena unutar maksimalnog vremena.' };
+    return best ? finish(best, iso) : { ok: false, error: 'Ruta nije pronađena unutar maksimalnog vremena.' };
   }
 
-  function finish(best) {
+  function finish(best, iso) {
     const path = [];
     let n = best.node;
     while (n) { path.push({ lat: n.lat, lon: n.lon, t: n.t, hdg: n.hdg }); n = n.parent; }
     path.reverse();
     // heading of each point = heading used to leave it
     for (let i = 0; i < path.length - 1; i++) path[i].hdg = path[i + 1].hdg;
-    return { ok: true, eta: best.eta, path, lastSign: best.node.sign };
+    return { ok: true, eta: best.eta, path, lastSign: best.node.sign, iso };
   }
 
   function enrich(tr) {

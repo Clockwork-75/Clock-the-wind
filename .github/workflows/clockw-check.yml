@@ -22,8 +22,8 @@ jobs:
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
-          node tools/diag/replay_freeze.cjs http://localhost:8080/
-          mkdir -p shots && echo ok > shots/none.txt
+          node tools/diag/render_check.cjs http://localhost:8080/
+          mkdir -p shots && ls shots
       - name: Snimke na granu diag-shots
         if: always()
         run: |

@@ -89,14 +89,35 @@ function fillFromFallback(f, names, lat, lon, t, out) {
 
 // 0..1: how far inside its own grid a point lies – the colours fade out over the last stretch of a model's area
 // (at least ~0.12° or 1.2 grid cells) instead of ending in a hard rectangle
-export function coverage(f, lat, lon, t) {
+export function coverage(f, lat, lon, t, holes = true) {
   if (!f) return 0;
   const g = f.ext && t > f.times[f.times.length - 1] ? f.ext : f;
   const x = (lon - g.lon0) / g.dlon, y = (lat - g.lat0) / g.dlat;
-  const e = Math.min(x + 0.5, g.nx - 0.5 - x, y + 0.5, g.ny - 0.5 - y);   // grid cells to the outer edge
+  let e = Math.min(x + 0.5, g.nx - 0.5 - x, y + 0.5, g.ny - 0.5 - y);   // grid cells to the outer edge
   if (e <= 0) return 0;
   const fade = Math.max(1.2, 0.12 / Math.min(g.dlat, g.dlon));
+  // a model whose own area ends inside its grid (ICON-D2 south of ~43.2°N, ICON-2I…): fade at that edge too
+  if (holes) { const d = validDist(g, fade); if (d) { const xi = Math.max(0, Math.min(g.nx - 1, x)), yi = Math.max(0, Math.min(g.ny - 1, y));
+    const x0 = Math.min(g.nx - 2, Math.floor(xi)), y0 = Math.min(g.ny - 2, Math.floor(yi)), tx = xi - x0, ty = yi - y0, nx = g.nx;
+    if (x0 >= 0 && y0 >= 0) { const v = d[y0 * nx + x0] * (1 - tx) * (1 - ty) + d[y0 * nx + x0 + 1] * tx * (1 - ty) + d[(y0 + 1) * nx + x0] * (1 - tx) * ty + d[(y0 + 1) * nx + x0 + 1] * tx * ty; e = Math.min(e, v + 0.5); } } }
+  if (e <= 0) return 0;
   return e >= fade ? 1 : e / fade;
+}
+// distance (grid cells, capped) from each cell to the nearest cell without data – computed once per grid
+function validDist(g, cap) {
+  if (g._vd !== undefined) return g._vd;
+  const k = g.vars && (g.vars.u ? 'u' : Object.keys(g.vars)[0]); const a = k && g.vars[k];
+  const nx = g.nx, ny = g.ny, N = nx * ny;
+  if (!a || !nx || !ny || nx < 2 || ny < 2) return (g._vd = null);
+  const d = new Float32Array(N); let holes = false;
+  for (let i = 0; i < N; i++) { if (a[i] === a[i]) d[i] = cap; else { d[i] = 0; holes = true; } }
+  if (!holes) return (g._vd = null);
+  const D = Math.SQRT2;
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const i = y * nx + x; let v = d[i]; if (!v) continue;
+    if (x > 0) v = Math.min(v, d[i - 1] + 1); if (y > 0) { v = Math.min(v, d[i - nx] + 1); if (x > 0) v = Math.min(v, d[i - nx - 1] + D); if (x < nx - 1) v = Math.min(v, d[i - nx + 1] + D); } d[i] = v; }
+  for (let y = ny - 1; y >= 0; y--) for (let x = nx - 1; x >= 0; x--) { const i = y * nx + x; let v = d[i]; if (!v) continue;
+    if (x < nx - 1) v = Math.min(v, d[i + 1] + 1); if (y < ny - 1) { v = Math.min(v, d[i + nx] + 1); if (x < nx - 1) v = Math.min(v, d[i + nx + 1] + D); if (x > 0) v = Math.min(v, d[i + nx - 1] + D); } d[i] = v; }
+  return (g._vd = d);
 }
 
 // time steps where a variable has no values at all (e.g. ECMWF gusts at the analysis hour) are filled from the

@@ -101,7 +101,7 @@ export class WeatherLayer {
       for (let y = 0; y < g.H; y++) {
         const lat = g.lats[y];
         for (let x = 0; x < g.W; x++) {
-          const cov = coverage(f, lat, g.lons[x], t);
+          const cov = coverage(f, lat, g.lons[x], t, layer.src !== 'marine');
           if (cov <= 0) continue;
           sample(f, layer.vars, lat, g.lons[x], t, out);
           const v = layer.value(out);
@@ -176,7 +176,7 @@ export class WeatherLayer {
     for (let y = gap / 2; y < size.y; y += gap) {
       for (let x = gap / 2; x < size.x; x += gap) {
         const ll = map.containerPointToLatLng([x, y]);
-        if (state.landAt && state.landAt(ll.lat, ll.lng)) continue;
+        if (onLand(map, state, x, y, ll)) continue;
         if (coverage(f, ll.lat, ll.lng, state.time) < 0.5) continue;   // no arrows in the faded edge of the model's area
         let spd, dirTo;
         if (kind === 'waves') {
@@ -279,11 +279,11 @@ export class ParticleLayer {
       ctx.globalCompositeOperation = 'source-over';
       ctx.lineWidth = 1.15; ctx.strokeStyle = st.layer === 'current' ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.8)';
       ctx.beginPath();
-      const zoomK = 1;
+      const zoomK = 1, lo = this.map.containerPointToLayerPoint([0, 0]);
       for (const p of this.parts) {
         if (p.age++ > 160) { Object.assign(p, this.rand(size), { age: 0 }); continue; }
         const ll = this.map.containerPointToLatLng([p.x, p.y]);
-        if (st.landAt && st.landAt(ll.lat, ll.lng)) { Object.assign(p, this.rand(size), { age: 0 }); continue; }
+        if (onLand(this.map, st, p.x, p.y, ll, lo)) { Object.assign(p, this.rand(size), { age: 0 }); continue; }
         sample(src, vars, ll.lat, ll.lng, st.time, out);
         if (out[0] !== out[0]) { p.age = 999; continue; }
         const nx = p.x + out[0] * k * zoomK, ny = p.y - out[1] * k * zoomK;
@@ -377,6 +377,28 @@ export function strokeLand(ctx, map, state, color, w) {
   for (const pc of landPieces(map, state)) withPiece(ctx, map, size, pc, p => ctx.stroke(p.stroke));
 }
 export const hasLand = state => !!(state.coast || state.world);
+// land mask of the current view (¼ resolution) from the same vector land as the chart: arrows and particles stay at sea
+// everywhere (also outside the Adriatic, where there is no depth grid)
+const LM = { data: null };
+export function buildLandMask(map, state) {
+  if (!hasLand(state)) { LM.data = null; return; }
+  const sz = map.getSize(), q = 4, W = Math.ceil(sz.x / q), H = Math.ceil(sz.y / q);
+  const cv = LM.cv || (LM.cv = document.createElement('canvas')); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.setTransform(1 / q, 0, 0, 1 / q, 0, 0); ctx.clearRect(0, 0, sz.x, sz.y);
+  fillLand(ctx, map, state, '#000');
+  const px = ctx.getImageData(0, 0, W, H).data, data = new Uint8Array(W * H);
+  for (let i = 0; i < data.length; i++) data[i] = px[i * 4 + 3] > 140 ? 1 : 0;
+  const o = map.containerPointToLayerPoint([0, 0]);
+  Object.assign(LM, { data, W, H, q, ox: o.x, oy: o.y, z: map.getZoom() });
+}
+export function onLand(map, state, x, y, ll, o) {
+  if (LM.data && LM.z === map.getZoom()) {
+    o = o || map.containerPointToLayerPoint([0, 0]); const X = Math.floor((x + o.x - LM.ox) / LM.q), Y = Math.floor((y + o.y - LM.oy) / LM.q);
+    if (X >= 0 && Y >= 0 && X < LM.W && Y < LM.H) return LM.data[Y * LM.W + X] === 1;
+  }
+  return !!(state.landAt && ll && state.landAt(ll.lat, ll.lng));
+}
 
 // ---------- chart layer: offline nautical chart (depth shading, isobaths) or plain land ----------
 const DEPTH_STYLE = [ // [maxDepth m, rgb] Navionics-like: shallow = blue, deep = white
@@ -466,7 +488,7 @@ export class ChartLayer {
     ctx.clearRect(0, 0, size.x, size.y);
     const mode = state.basemap;
     const nautical = mode === 'nautical', plain = mode === 'offline';
-    if (!nautical && !plain) { this.drawCoastStroke(ctx, '#ffffff55', 0.8); return; }
+    if (!nautical && !plain) { this.drawCoastStroke(ctx, '#ffffff55', 0.8); buildLandMask(map, state); return; }
     const landColor = nautical ? '#f2e6c2' : '#3a3e44';
     const detail = !!state.landDetail && !!state.coast;   // zoomed in + online: land comes from the detailed map tiles below
     if (detail && plain) { ctx.fillStyle = '#12314f'; ctx.fillRect(0, 0, size.x, size.y); }   // dark sea, so the tiles show only on land
@@ -481,7 +503,9 @@ export class ChartLayer {
           const c = Math.floor((g.lons[x] - b.lon0) / b.dlon);
           if (c < 0 || c >= b.NC) continue;
           const code = b.codes[r * b.NC + c], o = (y * g.W + x) * 4, i = code * 4;
-          d[o] = lut[i]; d[o + 1] = lut[i + 1]; d[o + 2] = lut[i + 2]; d[o + 3] = 255;
+          // the depth shading fades out over the last ~0.15° of the survey grid (the open sea outside is plain)
+          const edge = Math.min(g.lats[y] - b.lat0, b.lat1 - g.lats[y], g.lons[x] - b.lon0, b.lon1 - g.lons[x]);
+          d[o] = lut[i]; d[o + 1] = lut[i + 1]; d[o + 2] = lut[i + 2]; d[o + 3] = edge >= 0.15 ? 255 : Math.max(0, edge / 0.15) * 255;
         }
       }
       octx.putImageData(img, 0, 0);
@@ -496,6 +520,7 @@ export class ChartLayer {
       else fillLand(ctx, map, state, landColor);
       strokeLand(ctx, map, state, nautical ? '#6b5b3a' : '#9aa3ad', nautical ? 1 : 0.9);
     }
+    buildLandMask(map, state);
     // place labels
     if (state.places && map.getZoom() >= 8 && !detail) {
       ctx.font = '600 11px -apple-system,system-ui,sans-serif'; ctx.textAlign = 'center';

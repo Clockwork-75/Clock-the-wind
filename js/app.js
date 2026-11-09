@@ -1379,6 +1379,7 @@ let lastFill = 0, lastFillFailed = false;
 function maybeFillWindow(delay = 1200) {
   clearTimeout(fillTimer);
   if (pick || !navigator.onLine) return;
+  if (settings.source === 'cloud') return;   // the cloud package is complete (Adriatic, 15 days): nothing to fill around it
   const wantLong = () => fcDays() > SHORT_DAYS && state.set && Date.now() - (+state.set.longTried || 0) > 30 * 60000 && !longCovered(state.set);
   if (areaSel() !== 'view') {   // fixed area (Adriatic / own rectangle): no window filling, but days 4–15 once
     if (dlBusy) { fillTimer = setTimeout(() => maybeFillWindow(delay), 3000); return; }   // try again when the current download ends
@@ -2101,7 +2102,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 3.2 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 3.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

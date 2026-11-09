@@ -22,9 +22,8 @@ jobs:
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
-          node tools/cloud/build_package.mjs data/latest.ctw || true
-          ls -la data/latest.ctw && cat data/latest.json | head -40
-          CLOUD_URL=http://localhost:8080/data/latest.ctw node tools/diag/visual_check.cjs http://localhost:8080/
+          node tools/diag/gust_check.mjs
+          mkdir -p shots && echo ok > shots/none.txt
       - name: Snimke na granu diag-shots
         if: always()
         run: |

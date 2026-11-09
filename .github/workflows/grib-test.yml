@@ -24,7 +24,8 @@ jobs:
           done
           cat grib/gfs_*.grb2 > grib/a_gfs.grb2 2>/dev/null; rm -f grib/gfs_0*.grb2
           # ECMWF open data – GRIB2 (10 m wind), byte ranges from the index
-          B="https://data.ecmwf.int/forecasts/$D/00z/ifs/0p25/oper/${D}000000-12h-oper-fc"
+          DY=$(date -u -d yesterday +%Y%m%d)   # yesterday 12z: always published
+          B="https://data.ecmwf.int/forecasts/$DY/12z/ifs/0p25/oper/${DY}120000-24h-oper-fc"
           curl -sSfL -o idx.json "$B.index" && for P in 10u 10v; do
             L=$(grep "\"param\": \"$P\"" idx.json | head -1); O=$(echo "$L" | sed -E 's/.*"_offset": ([0-9]+).*/\1/'); N=$(echo "$L" | sed -E 's/.*"_length": ([0-9]+).*/\1/')
             curl -sSfL -r "$O-$((O+N-1))" "$B.grib2" >> grib/b_ecmwf.grib2
@@ -34,14 +35,16 @@ jobs:
             curl -sSfL "https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/$V/icon-eu_europe_regular-lat-lon_single-level_${D}00_012_${V^^}.grib2.bz2" | bunzip2 >> grib/c_iconeu.grib2 || true
           done
           # GRIB1 (like Saildocs) converted from the GFS file, and a gzip-compressed copy
-          sudo apt-get -qq install -y cdo >/dev/null 2>&1 && cdo -s -f grb copy grib/a_gfs.grb2 grib/d_grib1_gfs.grb || true
+          (sudo apt-get update -qq && sudo apt-get install -y -qq cdo) >/dev/null 2>&1 || echo "cdo install failed"
+          cdo -s -f grb copy grib/a_gfs.grb2 grib/d_grib1_gfs.grb || echo "GRIB1 conversion failed"
           gzip -c grib/a_gfs.grb2 > grib/e_gfs.grb2.gz || true
           ls -la grib
       - name: Pokreni aplikaciju i uvezi GRIB-ove u pregledniku
         env:
           REMOTE_LINKS: "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.$(date -u +%Y%m%d)%2F00%2Fatmos&file=gfs.t00z.pgrb2.0p25.f006&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on&subregion=&toplat=46&leftlon=12&rightlon=20&bottomlat=41"
         run: |
-          npm i --no-save playwright@1.56.0 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1
+          npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -2
+          export CHROME=$(command -v google-chrome || command -v chromium || command -v chromium-browser); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
           REMOTE_LINKS="https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.$(date -u +%Y%m%d)%2F00%2Fatmos&file=gfs.t00z.pgrb2.0p25.f006&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on&subregion=&toplat=46&leftlon=12&rightlon=20&bottomlat=41" node tools/diag/grib_test.cjs grib http://localhost:8080/

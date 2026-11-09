@@ -1,10 +1,10 @@
 // Diagnostic: import real GRIB files into the app in a real browser – as files and as links – and report the result.
 // Usage: node tools/diag/grib_test.cjs <dir with test files> <base url of the local app>
-const { chromium } = require('playwright');
+let chromium; try { ({ chromium } = require('playwright')); } catch { ({ chromium } = require('playwright-core')); }
 const fs = require('fs'), path = require('path');
 const dir = process.argv[2], base = process.argv[3] || 'http://localhost:8080/';
 (async () => {
-  const b = await chromium.launch();
+  const b = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
   const files = fs.readdirSync(dir).filter(f => fs.statSync(path.join(dir, f)).size > 0).sort();
   const results = [];
   const run = async (label, fn) => {

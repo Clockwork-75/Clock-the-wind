@@ -2217,7 +2217,12 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   wxLayer.draw();
   setTimeout(() => { map.invalidateSize(); if (map.getZoom() < 7) home(); maybeFillWindow(200); }, 600);
   if (settings.source === 'cloud' && navigator.onLine && (!state.set || state.set.source !== 'cloud')) setTimeout(() => doDownload().catch(() => {}), 1200);
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn('sw', e));
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // a new version takes over by itself: when the new service worker is active the app reloads once (no double restart)
+    const hadCtl = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtl && !reloaded && !rp.on && !dlBusy) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => { reg.update().catch(() => {}); document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(e => console.warn('sw', e));
+  }
   // model-run watcher: tells you when a newer run is available than the one you raced with
   const watch = async () => { if (state.set && navigator.onLine) { state.newRuns = await checkNewRuns(state.set).catch(() => []); renderChips(); $('#btnRefresh').classList.toggle('badge', state.newRuns.length > 0); } };
   watch(); setInterval(watch, 20 * 60000);

@@ -1,5 +1,5 @@
 // Clock the Wind service worker: app shell offline + cache-as-you-go map tiles.
-const SHELL = 'ctw-shell-v47';
+const SHELL = 'ctw-shell-v48';
 const TILES = 'ctw-tiles-v2';   // v2: old cache may hold CARTO "API key required" tiles
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
@@ -31,7 +31,9 @@ self.addEventListener('fetch', e => {
     return;
   }
   // app shell: network first (fresh updates when online), fallback to cache
-  e.respondWith(fetch(e.request).then(r => {
+  // 'no-cache' = always ask the server whether the file changed (a cheap check), so a new version shows on the next start
+  // instead of after the browser's 10-minute cache
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(r => {
     if (r.ok && new URL(url).origin === location.origin) caches.open(SHELL).then(c => c.put(e.request, r.clone()));
     return r;
   }).catch(() => caches.match(e.request, { ignoreSearch: true })));

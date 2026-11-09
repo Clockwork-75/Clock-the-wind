@@ -2102,7 +2102,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 3.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 3.4 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

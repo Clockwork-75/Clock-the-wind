@@ -1,4 +1,4 @@
-# Diagnostic only (on demand): checks ClockW against its models on the real cloud package.
+# Diagnostic only (on demand): real routing audit on the real cloud package (no app changes).
 name: ClockW provjera
 on:
   workflow_dispatch:
@@ -7,13 +7,16 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Preuzmi paket iz oblaka
-        run: curl -sSfL -o /tmp/latest.ctw "https://clockwork-75.github.io/Clock-the-wind/data/latest.ctw?t=$(date +%s)" && ls -la /tmp/latest.ctw
-      - name: Usporedi ClockW s modelima
-        run: node tools/diag/clockw_check.mjs /tmp/latest.ctw
+      - name: Routing audit (Jabuka, svi modeli, stvarni paket iz oblaka)
+        run: |
+          npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -1
+          export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
+          python3 -m http.server 8080 >/dev/null 2>&1 &
+          sleep 2
+          node tools/diag/route_audit.cjs http://localhost:8080/

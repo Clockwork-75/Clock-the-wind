@@ -434,7 +434,7 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
    layer bar at the right edge, hidden until called with the handle ---- */
 #lbHandle { display: none; }
 @media (max-width: 700px) {
-  #timeline { left: 0; right: 0; bottom: 0; border-radius: 14px 14px 0 0; padding: 4px 8px calc(3px + var(--sab)) 6px; gap: 8px; }
+  #timeline { left: 0; right: 0; bottom: 0; border-radius: 14px 14px 0 0; padding: 4px 8px max(4px, calc(var(--sab) * .3)) 6px; gap: 8px; }
   #timeline .iconbtn.big { width: 38px; height: 38px; }
   #timeline .iconbtn.big svg { width: 18px; height: 18px; }
   #tlTrack { height: 34px; margin-top: 2px; }
@@ -453,4 +453,17 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
   #pointCard { bottom: calc(var(--tlh, 70px) + 8px); }
   #replayBar { bottom: calc(var(--tlh, 70px) + 58px); right: calc(8px + var(--sar)); }
   #sheet { bottom: 0; }
+}
+
+/* ---- v2.3.11 · iPad & Mac: timeline down at the bottom edge (same slim size, no extra fill), layer bar against the
+   right edge and always visible; everything that sat above the old floating timeline follows its real height ---- */
+@media (min-width: 701px) {
+  #timeline { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding: 6px 12px max(5px, calc(var(--sab) * .35)) 8px; }
+  #layerbar { right: 0; border-radius: 14px 0 0 14px; }
+  #legend { bottom: calc(var(--tlh, 90px) + 8px); }
+  #fabs { bottom: calc(var(--tlh, 90px) + 8px); right: calc(88px + var(--sar)); }
+  #pointCard { bottom: calc(var(--tlh, 90px) + 8px); }
+  #sheet { bottom: calc(var(--tlh, 90px) + 6px); right: calc(76px + var(--sar)); }
+  #toast { bottom: calc(var(--tlh, 90px) + 26px); }
+  #layerbar { max-height: calc(100vh - 66px - var(--tlh, 90px) - 14px - var(--sat)); }
 }

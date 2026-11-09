@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,8 @@ jobs:
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
-          node tools/diag/render_check.cjs http://localhost:8080/
+          npm i playwright@1.56.0 2>&1 | tail -1 && npx playwright install --with-deps webkit 2>&1 | tail -2
+          ENGINE=webkit node tools/diag/render_check.cjs http://localhost:8080/
           mkdir -p shots && ls shots
       - name: Snimke na granu diag-shots
         if: always()

@@ -2,11 +2,13 @@
 // Real cloud package, ECMWF, whole Adriatic, particles off. Compares the wind canvas at T and T+2 h:
 //  A) set by hand (setTime), B) during a race replay (2 h of race time), C) the same through the timeline slider.
 let pw; try { pw = require('playwright'); } catch { pw = require('playwright-core'); }
+const useWebkit = process.env.ENGINE === 'webkit';
 const fs = require('fs');
 const base = process.argv[2] || 'http://localhost:8080/';
 fs.mkdirSync('shots', { recursive: true });
 (async () => {
-  const b = await pw.chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+  const b = useWebkit ? await pw.webkit.launch() : await pw.chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+  console.log('ENGINE', useWebkit ? 'WebKit (Safari)' : 'Chromium');
   const p = await b.newPage({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 1 });
   p.on('pageerror', e => console.log('PAGE ERROR', e.message));
   p.on('console', m => { if (m.type() === 'error' && !/Failed to load/.test(m.text())) console.log('console', m.text().slice(0, 200)); });

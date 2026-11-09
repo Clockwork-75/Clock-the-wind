@@ -32,10 +32,10 @@ const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta late
     console.log(label, JSON.stringify(info));
     // count redraws of the colour layer
     await p.evaluate(() => { const w = window.ctw.fn.wx(); window.__draws = 0; const d = w.draw.bind(w); w.draw = () => { window.__draws++; d(); }; });
-    await p.evaluate(() => { window.__t0 = window.ctw.state.time; window.__w0 = performance.now(); window.ctw.fn.replayPlay(); });
+    await p.evaluate(() => { window.ctw.settings.replaySpeed = 120; window.__t0 = window.ctw.state.time; window.__w0 = performance.now(); window.ctw.fn.replayPlay(); });
     const rows = [];
     for (let k = 0; k < 12; k++) {
-      await p.waitForTimeout(1500);
+      await p.waitForTimeout(2500);
       rows.push(await p.evaluate(async () => {
         const c = window.ctw, s = c.state;
         const { sample } = await import('/js/field.js');
@@ -44,8 +44,9 @@ const dayOffset = +(process.argv[3] || 0);   // start N days ahead (regatta late
         const o = sample(s.wind, ['u', 'v'], q.lat, q.lon, s.time, []); const [mw, md] = speedDirFromUV(o[0], o[1]);
         const cv = document.querySelector('.leaflet-pane canvas') ;
         let sum = 0; try { const all = [...document.querySelectorAll('canvas')]; const big = all.sort((a, b) => b.width * b.height - a.width * a.height)[0]; const d = big.getContext('2d').getImageData(0, 0, big.width, big.height).data; for (let i = 0; i < d.length; i += 997) sum = (sum + d[i] * (i % 13 + 1)) % 1e9; } catch (e) { sum = 'x' + e.message; }
+        const fp = [43.42, 15.61], fo = sample(s.wind, ['u', 'v'], fp[0], fp[1], s.time, []); const [fw, fd] = speedDirFromUV(fo[0], fo[1]);
         const rate = ((s.time - window.__t0) / 1000) / ((performance.now() - window.__w0) / 1000);
-        return `${new Date(s.time).toISOString().slice(5, 16)} brzina ${rate.toFixed(0)} s/s · karta=${s.modelId.replace('dir_', '')} vjetar karte na brodu ${mw.toFixed(1)}kn/${md.toFixed(0)}° | brod(${s.selected.replace('dir_', '')}) ${q.tws.toFixed(1)}kn/${q.twd.toFixed(0)}° | crtanja ${window.__draws} | canvas ${sum} | replay ${s && document.querySelector('#rpPlay') ? 'on' : '?'}`;
+        return `${new Date(s.time).toISOString().slice(5, 16)} brzina ${rate.toFixed(0)} s/s · karta=${s.modelId.replace('dir_', '')} vjetar karte na brodu ${mw.toFixed(1)}kn/${md.toFixed(0)}° | brod(${s.selected.replace('dir_', '')}) ${q.tws.toFixed(1)}kn/${q.twd.toFixed(0)}° | fiksna točka sredina staze ${fw.toFixed(1)}kn/${fd.toFixed(0)}° | crtanja ${window.__draws} | canvas ${sum} | replay ${s && document.querySelector('#rpPlay') ? 'on' : '?'}`;
       }));
     }
     rows.forEach(r => console.log('  ' + r));

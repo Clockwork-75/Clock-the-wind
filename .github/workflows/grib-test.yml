@@ -1,0 +1,47 @@
+# Diagnostic only (on demand): downloads real GRIB files and imports them into the app in a real browser.
+name: GRIB uvoz test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Skini GRIB-ove (GFS, ECMWF, ICON-EU) i napravi GRIB1 i .gz
+        run: |
+          set -x
+          mkdir -p grib
+          D=$(date -u +%Y%m%d)
+          # GFS 0.25° (NOAA) – GRIB2, complex packing + spatial differencing; 12 h ahead of the 00z run
+          for H in 006 012; do
+            curl -sSfL -o grib/gfs_$H.grb2 "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.$D%2F00%2Fatmos&file=gfs.t00z.pgrb2.0p25.f$H&var_UGRD=on&var_VGRD=on&var_GUST=on&lev_10_m_above_ground=on&lev_surface=on&subregion=&toplat=46&leftlon=12&rightlon=20&bottomlat=41" || true
+          done
+          cat grib/gfs_*.grb2 > grib/a_gfs.grb2 2>/dev/null; rm -f grib/gfs_0*.grb2
+          # ECMWF open data – GRIB2 (10 m wind), byte ranges from the index
+          B="https://data.ecmwf.int/forecasts/$D/00z/ifs/0p25/oper/${D}000000-12h-oper-fc"
+          curl -sSfL -o idx.json "$B.index" && for P in 10u 10v; do
+            L=$(grep "\"param\": \"$P\"" idx.json | head -1); O=$(echo "$L" | sed -E 's/.*"_offset": ([0-9]+).*/\1/'); N=$(echo "$L" | sed -E 's/.*"_length": ([0-9]+).*/\1/')
+            curl -sSfL -r "$O-$((O+N-1))" "$B.grib2" >> grib/b_ecmwf.grib2
+          done || true
+          # DWD ICON-EU – GRIB2 (CCSDS packing), bz2 on the server
+          for V in u_10m v_10m; do
+            curl -sSfL "https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/$V/icon-eu_europe_regular-lat-lon_single-level_${D}00_012_${V^^}.grib2.bz2" | bunzip2 >> grib/c_iconeu.grib2 || true
+          done
+          # GRIB1 (like Saildocs) converted from the GFS file, and a gzip-compressed copy
+          sudo apt-get -qq install -y cdo >/dev/null 2>&1 && cdo -s -f grb copy grib/a_gfs.grb2 grib/d_grib1_gfs.grb || true
+          gzip -c grib/a_gfs.grb2 > grib/e_gfs.grb2.gz || true
+          ls -la grib
+      - name: Pokreni aplikaciju i uvezi GRIB-ove u pregledniku
+        env:
+          REMOTE_LINKS: "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.$(date -u +%Y%m%d)%2F00%2Fatmos&file=gfs.t00z.pgrb2.0p25.f006&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on&subregion=&toplat=46&leftlon=12&rightlon=20&bottomlat=41"
+        run: |
+          npm i --no-save playwright@1.56.0 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1
+          python3 -m http.server 8080 >/dev/null 2>&1 &
+          sleep 2
+          REMOTE_LINKS="https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.$(date -u +%Y%m%d)%2F00%2Fatmos&file=gfs.t00z.pgrb2.0p25.f006&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on&subregion=&toplat=46&leftlon=12&rightlon=20&bottomlat=41" node tools/diag/grib_test.cjs grib http://localhost:8080/

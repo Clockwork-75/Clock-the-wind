@@ -62,7 +62,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
 <div class="cover">
   <h1>Clock the Wind</h1>
   <p class="sub">Prognoza vjetra i weather routing za jadranske regate</p>
-  <p class="sub">Priručnik za korisnika · verzija 2.3 · Clockwork (Melges 40) · LeeLoo (Mat 11.80)</p>
+  <p class="sub">Priručnik za korisnika · verzija 3.1 · Clockwork (Melges 40) · LeeLoo (Mat 11.80)</p>
 </div>
 
 <nav class="toc">
@@ -348,6 +348,8 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
     <tr><td>T/G</td><td>Broj tackova i gybeova.</td></tr>
   </table>
   <p>Rute nisu spremljene dok ne stisneš <b class="ui">💾 Spremi rute</b> (vidi poglavlje 11). Dodir na red odabire tu rutu. Ispod su detalji: trajanje, manevri, jedra, graf (vjetar, udari, brzina broda, TWA), točke rute po satima i <b class="ui">Izvezi rutu (GPX)</b> za plotter. Izokrone (dokle brod stigne u vremenu) pališ ili gasiš prekidačem.</p>
+  <p><b>Kako se ruta računa.</b> Metoda izokrona kao u Expeditionu, PredictWindu i LuckGribu: svaka dionica do sljedeće oznake računa se na dva načina – klasično (u svakom smjeru točka najdalje od starta dionice) i uz otoke (točka najbliža oznaci mjereno morem, oko otoka) – i zadržava se brži. Brzina broda je uvijek iz polara za taj vjetar i kut; jedro je samo preporuka i ne mijenja brzinu.</p>
+  <p><b>⚠ Vjetar iznad granice polara.</b> Ako na ruti puše jače nego što polar broda pokriva (npr. Clockwork VPP do 25 kn), uz model se u tablici pojavi ⚠, a u detaljima rute piše koliki je vjetar i koliko dugo. Iznad granice brzina se računa kao na granici polara – na surfu stvarna brzina može biti veća, a izbor jedara i sigurnost procjenjuješ sam.</p>
 </section>
 
 <section id="s14">
@@ -450,7 +452,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   </table>
 </section>
 
-<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 2.3</footer>
+<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 3.1</footer>
 </main>
 </body>
 </html>

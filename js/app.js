@@ -576,12 +576,12 @@ function drawCourse() {
   courseLine = L.polyline(course.marks.map(m => [m.lat, m.lon]), { color: '#fff', weight: 1.5, dashArray: '5 6', opacity: 0.75, interactive: false }).addTo(markLayer);
   course.marks.forEach((m, i) => {
     const kind = i === 0 ? 's' : i === n - 1 ? 'f' : 'm';
-    const html = kind === 'm' ? BUOY(i) : FLAG(kind);
+    const html = kind === 'm' ? BUOY(i + 1) + (m.side ? `<div class="sidetag ${m.side}">${m.side === 'S' ? 'D' : 'L'}</div>` : '') : FLAG(kind);
     const icon = L.divIcon({ className: 'mark-ic', html, iconSize: [30, 38], iconAnchor: kind === 'm' ? [15, 36] : [9, 37] });
     const mk = L.marker([m.lat, m.lon], { draggable: true, autoPan: true, icon, title: m.name, zIndexOffset: 1000 }).addTo(markLayer);
     mk.on('drag', e => { const ll = e.target.getLatLng(); m.lat = +ll.lat.toFixed(5); m.lon = +ll.lng.toFixed(5); courseLine.setLatLngs(course.marks.map(q => [q.lat, q.lon])); });
     mk.on('dragend', () => { saveCourse(); drawCourse(); if (!$('#tab-course').classList.contains('hidden')) renderCourseTab(); });
-    mk.bindTooltip(`${m.name}<br><small>povuci za pomicanje</small>`, { direction: 'top', offset: [0, -34] });
+    mk.bindTooltip(`<b>${i + 1}.</b> ${m.name}${m.side ? ` · ${m.side === 'S' ? 'desnim' : 'lijevim'} bokom` : ''}<br><small>povuci za pomicanje</small>`, { direction: 'top', offset: [0, -34] });
   });
 }
 function courseBBox() {
@@ -615,6 +615,7 @@ function updateModePill() {
   el.classList.toggle('race', race);
 }
 function openSheet(tab) {
+  cancelAreaPick();   // never leave a half-done "Odaberi na karti" waiting for the second corner
   if (['course', 'routing', 'compare'].includes(tab) && settings.mode !== 'race') setMode('race');
   $('#sheet').classList.remove('hidden');
   $$('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
@@ -629,7 +630,12 @@ $('#modePill').onclick = () => { if (settings.mode === 'race') { setMode('foreca
 $('#fabRoute').onclick = () => openSheet(Object.keys(state.routes).length ? 'compare' : 'routing');
 $('#btnRefresh').onclick = () => openSheet('data');
 
+function cancelAreaPick() {
+  if (!pick) return;
+  map.off('mousemove', pickPreview); [pick.rect, pick.mk].forEach(x => x && map.removeLayer(x)); pick = null;
+}
 function setEditing(on) {
+  if (on) cancelAreaPick();   // a half-done "Odaberi na karti" must never swallow the taps meant for new marks
   state.editing = on; document.body.classList.toggle('editing', on);
   const b = $('#btnEdit'); if (b) b.textContent = on ? 'Gotovo s dodavanjem' : '＋ Dodaj oznaku tapom na kartu';
 }
@@ -654,11 +660,12 @@ function renderCourseTab() {
     <h3>Oznake (redom obilaska)</h3>
     ${(() => { const w = course.marks.map((m, i) => ({ m, i, sn: snapToSea(state.mask, m.lat, m.lon) })).filter(x => x.sn.snapped || x.sn.fail);
       return w.length ? `<div class="note">${w.map(x => x.sn.fail ? `⚠️ <b>${esc(x.m.name)}</b> je duboko u kopnu – povuci bovu na more.` : `ℹ️ <b>${esc(x.m.name)}</b> je na kopnu/plićini – ruta je obilazi na ~${x.sn.nm.toFixed(2)} nm.`).join('<br>')}</div>` : ''; })()}
-    <ul class="marks">${course.marks.map((m, i) => `
-      <li><span class="n ${i === 0 ? 's' : i === course.marks.length - 1 ? 'f' : ''}">${i === 0 ? 'S' : i === course.marks.length - 1 ? 'C' : i}</span>
+    <ul class="marks">${course.marks.map((m, i) => { const n = course.marks.length, mid = i > 0 && i < n - 1; return `
+      <li><span class="n ${i === 0 ? 's' : i === n - 1 ? 'f' : ''}" title="${i === 0 ? 'Start' : i === n - 1 ? 'Cilj' : 'Redni broj obilaska'}">${i + 1}</span>
         <div class="editrow mini"><span class="pen">✏️</span><input value="${esc(m.name)}" data-i="${i}" class="mname editable" title="Promijeni ime oznake"></div>
-        <span class="ll">${fmtLatLon(m.lat, m.lon)}</span>
-        <button data-up="${i}" title="Gore">↑</button><button data-del="${i}" title="Obriši">✕</button></li>`).join('')}
+        ${mid ? `<select data-ord="${i}" title="Redni broj – ostale oznake se prenumeriraju">${Array.from({ length: n - 2 }, (_, k) => `<option value="${k + 1}" ${k + 1 === i ? 'selected' : ''}>${k + 2}.</option>`).join('')}</select>
+        <select data-side="${i}" title="Kojim bokom se oznaka obilazi"><option value="">bilo kojim</option><option value="S" ${m.side === 'S' ? 'selected' : ''}>desnim bokom</option><option value="P" ${m.side === 'P' ? 'selected' : ''}>lijevim bokom</option></select>` : `<span class="ll">${i === 0 ? 'start' : 'cilj'} · ${fmtLatLon(m.lat, m.lon)}</span>`}
+        ${mid ? `<button data-del="${i}" title="Obriši">✕</button>` : ''}</li>`; }).join('')}
     </ul>
     <button id="btnEdit" class="btn block">＋ Dodaj oznaku tapom na kartu</button>
     <div class="row" style="margin-top:12px"><label>Dužina staze (ravno)</label><b>${courseLength().toFixed(1)} nm</b></div>
@@ -687,7 +694,9 @@ function renderCourseTab() {
   if (stage && stage.inport) return;
   el.querySelectorAll('.mname').forEach(i => i.onchange = () => { course.marks[i.dataset.i].name = i.value.trim() || 'Oznaka'; saveCourse(); drawCourse(); });
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { if (course.marks.length <= 2) return toast('Staza treba barem start i cilj'); course.marks.splice(+b.dataset.del, 1); saveCourse(); drawCourse(); renderCourseTab(); });
-  el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; if (!i) return; [course.marks[i - 1], course.marks[i]] = [course.marks[i], course.marks[i - 1]]; saveCourse(); drawCourse(); renderCourseTab(); });
+  // new order number: the mark moves there, the others are renumbered (start stays 1, the finish stays last)
+  el.querySelectorAll('[data-ord]').forEach(sel => sel.onchange = () => { const from = +sel.dataset.ord, to = +sel.value; const [mk] = course.marks.splice(from, 1); course.marks.splice(to, 0, mk); saveCourse(); drawCourse(); renderCourseTab(); toast(`${mk.name} je sada ${to + 1}. oznaka`); });
+  el.querySelectorAll('[data-side]').forEach(sel => sel.onchange = () => { const m = course.marks[+sel.dataset.side]; if (sel.value) m.side = sel.value; else delete m.side; saveCourse(); drawCourse(); });
   el.querySelector('#btnEdit').onclick = () => setEditing(!state.editing);
   setEditing(state.editing);
   el.querySelector('#startTime').onchange = e => {
@@ -755,14 +764,55 @@ map.on('click', e => {
   if (pick) { areaPickClick(e.latlng); return; }
   if (state.editing) {
     const m = { name: `Oznaka ${course.marks.length}`, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) };
-    if (state.landAt && state.landAt(m.lat, m.lon)) return toast('Ta točka je na kopnu');
-    if (course.marks.length < 2) course.marks.push(m); else course.marks.splice(course.marks.length - 1, 0, m); // insert before finish
-    if (course.marks.length === 1) m.name = 'Start'; else if (course.marks.length === 2 && !course.regattaId) m.name = 'Cilj';
-    saveCourse(); drawCourse(); renderCourseTab();
+    if (course.marks.length < 2) {   // own course: first tap = start, second = finish
+      course.marks.push(m);
+      if (course.marks.length === 1) m.name = 'Start'; else if (!course.regattaId) m.name = 'Cilj';
+      saveCourse(); drawCourse(); renderCourseTab(); return;
+    }
+    openMarkDialog(m);
     return;
   }
   showPoint(e.latlng.lat, e.latlng.lng);
 });
+
+// new mark between start and finish: name, order number (2 … before the finish) and rounding side
+function openMarkDialog(m) {
+  const n = course.marks.length, box = $('#markDlg') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'markDlg', className: 'glass' }));
+  const esc = t => String(t || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const tmp = L.circleMarker([m.lat, m.lon], { radius: 8, color: '#fff', weight: 2, fillColor: '#ff8a1d', fillOpacity: 1 }).addTo(map);
+  box.innerHTML = `<b>Nova oznaka</b> <small>${fmtLatLon(m.lat, m.lon)}</small>${state.landAt && state.landAt(m.lat, m.lon) ? '<div class="note warn" style="margin:6px 0 0">Točka je na kopnu/hridi – ruta će je obići na sigurnoj udaljenosti.</div>' : ''}
+    <div class="row"><label>Ime</label><input id="mdName" class="field" value="${esc(m.name)}"></div>
+    <div class="row"><label>Redni broj</label><select id="mdOrd">${Array.from({ length: n - 1 }, (_, k) => `<option value="${k + 1}" ${k + 1 === n - 1 ? 'selected' : ''}>${k + 2}.${k + 2 === n ? ' (prije cilja)' : ''}</option>`).join('')}</select></div>
+    <div class="row"><label>Obilazak</label><select id="mdSide"><option value="">bilo kojim bokom</option><option value="S">desnim bokom</option><option value="P">lijevim bokom</option></select></div>
+    <div class="note" style="margin:4px 0 8px">Start je 1. Oznake od odabranog broja nadalje pomaknu se za jedan; cilj ostaje zadnji.</div>
+    <div class="row" style="gap:8px"><button id="mdCancel" class="btn" style="flex:1">Odustani</button><button id="mdOk" class="btn primary" style="flex:1">Dodaj</button></div>`;
+  box.classList.remove('hidden');
+  const close = () => { box.classList.add('hidden'); map.removeLayer(tmp); };
+  box.querySelector('#mdCancel').onclick = close;
+  box.querySelector('#mdOk').onclick = () => {
+    m.name = box.querySelector('#mdName').value.trim() || m.name;
+    const side = box.querySelector('#mdSide').value; if (side) m.side = side;
+    const at = +box.querySelector('#mdOrd').value;
+    course.marks.splice(at, 0, m);
+    close(); saveCourse(); drawCourse(); renderCourseTab();
+    toast(`${m.name} dodana kao ${at + 1}. oznaka`);
+  };
+  setTimeout(() => box.querySelector('#mdName').select(), 50);
+}
+
+// rounding side for routing: the target is moved ~0.2 nm off the mark, so the route leaves the mark on the chosen side
+function marksForRouting(marks) {
+  return marks.map((m, i) => {
+    if (!m.side || i === 0 || i === marks.length - 1) return m;
+    const a = marks[i - 1], b = marks[i + 1], D = Math.PI / 180;
+    const bin = bearing(a.lat, a.lon, m.lat, m.lon), bout = bearing(m.lat, m.lon, b.lat, b.lon);
+    const side = m.side === 'S' ? -90 : 90;   // mark to starboard → the boat passes on its port (left) side
+    let x = Math.sin((bin + side) * D) + Math.sin((bout + side) * D), y = Math.cos((bin + side) * D) + Math.cos((bout + side) * D);
+    if (Math.hypot(x, y) < 0.5) { x = Math.sin(bin * D); y = Math.cos(bin * D); }   // a full turn around the mark: go past it
+    const dir = Math.atan2(x, y) / D, nm = 0.2, k = Math.cos(m.lat * D);
+    return { ...m, lat: m.lat + nm * Math.cos(dir * D) / 60, lon: m.lon + nm * Math.sin(dir * D) / (60 * k) };
+  });
+}
 
 // ---------------- point forecast card (multi-model compare) ----------------
 let point = null, pointMarker = null;
@@ -1596,7 +1646,7 @@ async function runRouting(ids, override = {}) {
     if (ids.some(short) || ids.some(early)) { toast('Dopunjavam prognozu za cijelu stazu…', 3000); await doDownload({ auto: true, bbox: union(viewBBox(1.0), cb) }); ids = ids.filter(id => state.set && state.set.fields[id]); if (!ids.length) return toast('Prognoza za stazu nije dostupna – preuzmi je u kartici Prognoza', 5000); }
   }
   const startTime = override.startTime || raceStart();
-  const marks = override.marks || course.marks;
+  const marks = marksForRouting(override.marks || course.marks);
   const rs = state.set;   // the forecast as it is now – a refill during routing must not pull fields from under it
   if (!rs) return toast('Prvo preuzmi prognozu', 4000);
   ids = ids.filter(id => rs.fields[id]); if (!ids.length) return toast('Odabrani modeli nisu u prognozi – preuzmi je ponovno', 4000);
@@ -1710,10 +1760,11 @@ function drawRoutes() {
     const col = mcol(id), sel = id === state.selected, best = id === ideal;
     const ll = r.track.map(p => [p.lat, p.lon]);
     if (sel && state.showIso !== false) r.isochrones.forEach(iso => L.polyline(iso, { pane: 'routes', color: col, weight: 0.8, opacity: 0.35, interactive: false }).addTo(routeLayer));
-    const w = best ? 5.5 : sel ? 4.5 : 3;
-    if (best) L.polyline(ll, { pane: 'routes', color: '#ffd400', weight: w + 14, opacity: 0.38, interactive: false }).addTo(routeLayer);   // golden glow = fastest
+    const RW = 0.85;   // v2.3.9: routes 15 % thinner
+    const w = (best ? 5.5 : sel ? 4.5 : 3) * RW;
+    if (best) L.polyline(ll, { pane: 'routes', color: '#ffd400', weight: w + 14 * RW, opacity: 0.38, interactive: false }).addTo(routeLayer);   // golden glow = fastest
     // dark casing keeps every model colour readable over any wind colour
-    L.polyline(ll, { pane: 'routes', color: col === '#111111' ? '#fff' : '#000', weight: w + 3.5, opacity: sel ? 0.85 : 0.7, interactive: false }).addTo(routeLayer);
+    L.polyline(ll, { pane: 'routes', color: col === '#111111' ? '#fff' : '#000', weight: w + 3.5 * RW, opacity: sel ? 0.85 : 0.7, interactive: false }).addTo(routeLayer);
     const pl = L.polyline(ll, { pane: 'routes', color: col, weight: w, opacity: 1 }).addTo(routeLayer);
     // a wide invisible line on top makes the route easy to hit with a finger or the mouse
     const hit = L.polyline(ll, { pane: 'routes', color: '#000', weight: 18, opacity: 0.001 }).addTo(routeLayer);
@@ -2009,7 +2060,7 @@ function renderSettingsTab() {
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
-    <div class="note">Verzija 2.3.8 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 2.3.9 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

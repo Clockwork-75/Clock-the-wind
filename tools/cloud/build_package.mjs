@@ -12,6 +12,9 @@ import { downloadForecast, fetchOpenMeteoMarine, gridFor, MARINE_STEP } from '..
 
 const OUT = process.argv[2] || 'data/latest.ctw';
 const BBOX = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 };
+// ECMWF and GFS (0.25°) also cover the wider Mediterranean, so the wind is there when you zoom out; the regional
+// models (ICON-D2/EU/2I) and waves stay on the Adriatic
+const WIDE = { s: 30.0, n: 46.5, w: -6.0, e: 36.5 };
 const H = 3600000;
 const HOURS = +(process.env.CTW_HOURS || 360);   // 15 days: ECMWF to 360 h, GFS to 384 h (6-hourly after 144/120 h); ICON 48/120 h
 const t0 = Math.floor(Date.now() / H) * H - H, t1 = t0 + HOURS * H;
@@ -37,7 +40,7 @@ const bunzip = buf => { const r = spawnSync('bzip2', ['-dc'], { input: buf, maxB
 async function pool(items, n, fn) { let i = 0; await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const k = i++; await fn(items[k], k); } })); }
 const toAB = b => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 
-function addMsgs(buf, msgs) { for (const m of decodeGrib(toAB(buf))) { const c = cropMsg(m, BBOX); if (c) msgs.push(c); } }
+function addMsgs(buf, msgs, box = BBOX) { for (const m of decodeGrib(toAB(buf))) { const c = cropMsg(m, box); if (c) msgs.push(c); } }
 
 // ---------------- DWD ICON (D2 / EU) ----------------
 async function dwd(kind) {
@@ -71,7 +74,7 @@ async function ecmwf() {
     const want = new Set(['10u', '10v', '10fg']);
     for (const j of idx.toString().trim().split('\n').map(l => JSON.parse(l)).filter(j => want.has(j.param))) {
       const b = await get(base(run, h) + '.grib2', { Range: `bytes=${j._offset}-${j._offset + j._length - 1}` });
-      if (b) addMsgs(b, msgs);
+      if (b) addMsgs(b, msgs, WIDE);
     }
   });
   log(`ECMWF run ${ymd(run)} ${hh(run)}z: ${msgs.length} polja`);
@@ -80,14 +83,14 @@ async function ecmwf() {
 
 // ---------------- NOAA GFS (server-side subset) ----------------
 async function gfs() {
-  const b = BBOX;
+  const b = WIDE;
   const url = (run, h) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&lev_10_m_above_ground=on&lev_surface=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
   let run = Math.floor((Date.now() - 4.5 * H) / (6 * H)) * 6 * H, ok = false;
   const need = r => Math.max(120, Math.min(384, Math.ceil((t1 - r) / H / 6) * 6));
   for (let k = 0; k < 3 && !ok; k++) { const t = await get(url(run, need(run)), {}, 1); ok = !!(t && t.length > 100); if (!ok) run -= 6 * H; }
   const steps = globalSteps('gfs', run, t0, t1, 3);
   const msgs = [];
-  await pool(steps, 2, async h => { const buf = await get(url(run, h)); if (buf) addMsgs(buf, msgs); });   // NOMADS asks for gentle use
+  await pool(steps, 2, async h => { const buf = await get(url(run, h)); if (buf) addMsgs(buf, msgs, WIDE); });   // NOMADS asks for gentle use
   log(`GFS run ${ymd(run)} ${hh(run)}z: ${msgs.length} polja`);
   const f = gribToField(msgs, null, 'dir_gfs'); f.run = { runInit: run }; return f;
 }

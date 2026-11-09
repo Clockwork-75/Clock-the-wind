@@ -14,13 +14,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Vizualna provjera (stvarni paket iz oblaka)
+      - name: Paket za širi Mediteran + vizualna provjera
+        env:
+          OPEN_METEO_KEY: ${{ secrets.OPEN_METEO_KEY }}
         run: |
           npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -1
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
-          node tools/diag/visual_check.cjs http://localhost:8080/
+          node tools/cloud/build_package.mjs data/latest.ctw || true
+          ls -la data/latest.ctw && cat data/latest.json | head -40
+          CLOUD_URL=http://localhost:8080/data/latest.ctw node tools/diag/visual_check.cjs http://localhost:8080/
       - name: Snimke na granu diag-shots
         if: always()
         run: |

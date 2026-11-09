@@ -11,7 +11,7 @@ const DEV = [
   ['mac', { width: 1440, height: 900, deviceScaleFactor: 1 }],
 ];
 const VIEWS = [
-  ['z4-europa', 44, 15, 4, 'wind'], ['z6-jadran', 43.2, 16.2, 6, 'wind'], ['z7-srednji', 43.3, 16.0, 7, 'wind'],
+  ['z4-europa', 44, 15, 4, 'wind'], ['z5-mediteran', 38, 15, 5, 'wind'], ['z6-jadran', 43.2, 16.2, 6, 'wind'], ['z7-srednji', 43.3, 16.0, 7, 'wind'],
   ['z7-udari', 43.3, 16.0, 7, 'gust'], ['z9-sibenik', 43.65, 15.85, 9, 'wind'], ['z11-otoci', 43.72, 15.75, 11, 'wind'],
 ];
 (async () => {
@@ -21,13 +21,16 @@ const VIEWS = [
     const ctx = await b.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.deviceScaleFactor, isMobile: !!vp.isMobile, hasTouch: !!vp.hasTouch });
     const p = await ctx.newPage();
     const errs = []; p.on('pageerror', e => errs.push(e.message));
-    await p.addInitScript(() => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'forecast', source: 'cloud' })); });
+    await p.addInitScript(u => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'forecast', source: 'cloud', ...(u ? { cloudUrl: u } : {}) })); }, process.env.CLOUD_URL || '');
     await p.goto(base + 'index.html');
     await p.waitForFunction(() => window.ctw && window.ctw.state.set && window.ctw.state.set.source === 'cloud' && window.ctw.state.set.models.length >= 3, null, { timeout: 180000 });
     const R = report[dev] = { errs };
-    for (const model of ['dir_ecmwf', 'dir_icon_d2']) {
+    R.extents = await p.evaluate(() => { const s = window.ctw.state.set; return s.models.map(id => { const f = s.fields[id]; return `${id}: ${f.lat0.toFixed(2)}..${(f.lat0 + f.dlat * (f.ny - 1)).toFixed(2)} N, ${f.lon0.toFixed(2)}..${(f.lon0 + f.dlon * (f.nx - 1)).toFixed(2)} E, ${f.nx}x${f.ny}, ${f.times.length} h${f.ext ? ' + ext ' + f.ext.nx + 'x' + f.ext.ny : ''}`; }); });
+    R.heapMB = await p.evaluate(() => performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null);
+    for (const model of ['dir_ecmwf', 'dir_gfs', 'dir_icon_d2']) {
       for (const [name, lat, lon, z, layer] of VIEWS) {
         if (model === 'dir_icon_d2' && !['z6-jadran', 'z7-udari'].includes(name)) continue;
+        if (model === 'dir_gfs' && !['z4-europa', 'z5-mediteran', 'z7-srednji'].includes(name)) continue;
         await p.evaluate(([model, lat, lon, z, layer]) => {
           const c = window.ctw, H = 3600000;
           if (c.state.set.fields[model]) c.fn.selectModel(model);

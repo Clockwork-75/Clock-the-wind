@@ -1770,9 +1770,10 @@ function drawRoutes() {
     const col = mcol(id), sel = id === state.selected, best = id === ideal;
     const ll = r.track.map(p => [p.lat, p.lon]);
     if (sel && state.showIso !== false) r.isochrones.forEach(iso => L.polyline(iso, { pane: 'routes', color: col, weight: 0.8, opacity: 0.35, interactive: false }).addTo(routeLayer));
-    const RW = 0.6;    // v2.3.11: routes 40 % thinner than 2.3.8
-    const w = (best ? 5.5 : sel ? 4.5 : 3) * RW;
-    if (best) L.polyline(ll, { pane: 'routes', color: '#ffd400', weight: w + 14 * RW, opacity: 0.38, interactive: false }).addTo(routeLayer);   // golden glow = fastest
+    // v2.3.11: every route 25 % thinner than 2.3.8 (3 px → 2.25 px); the fastest (★) only ~10 % thicker than the others
+    const RW = 0.75;
+    const w = best ? 2.5 : 3 * RW;
+    if (best) L.polyline(ll, { pane: 'routes', color: '#ffd400', weight: w + 7, opacity: 0.38, interactive: false }).addTo(routeLayer);   // golden glow = fastest
     // dark casing keeps every model colour readable over any wind colour
     L.polyline(ll, { pane: 'routes', color: col === '#111111' ? '#fff' : '#000', weight: w + 3.5 * RW, opacity: sel ? 0.85 : 0.7, interactive: false }).addTo(routeLayer);
     const pl = L.polyline(ll, { pane: 'routes', color: col, weight: w, opacity: 1 }).addTo(routeLayer);

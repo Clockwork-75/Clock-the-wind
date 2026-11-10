@@ -287,8 +287,8 @@ export function drawIsobars(ctx, map, state, nameOf = id => id) {
     }
     if (!segs.length) continue;
     ctx.beginPath(); for (const [p, q] of segs) { ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); }
-    ctx.lineWidth = major ? 3.6 : 2.6; ctx.strokeStyle = 'rgba(10,20,40,.45)'; ctx.stroke();
-    ctx.lineWidth = major ? 1.8 : 1; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+    ctx.lineWidth = major ? 5 : 3.8; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.stroke();
+    ctx.lineWidth = major ? 2.6 : 1.7; ctx.strokeStyle = '#ffffff'; ctx.stroke();
     // a label now and then along the line, never two close together
     for (let k = 0; k < segs.length; k += 7) {
       const [p] = segs[k];

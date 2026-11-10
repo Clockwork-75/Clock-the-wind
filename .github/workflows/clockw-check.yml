@@ -19,7 +19,6 @@ jobs:
           OPEN_METEO_KEY: ${{ secrets.OPEN_METEO_KEY }}
           ALADIN_USER: ${{ secrets.ALADIN_USER }}
           ALADIN_PASS: ${{ secrets.ALADIN_PASS }}
-          CHECK: aladin
         run: |
           npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -1
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"

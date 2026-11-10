@@ -206,7 +206,8 @@ function parseGrib2(b, o, msgs) {
       if (b[p + 5] === 0) { const bm = new Uint8Array(grid.npts); const bs = new Bits(b, p + 6); for (let k = 0; k < grid.npts; k++) bm[k] = bs.read(1); bitmap = bm; }
       else if (b[p + 5] === 255) bitmap = null;
     } else if (sn === 7) {
-      const name = varGrib2(disc, prod.cat, prod.num);
+      // ECMWF writes mean sea level pressure as 'pressure' (0-3-0) on the mean-sea-level surface (101)
+      const name = varGrib2(disc, prod.cat, prod.num) || (disc === 0 && prod.cat === 3 && prod.num === 0 && prod.surf === 101 ? 'mslp' : null);
       const isWind10 = (name === 'U' || name === 'V' || name === 'gu' || name === 'gv') ? (prod.surf === 103 && Math.abs(prod.level - 10) < 0.5) || prod.surf === 1 : true;
       if (name && isWind10) {
         let vals;

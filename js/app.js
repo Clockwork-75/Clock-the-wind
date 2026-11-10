@@ -1,6 +1,6 @@
 import { Polar, parsePolarCSV, parsePolarAny } from './polar.js';
 import { recommendSail, SAILS, SAIL_SETS, sailColor } from './sails.js';
-import { M40_VPP, MAT1180_VPP, MAT1180_ORC } from './boatdata.js';
+import { M40_VPP, MAT1180_VPP, MAT1180_ORC, FIRST30_VPP } from './boatdata.js';
 import { decodeLandmask, isLand, snapToSea } from './landmask.js';
 import { loadBathy, routingMask, depthAt } from './bathy.js';
 import { sample, lastTime, fillTimeGaps } from './field.js';
@@ -246,6 +246,7 @@ function rebuildMask() {
 const BOAT_GROUPS = [
   { id: 'clockwork', name: 'Clockwork', type: 'Melges 40', draft: 2.6 },
   { id: 'leeloo', name: 'LeeLoo', type: 'Mat 11.80', draft: 2.6 },
+  { id: 'fugu', name: 'Fugu', type: 'First 30 JK', draft: 1.9 },
 ];
 let boats = [];
 async function loadBoats() {
@@ -256,6 +257,7 @@ async function loadBoats() {
     ...(csv ? [{ id: 'melges40-orc', group: 'clockwork', kind: 'orc', name: 'Clockwork · Melges 40 – ORC', src: parsePolarCSV(csv), sails: 'melges40', builtin: true }] : []),
     { id: 'leeloo', group: 'leeloo', kind: 'vpp', name: 'LeeLoo · Mat 11.80 – VPP (North Sails)', src: MAT1180_VPP, sails: 'mat1180', builtin: true },
     { id: 'leeloo-orc', group: 'leeloo', kind: 'orc', name: 'LeeLoo · Mat 11.80 – ORC 2025', src: MAT1180_ORC, sails: 'mat1180', builtin: true },
+    { id: 'fugu', group: 'fugu', kind: 'vpp', name: 'Fugu · First 30 JK – polar (Bénéteau/JK)', src: FIRST30_VPP, sails: 'none', builtin: true },
     ...user,
   ];
   selectBoat(settings.boatId, true);
@@ -268,7 +270,7 @@ function selectBoat(id, boot = false) {
   // each boat keeps its own draft (Clockwork / LeeLoo); the land/shallow mask follows the chosen boat
   const key = b.group || b.id;
   settings.boatDrafts = settings.boatDrafts || {};
-  if (settings.boatDrafts[key] == null) settings.boatDrafts[key] = boot || !prev ? settings.draft : ((boatGroup(b) || {}).draft || settings.draft);
+  if (settings.boatDrafts[key] == null) settings.boatDrafts[key] = (boatGroup(b) || {}).draft || settings.draft;   // a boat's own draft (Fugu 1.9 m), changeable in Routing
   const draftChanged = Math.abs(settings.boatDrafts[key] - settings.draft) > 1e-6;
   settings.draft = settings.boatDrafts[key];
   saveSettings();
@@ -1887,7 +1889,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 3.8 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 3.9 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2140,7 +2142,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 3.8 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 3.9 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

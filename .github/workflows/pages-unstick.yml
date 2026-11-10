@@ -1,0 +1,21 @@
+# Clock the Wind – cancels a GitHub Pages deployment that stayed "in progress" (it blocks every new publication).
+# Run on demand with the commit SHA of the stuck deployment (the error message of the failed deploy names it).
+name: Pages – poništi zaglavljenu objavu
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'SHA zaglavljene objave'
+        required: true
+permissions:
+  pages: write
+  contents: read
+jobs:
+  cancel:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X GET "repos/${{ github.repository }}/pages/deployments/${{ inputs.sha }}" || true
+          gh api -X POST "repos/${{ github.repository }}/pages/deployments/${{ inputs.sha }}/cancel" && echo "poništeno"

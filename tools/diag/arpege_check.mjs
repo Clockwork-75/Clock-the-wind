@@ -1,8 +1,9 @@
 // Diagnostic: the ARPEGE field in a freshly built package – range, steps, wind and gusts at a few Adriatic points.
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { importPackage } from '../../js/direct.js';
 import { sample, fillTimeGaps } from '../../js/field.js';
-const b = readFileSync(process.argv[2]);
+let b = readFileSync(process.argv[2]); if (b[0] === 0x1f && b[1] === 0x8b) b = gunzipSync(b);
 const set = importPackage(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
 const H = 3600000, iso = t => new Date(t + H).toISOString().slice(5, 16).replace('T', ' ');
 console.log('modeli', set.models.join(','), 'greške', JSON.stringify(set.errors));

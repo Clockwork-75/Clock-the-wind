@@ -474,3 +474,7 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
   #toast { bottom: calc(var(--tlh, 90px) + 26px); }
   #layerbar { max-height: calc(100vh - 66px - var(--tlh, 90px) - 14px - var(--sat)); }
 }
+
+/* port / starboard tack tag (P red, S green, like the navigation lights) */
+.tk{display:inline-block;min-width:1.1em;padding:0 .25em;margin-left:.2em;border-radius:4px;font-weight:800;font-size:.85em;text-align:center;color:#fff}
+.tk-p{background:#d93a3a}.tk-s{background:#1f9d55}

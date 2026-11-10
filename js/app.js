@@ -1711,6 +1711,9 @@ const routeLayer = L.layerGroup().addTo(map);
 let boatMarkers = {};
 const okRoutes = () => Object.values(state.routes).filter(r => r && r.ok).sort((a, b) => a.eta - b.eta);
 const idealId = () => { const o = okRoutes(); return o.length ? o[0].model : null; };   // fastest route of all models = theoretical ideal
+// which side the wind blows over: twa = heading − wind direction, so a positive twa means the wind comes over the
+// port (left) side = port tack (P, red like the port light); negative = starboard tack (S, green)
+const tackTag = twa => twa > 0 ? '<span class="tk tk-p" title="lijeve uzde – vjetar s lijeve strane (port)">P</span>' : twa < 0 ? '<span class="tk tk-s" title="desne uzde – vjetar s desne strane (starboard)">S</span>' : '';
 // tack / gybe points (twa changes side); same rule as router stats()
 function manoeuvres(r) {
   if (r._man) return r._man;
@@ -1760,7 +1763,7 @@ function routePointHtml(id, t) {
   const r = state.routes[id], p = routeAt(r, t), m = modelById(id), rel = (t - r.startTime) / 3600000;
   return `<div class="rt"><b><span class="dot" style="background:${mcol(id)}"></span>${id === idealId() ? '★ ' : ''}${m.name} · ${fmtTime(t, false)}</b> <small>${fmtDur(rel)} od starta</small><br>
     Vjetar <b>${Math.round(p.twd)}° ${p.tws.toFixed(1)} kn</b> · Kurs <b>${Math.round(p.hdg)}°</b> · <b>${p.bsp.toFixed(1)} kn</b><br>
-    TWA <b>${Math.round(Math.abs(p.twa))}° ${p.twa < 0 ? 'L' : 'D'}</b> · ${p.sail} · <span class="muted">dodir = svi brodići na ovaj trenutak</span></div>`;
+    TWA <b>${Math.round(Math.abs(p.twa))}° ${tackTag(p.twa)}</b> · ${p.sail} · <span class="muted">dodir = svi brodići na ovaj trenutak</span></div>`;
 }
 function drawRoutes() {
   routeLayer.clearLayers(); boatMarkers = {};
@@ -1848,7 +1851,7 @@ function showBoatInfo(id, refresh = false) {
   const p = routeAt(r, state.time), m = modelById(id), done = state.time >= r.eta;
   const html = `<div class="bi"><div class="bih"><span class="dot" style="background:${mcol(m.id)}"></span><b>${m.name}</b>${id === idealId() ? ' ★' : ''}<span class="bit">${fmtTime(state.time, false)}</span></div>
     ${done ? `<div>🏁 U cilju ${fmtTime(r.eta, false)}</div>` : `<div class="big"><span>Vjetar <b>${Math.round(p.twd)}° · ${p.tws.toFixed(1)} kn</b></span><span>Kurs <b>${Math.round(p.hdg)}°</b></span>
-    <span>Brzina <b>${p.bsp.toFixed(1)} kn</b></span><span>TWA <b>${Math.round(Math.abs(p.twa))}° ${p.twa < 0 ? 'L' : 'D'}</b></span></div><div class="bis"><span class="dot" style="background:${p.sailColor}"></span>${p.sail}</div>`}</div>`;
+    <span>Brzina <b>${p.bsp.toFixed(1)} kn</b></span><span>TWA <b>${Math.round(Math.abs(p.twa))}° ${tackTag(p.twa)}</b></span></div><div class="bis"><span class="dot" style="background:${p.sailColor}"></span>${p.sail}</div>`}</div>`;
   if (refresh) { boatPopup.setLatLng([p.lat, p.lon]).setContent(html); return; }
   if (boatPopup) map.closePopup(boatPopup);
   boatPopup = L.popup({ className: 'boatpop', closeButton: true, autoPan: false, offset: [0, -12], maxWidth: 220 }).setLatLng([p.lat, p.lon]).setContent(html).openOn(map);
@@ -2036,7 +2039,7 @@ function renderRouteDetail() {
     <h3>Točke rute</h3>
     <table class="cmp legs"><tr><th>Vrijeme</th><th>TWD</th><th>TWS</th><th>TWA</th><th>HDG</th><th>BSP</th><th>Jedro</th></tr>
     ${r.track.filter((p, i, a) => i === 0 || p.mark || i === a.length - 1 || Math.floor(p.t / 3600000) !== Math.floor(a[i - 1].t / 3600000)).map(p => `
-      <tr data-t="${p.t}"><td>${fmtTime(p.t, false)}${p.mark ? ' 🚩' : ''}</td><td>${Math.round(p.twd)}°</td><td>${p.tws.toFixed(1)}</td><td>${Math.round(Math.abs(p.twa))}° ${p.twa < 0 ? 'L' : 'D'}</td><td>${Math.round(p.hdg)}°</td><td>${p.bsp.toFixed(1)}</td><td><span class="dot" style="background:${p.sailColor}"></span>${p.sail}</td></tr>`).join('')}
+      <tr data-t="${p.t}"><td>${fmtTime(p.t, false)}${p.mark ? ' 🚩' : ''}</td><td>${Math.round(p.twd)}°</td><td>${p.tws.toFixed(1)}</td><td>${Math.round(Math.abs(p.twa))}° ${tackTag(p.twa)}</td><td>${Math.round(p.hdg)}°</td><td>${p.bsp.toFixed(1)}</td><td><span class="dot" style="background:${p.sailColor}"></span>${p.sail}</td></tr>`).join('')}
     </table>
     <button id="btnExportGpx" class="btn block">Izvezi rutu (GPX)</button>`;
   el.querySelectorAll('tr[data-t]').forEach(tr => tr.onclick = () => { const t = +tr.dataset.t; setTime(t); const p = routeAt(r, t); map.panTo([p.lat, p.lon]); });

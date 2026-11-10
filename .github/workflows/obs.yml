@@ -1,0 +1,36 @@
+# Clock the Wind – live measurements on the Adriatic (DHMZ buoys + coastal stations) every 30 minutes.
+# The result (obs.json for the app, history.json = 7 days for scoring the models) is kept on the branch `obs`,
+# which holds only these files; the app reads it from raw.githubusercontent.com.
+name: Mjerenja
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: obs
+  cancel-in-progress: false
+jobs:
+  obs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Alati
+        run: |
+          python3 -c "import PIL, numpy" 2>/dev/null || pip install --quiet pillow numpy
+          [ -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ] || (sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core >/dev/null)
+      - name: Prethodna mjerenja
+        run: |
+          git fetch --depth 1 origin obs 2>/dev/null && git worktree add obsdata origin/obs 2>/dev/null || mkdir -p obsdata
+          ls -la obsdata
+      - name: Plutače i stanice
+        run: python3 tools/obs/collect.py obsdata
+      - name: Spremi na granu obs
+        run: |
+          cd obsdata
+          rm -rf .git_tmp && mkdir .git_tmp && cp obs.json history.json .git_tmp/ && cd .git_tmp
+          git init -q && git checkout -q -b obs && git add obs.json history.json
+          git -c user.name=ctw-ci -c user.email=ci@users.noreply.github.com commit -qm "mjerenja $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" obs

@@ -256,7 +256,7 @@ function parseGrib1(b, o, msgs) {
   const unused = bflag & 0x0f;
   // 0 bits = every point has the reference value (a constant field): one value per grid point, nothing to read
   const n = bitmap ? bitmap.reduce((a, c) => a + c, 0) : nbits === 0 ? grid.npts : Math.floor(((bl - 11) * 8 - unused) / nbits);
-  const name = GRIB1[param];
+  const name = (EXTRA1 && EXTRA1[param]) || GRIB1[param];
   if (name && (bflag & 0x40)) throw new Error('GRIB1 kompleksno pakiranje nije podržano – izvezi GRIB s jednostavnim pakiranjem');
   const okLevel = (name === 'U' || name === 'V') ? ANY_LEVEL || (ltype === 105 && lev === 10) || ltype === 1 : true;
   if (name && okLevel) {
@@ -269,9 +269,10 @@ function parseGrib1(b, o, msgs) {
 // Files from paid services often mix variables, levels and packings: a message we cannot read is skipped
 // (and remembered), so the wind in the same file is still imported. Only if nothing usable is left do we fail.
 let ANY_LEVEL = false;   // tests only: accept U/V on any level
+let EXTRA1 = null;       // a producer's local GRIB1 parameters, e.g. DHMZ ALADIN-HR: 196/197 = u/v of the hourly maximum wind
 export function decodeGrib(buffer, opts = {}) {
   const b = new Uint8Array(buffer), msgs = [], skipped = [];
-  ANY_LEVEL = !!opts.anyLevel;
+  ANY_LEVEL = !!opts.anyLevel; EXTRA1 = opts.grib1 || null;
   let o = 0;
   while (o < b.length - 8) {
     if (b[o] === 0x47 && b[o + 1] === 0x52 && b[o + 2] === 0x49 && b[o + 3] === 0x42) {
@@ -282,7 +283,7 @@ export function decodeGrib(buffer, opts = {}) {
       o += len > 8 ? len : 1;
     } else o++;
   }
-  ANY_LEVEL = false;
+  ANY_LEVEL = false; EXTRA1 = null;
   msgs.skipped = skipped;
   if (!msgs.length && skipped.length) throw new Error(skipped[0]);
   return msgs;

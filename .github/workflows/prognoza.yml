@@ -1,9 +1,9 @@
 # Clock the Wind – builds the Adriatic forecast package (no API limits) and publishes the app + package.
-# Runs 4× a day shortly after the main model runs, on every upload, and on demand (Actions → Prognoza → Run workflow).
+# Runs every 3 hours (ALADIN-HR is ready at ~02:50 and ~14:50 UTC), on every upload, and on demand (Actions → Prognoza → Run workflow).
 name: Prognoza
 on:
   schedule:
-    - cron: '35 3,9,15,21 * * *'
+    - cron: '35 */3 * * *'
   workflow_dispatch:
   push:
     branches: [main]

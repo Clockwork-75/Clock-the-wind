@@ -4,10 +4,11 @@
 // from Open-Meteo, crops everything to the Adriatic and writes one compact package (data/latest.ctw).
 // No API limits apply to the open-data sources.  Usage: node tools/cloud/build_package.mjs data/latest.ctw
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { decodeGrib, cropMsg, gribToField } from '../../js/grib.js';
-import { exportPackage, globalSteps } from '../../js/direct.js';
+import { exportPackage, importPackage, globalSteps } from '../../js/direct.js';
+import { gunzipSync } from 'node:zlib';
 import { downloadForecast, fetchOpenMeteoMarine, gridFor, MARINE_STEP } from '../../js/forecast.js';
 
 const OUT = process.argv[2] || 'data/latest.ctw';
@@ -139,25 +140,35 @@ async function aladin() {
   if (!user || !pass) throw new Error('ALADIN-HR: nema prijave (GitHub tajne ALADIN_USER / ALADIN_PASS)');
   const BASE = 'https://radar.dhz.hr/~aladinhr/opendata/sailing/';
   const auth = { Authorization: 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64') };
-  const list = async u => { const b = await get(u, auth); return b ? [...b.toString().matchAll(/href="([^"?/][^"]*)"/g)].map(m => m[1]) : []; };
-  const top = await list(BASE);
-  const files = top.filter(n => !n.endsWith('/'));
-  for (const d of top.filter(n => n.endsWith('/'))) files.push(...(await list(BASE + d)).filter(n => !n.endsWith('/')).map(n => d + n));
-  const adr = files.filter(n => /adr/i.test(n) && !/\.(html?|txt|png|jpe?g|pdf|nc)$/i.test(n)).sort();
-  log(`ALADIN-HR: ${files.length} datoteka, ADR: ${adr.slice(-3).join(', ')}`);
-  if (!adr.length) throw new Error('ALADIN-HR: nema datoteke za cijeli Jadran (ADR)');
-  const f0 = adr[adr.length - 1];
-  let buf = await get(BASE + f0, auth); if (!buf) throw new Error('ALADIN-HR: preuzimanje nije uspjelo');
-  if (buf[0] === 0x42 && buf[1] === 0x5a) buf = bunzip(buf);
-  else if (buf[0] === 0x1f && buf[1] === 0x8b) buf = (await import('node:zlib')).gunzipSync(buf);
-  const msgs = []; for (const m of decodeGrib(toAB(buf))) { const c = cropMsg(m, BBOX); if (c) msgs.push(c); }
-  log(`ALADIN-HR ${f0}: ${(buf.length / 1048576).toFixed(1)} MB, ${msgs.length} polja`);
+  // two files, always the last 00 and the last 12 UTC run for the whole Adriatic: the newer one is used
+  let best = null;
+  for (const name of ['ALADIN-HR20_last_00_run_ADR.grb', 'ALADIN-HR20_last_12_run_ADR.grb']) {
+    const buf = await get(BASE + name, auth); if (!buf) { log(`ALADIN-HR ${name}: nema`); continue; }
+    // GRIB1 with DHMZ's local parameters 196/197 = u/v of the hourly maximum wind at 10 m
+    const raw = decodeGrib(toAB(buf), { grib1: { 196: 'gu', 197: 'gv' } });
+    const first = Math.min(...raw.map(m => m.valid));
+    log(`ALADIN-HR ${name}: ${(buf.length / 1048576).toFixed(0)} MB, ${raw.length} polja, od ${new Date(first).toISOString().slice(0, 13)}z`);
+    if (!best || first > best.first) best = { name, first, raw };
+  }
+  if (!best) throw new Error('ALADIN-HR: datoteke nisu dostupne');
+  // 2 km grid: every 2nd point (~4 km) keeps the package light for the iPad – the model still runs at 2 km
+  const msgs = []; for (const m of best.raw) { const c = cropMsg(m, BBOX, 20000); if (c) msgs.push(c); }
   const all = msgs.filter(m => m.valid >= t0 - H);
   const f = gribToField(all.length ? all : msgs, null, 'dir_aladin');
-  const ts = msgs.map(m => m.valid).sort((a, b) => a - b);
-  f.run = { runInit: Math.floor(ts[0] / (12 * H)) * 12 * H };
-  f.meta = { id: 'dir_aladin', name: 'ALADIN-HR', res: '2 km · DHMZ', color: '#ff1744', note: 'DHMZ ALADIN-HR20 – 2 km, optimiziran za vjetar, cijeli Jadran, 72 h, svaki sat' };
+  f.run = { runInit: best.first };
+  f.meta = ALADIN_META;
   return f;
+}
+const ALADIN_META = { id: 'dir_aladin', name: 'ALADIN-HR', res: '2 km · DHMZ', color: '#ff1744', note: 'DHMZ ALADIN-HR20 – 2 km, optimiziran za vjetar, cijeli Jadran, 72 h, svaki sat' };
+// DHMZ server unreachable: the last ALADIN-HR from the published package stays in (ALADIN must always be there)
+async function aladinPrevious() {
+  const buf = await get('https://clockwork-75.github.io/Clock-the-wind/data/models/dir_aladin.ctw?t=' + Date.now());
+  if (!buf) throw new Error('ALADIN-HR: nema ni prethodnog');
+  const b = buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf) : buf;
+  const prev = importPackage(toAB(b)).fields.dir_aladin;
+  if (!prev || (prev.validUntil || prev.times[prev.times.length - 1]) < Date.now()) throw new Error('ALADIN-HR: prethodni je istekao');
+  log(`ALADIN-HR: zadržan prethodni run ${new Date(prev.run.runInit).toISOString().slice(0, 13)}z`);
+  prev.meta = ALADIN_META; return prev;
 }
 
 // ---------------- build ----------------
@@ -165,7 +176,10 @@ const fields = {}, errors = [];
 const times = []; for (let t = t0; t <= t1; t += H) times.push(t);
 for (const [name, job] of [['ICON-D2', () => dwd('d2')], ['ICON-EU', () => dwd('eu')], ['ALADIN', aladin], ['ARPEGE', arpege], ['ECMWF', ecmwf], ['GFS', gfs]].filter(([n]) => !process.env.CTW_ONLY || process.env.CTW_ONLY.split(',').includes(n))) {
   try { const f = await job(); fields[f.model] = f; }
-  catch (e) { errors.push(`${name}: ${e.message}`); log('!!', name, e.message); }
+  catch (e) {
+    errors.push(`${name}: ${e.message}`); log('!!', name, e.message);
+    if (name === 'ALADIN') try { fields.dir_aladin = await aladinPrevious(); } catch (e2) { log('!!', e2.message); }
+  }
 }
 // ICON-2I (best model for the southern Adriatic) and waves/currents via Open-Meteo – optional
 const settings = { apiKey: process.env.OPEN_METEO_KEY || '' };
@@ -189,3 +203,15 @@ mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, Buffer.from(await blob.arrayBuffer()));
 writeFileSync(OUT.replace(/\.ctw$/, '.json'), JSON.stringify({ created: set.created, models: models.map(id => ({ id, run: fields[id].run && fields[id].run.runInit, until: fields[id].validUntil })), errors }, null, 1));
 log(`Zapisano ${OUT}: ${(blob.size / 1048576).toFixed(1)} MB, modeli: ${models.join(', ')}`);
+// every model also as its own file, so the app downloads only the chosen ones (data/models/<id>.ctw + index.json)
+const MD = join(dirname(OUT), 'models'); mkdirSync(MD, { recursive: true });
+const index = { created: set.created, window: set.window, models: [] };
+for (const id of [...models, 'marine']) {
+  const one = { ...set, id: set.id + ':' + id, models: id === 'marine' ? [] : [id], fields: { [id]: fields[id] } };
+  const b = await exportPackage(one);
+  writeFileSync(join(MD, id + '.ctw'), Buffer.from(await b.arrayBuffer()));
+  const f = fields[id];
+  index.models.push({ id, mb: +(b.size / 1048576).toFixed(1), run: f.run && f.run.runInit, until: f.validUntil || (f.times && f.times[f.times.length - 1]), name: f.meta && f.meta.name });
+}
+writeFileSync(join(MD, 'index.json'), JSON.stringify(index));
+log('Po modelima:', index.models.map(m => `${m.id} ${m.mb} MB`).join(', '));

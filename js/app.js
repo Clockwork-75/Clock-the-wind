@@ -6,7 +6,7 @@ import { loadBathy, routingMask, depthAt } from './bathy.js';
 import { sample, lastTime, fillTimeGaps } from './field.js';
 import { MODELS, MM_MODELS, ALADIN, QUALITY, MARINE_STEP, modelById, registerModel, gridFor, raceWindow, estimateCalls, downloadForecast, checkNewRuns, saveForecast, loadForecast } from './forecast.js';
 import { decodeGrib, gribToField } from './grib.js';
-import { DIRECT, directUsable, nativeAvailable, downloadDirect, exportPackage, isPackage, importPackage, fetchCloudPackage, CLOUD_DEFAULT } from './direct.js';
+import { DIRECT, directUsable, nativeAvailable, downloadDirect, exportPackage, isPackage, importPackage, fetchCloudPackage, fetchCloudModels, CLOUD_MODELS, CLOUD_DEFAULT } from './direct.js';
 import { WeatherLayer, ParticleLayer, ChartLayer, DepthLayer, LAYERS, decodeCoast, decodeWorld, colorFor, ISOBATHS } from './layers.js';
 import { PRESETS, REGATTAS, PLACES } from './courses.js';
 import { speedDirFromUV, distNm, bearing, fmtLatLon, angDiff } from './geo.js';
@@ -290,7 +290,7 @@ function useSet(set) {
   pruneClockW(set);
   for (const id of cwIds(set)) set.fields[id].strictTime = true;
   for (const id of set.models) fillTimeGaps(set.fields[id]);
-  const pref = ['italia_meteo_arpae_icon_2i', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
+  const pref = ['dir_aladin', 'italia_meteo_arpae_icon_2i', 'dir_icon_eu', 'icon_eu', 'ecmwf_ifs', 'dir_ecmwf', 'dir_icon_d2', 'icon_d2', 'knmi_harmonie_arome_europe'];
   if (!state.modelId || !set.fields[state.modelId]) state.modelId = pref.find(id => set.fields[id]) || set.models[0];
   state.wind = withFallback(set, state.modelId);
   if (state.layer === 'conf' && !cwIds(set).length) { state.layer = settings.layer = 'wind'; saveSettings(); $$('#layerbar [data-layer]').forEach(x => x.classList.toggle('on', x.dataset.layer === 'wind')); renderLegend(); }
@@ -1087,13 +1087,14 @@ ${AREA_UI()}
     <h3>Izvor podataka</h3>
     <div class="seg"><button data-src="direct" class="${direct ? 'on' : ''}">📥 GRIB izravno</button><button data-src="cloud" class="${cloud ? 'on' : ''}">☁️ Paket iz oblaka</button><button data-src="openmeteo" class="${!direct && !cloud ? 'on' : ''}">📡 Open-Meteo</button></div>
     <div class="note">${direct ? `Originalne GRIB datoteke izravno od službenih meteoroloških centara (ECMWF, NOAA${state.native ? ', DWD' : ''}), <b>bez API limita</b>, samo kad klikneš Preuzmi.${state.native ? '' : ' DWD modeli (ICON-D2/EU) rade samo u Mac aplikaciji.'}`
-      : cloud ? '<b>Bez API limita.</b> Gotov paket za cijeli Jadran (ICON-2I, ICON-D2, ICON-EU, ECMWF, GFS, valovi i struje) – ECMWF i GFS do 15 dana unaprijed – koji tvoj GitHub sam osvježava 4× dnevno nakon novih runova. Preuzimanje ~10–15 MB.'
+      : cloud ? '<b>Bez API limita.</b> Gotov paket za cijeli Jadran (ALADIN-HR, ICON-2I, ICON-D2, ICON-EU, ARPEGE, ECMWF, GFS, valovi i struje) – ECMWF i GFS do 15 dana unaprijed – koji se sam osvježava svaka 3 sata s najnovijim runom svakog modela. Biraš koje modele preuzimaš.'
       : 'Open-Meteo: 9 modela uključujući ICON-2I i HARMONIE; besplatno s dnevnim limitom po internetskoj vezi. Ako limit istekne, aplikacija se sama prebaci na paket iz oblaka.'}</div>
     <h3>Rezolucija</h3>
     <div class="row"><label>Kvaliteta</label><select id="quality">${Object.entries(QUALITY).map(([k, q]) => `<option value="${k}" ${settings.quality === k ? 'selected' : ''}>${q.name}</option>`).join('')}</select></div>
-    ${cloud ? `<h3>Paket iz oblaka</h3><div class="note">Paket sadrži sve modele odjednom za cijeli Jadran. Područje i kvaliteta se ne biraju.</div>` : direct ? `<h3>Modeli (izravno s izvora)</h3>${dirList}
+    ${cloud ? `<h3>Modeli iz oblaka</h3>${CLOUD_MODELS.map(m => `<label class="check"><input type="checkbox" data-cm="${m.id}" ${!settings.cloudModels || settings.cloudModels.includes(m.id) ? 'checked' : ''}>
+      <div><div class="t"><span class="dot" style="background:${mcol(m.id)}"></span>${m.name} <small style="color:var(--muted)">${m.res}</small></div><div class="d">${m.note}</div></div></label>`).join('')}
+    <div class="note">Preuzimaju se samo označeni modeli (valovi i struje uvijek). Područje je cijeli Jadran; ECMWF i GFS pokrivaju i Mediteran. Promjena vrijedi od sljedećeg preuzimanja.</div>` : direct ? `<h3>Modeli (izravno s izvora)</h3>${dirList}
     <div class="note">Procjena: ~${Math.round(mb)} MB preuzimanja za prvih ${hrs} h (izrezuje se samo odabrano područje, na disk ide nekoliko MB)${fcMode() && fcDays() > SHORT_DAYS ? ` + dani 4–${fcDays()} preko Open-Meteo, ~1–3 MB` : ''}. Za ICON-2I i HARMONIE prebaci na Open-Meteo.</div>` : `<h3>Besplatni modeli (Open-Meteo)</h3>${free}`}
-    <label class="check"><input type="checkbox" disabled><div><div class="t">${ALADIN.name} <small style="color:var(--muted)">${ALADIN.res}</small></div><div class="d">${ALADIN.note}</div></div></label>
     <h3>Plaćeni izvori</h3>
     <div class="note">Open-Meteo komercijalni ključ (veći limiti, svi modeli): Postavke → Izvori. Meteomatics (1 km downscaling, ECMWF, mix):</div>
     <div class="row"><input type="text" id="mmUser" class="field" style="flex:1" placeholder="Meteomatics korisnik" value="${settings.mmUser}" autocomplete="off"></div>
@@ -1142,6 +1143,7 @@ ${AREA_UI()}
   el.querySelector('#btnTiles').onclick = cacheTiles;
   const rn = el.querySelector('#btnRefreshNew'); if (rn) rn.onclick = refreshNewRuns;
   el.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { settings.source = b.dataset.src; saveSettings(); renderDataTab(); });
+  el.querySelectorAll('[data-cm]').forEach(i => i.onchange = () => { const on = [...el.querySelectorAll('[data-cm]:checked')].map(x => x.dataset.cm); if (!on.length) { i.checked = true; return toast('Barem jedan model mora ostati odabran'); } settings.cloudModels = on.length === CLOUD_MODELS.length ? null : on; saveSettings(); });
   el.querySelectorAll('[data-dir]').forEach(i => i.onchange = () => { settings.directModels = [...el.querySelectorAll('[data-dir]:checked')].map(x => x.dataset.dir); saveSettings(); renderDataTab(); });
   const pk = el.querySelector('#btnPackage'); if (pk) pk.onclick = async () => {
     const blob = await exportPackage(state.set);
@@ -1423,7 +1425,7 @@ function maybeFillWindow(delay = 1200) {
 map.on('moveend', maybeFillWindow);
 // re-download only the models that have a newer run than the one stored; merge into the current set
 async function loadCloud(bar, txt, auto = false) {
-  const set = await fetchCloudPackage(settings.cloudUrl || CLOUD_DEFAULT, state.native, (f, t) => { if (t && txt) txt.textContent = t; });
+  const set = await fetchCloudModels(settings.cloudUrl || CLOUD_DEFAULT, settings.cloudModels || null, state.native, (f, t) => { if (f != null && bar) bar.style.width = (f * 100).toFixed(0) + '%'; if (t && txt) txt.textContent = t; });
   state.cloudError = null;
   set.mode = 'forecast'; set.longTried = Date.now();   // the package carries its own range (up to 15 days)
   const hasWaves = m => { if (!m || m.nx === 1 || !m.vars || !m.vars.wave) return false; const a = m.vars.wave; for (let i = 0; i < a.length; i += 7) if (a[i] === a[i]) return true; return false; };
@@ -2130,7 +2132,7 @@ function renderSettingsTab() {
     <div class="row"><input type="password" id="apikey" class="field" style="flex:1" placeholder="prazno = besplatni limit" value="${settings.apiKey}" autocomplete="off"></div>
     <div class="row"><label>Adresa paketa iz oblaka</label></div>
     <div class="row"><input type="text" id="cloudUrl" class="field" style="flex:1" value="${settings.cloudUrl || CLOUD_DEFAULT}"></div>
-    <div class="note">Meteomatics račun i GRIB uvoz su u kartici Prognoza. ALADIN-HR: čim DHMZ odobri pristup, dodaje se kao izvor.</div>
+    <div class="note">Meteomatics račun i GRIB uvoz su u kartici Prognoza. ALADIN-HR (DHMZ) je u paketu iz oblaka.</div>
     <h3>Aplikacija</h3>
     <div class="row"><label>Animirani Clockwork logo pri pokretanju</label><input type="checkbox" id="introT" ${(() => { try { return localStorage.getItem('ctw.intro') !== 'off'; } catch { return true; } })() ? 'checked' : ''}></div>
     <button id="introPlay" class="btn block">Pokaži animaciju</button>

@@ -349,6 +349,47 @@ export function importPackage(buf) {
   return set;
 }
 
+// the models of the cloud package one by one (data/models/<id>.ctw): only the chosen ones are downloaded and joined
+export const CLOUD_MODELS = [
+  { id: 'dir_aladin', name: 'ALADIN-HR', res: '2 km · DHMZ', color: '#ff1744', note: 'DHMZ ALADIN-HR20 – optimiziran za vjetar, cijeli Jadran, 72 h, svaki sat (runovi 00 i 12 UTC)' },
+  { id: 'italia_meteo_arpae_icon_2i', name: 'ICON-2I', res: '2.2 km · ItaliaMeteo', note: 'južni i srednji Jadran, 72 h, svaki sat' },
+  { id: 'dir_icon_d2', name: 'ICON-D2', res: '2.2 km · DWD', note: 'sjeverni Jadran do ~43.2°N, 48 h, svaki sat' },
+  { id: 'dir_icon_eu', name: 'ICON-EU', res: '7 km · DWD', note: 'cijeli Jadran, do 120 h' },
+  { id: 'dir_arpege', name: 'ARPEGE', res: '0.1° · Météo-France', color: '#e040fb', note: 'cijeli Jadran, do ~4 dana, svaki sat' },
+  { id: 'dir_ecmwf', name: 'ECMWF', res: '0.25° · ECMWF', note: 'cijeli Mediteran, do 15 dana' },
+  { id: 'dir_gfs', name: 'GFS', res: '0.25° · NOAA', note: 'cijeli Mediteran, do 15 dana' },
+];
+CLOUD_MODELS.filter(m => m.color).forEach(registerModel);
+const cloudBase = cloudUrl => { const onPages = /github\.io$/.test(location.hostname); return onPages ? new URL('data/', location.href.replace(/[^/]*$/, '')).href : (cloudUrl || CLOUD_DEFAULT).replace(/[^/]*$/, ''); };
+async function fetchGz(url, native) {
+  let r = null;
+  try { r = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' }); } catch { r = null; }
+  if ((!r || !r.ok) && native && !/github\.io$/.test(location.hostname)) r = await fetch(`/proxy?u=${encodeURIComponent(url)}`, { cache: 'no-store' });
+  if (!r || !r.ok) throw new Error(`paket iz oblaka nije dostupan${r ? ` (${r.status})` : ''}`);
+  let buf = await r.arrayBuffer();
+  const h = new Uint8Array(buf, 0, 2);
+  if (h[0] === 0x1f && h[1] === 0x8b) buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  return buf;
+}
+export async function fetchCloudModels(cloudUrl, ids, native, progress = () => {}) {
+  const base = cloudBase(cloudUrl);
+  let index;
+  try { index = JSON.parse(new TextDecoder().decode(await fetchGz(base + 'models/index.json', native))); }
+  catch { return fetchCloudPackage(cloudUrl, native, progress); }   // older package without single models: the whole one
+  const have = index.models.map(m => m.id);
+  const want = have.filter(id => id === 'marine' || !ids || ids.includes(id));
+  const mb = index.models.filter(m => want.includes(m.id)).reduce((a, m) => a + m.mb, 0);
+  progress(null, `Preuzimam iz oblaka: ${want.filter(id => id !== 'marine').length} modela, ~${mb.toFixed(0)} MB…`);
+  let done = 0;
+  const parts = await Promise.all(want.map(async id => { const buf = await fetchGz(base + 'models/' + id + '.ctw', native); progress(++done / want.length, null); if (!isPackage(buf)) throw new Error('neispravan paket'); return importPackage(buf); }));
+  const set = { ...parts[0], fields: {}, models: [] };
+  for (const p of parts) { Object.assign(set.fields, p.fields); for (const id of p.models) if (!set.models.includes(id)) set.models.push(id); }
+  set.models = have.filter(id => set.models.includes(id));
+  set.id = 'cloud-' + index.created; set.created = index.created;
+  if (!set.models.length) throw new Error('nijedan odabrani model nije u paketu iz oblaka');
+  return set;
+}
+
 export const CLOUD_DEFAULT = 'https://clockwork-75.github.io/Clock-the-wind/data/latest.ctw';
 export async function fetchCloudPackage(cloudUrl, native, progress = () => {}) {
   const onPages = /github\.io$/.test(location.hostname);

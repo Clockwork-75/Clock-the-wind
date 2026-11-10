@@ -20,7 +20,7 @@ import { modelById } from './forecast.js';
 // Several ClockW forecasts can exist side by side (ClockW1, ClockW2 … each from its own choice of models)
 export const isClockW = id => /^clockw\d*$/.test(String(id));
 export const clockwMeta = n => ({ id: 'clockw' + n, name: 'ClockW' + n, res: 'konsenzus', color: '#18ffff', note: 'Naša prognoza: konsenzus odabranih modela' });
-export const isDerived = id => isClockW(id) || String(id).startsWith('grib:');
+export const isDerived = id => isClockW(id) || id === 'moja' || String(id).startsWith('grib:');
 
 const H = 3600000;
 // model resolution in km (from the model list; otherwise from its grid)

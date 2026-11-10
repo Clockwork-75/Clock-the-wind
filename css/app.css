@@ -500,3 +500,12 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
 .obspop table{width:100%;font-size:12px;margin:4px 0}.obspop td{padding:1px 4px 1px 0}.obspop .spark small{display:block;margin-top:4px;opacity:.8}
 .obspop svg{width:100%;height:70px;background:#0a142610;border-radius:4px}.obspop .sl{font-size:8px;fill:#556677}
 @media (max-width:700px){#obsCard{top:auto;bottom:calc(var(--tlh,120px) + 70px);max-width:calc(100% - 20px)}}
+
+/* analysis tab */
+#tab-analysis table.rank{width:100%;font-size:12px;border-collapse:collapse}#tab-analysis table.rank td{padding:3px 4px;white-space:nowrap}
+#tab-analysis table.rank td:first-child{color:var(--muted,#9ab)}#tab-analysis table.rank td.best{font-weight:700}
+#tab-analysis i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px}
+#tab-analysis .tblwrap{overflow-x:auto}#tab-analysis table.obst{border-collapse:collapse;font-size:12px;min-width:100%}
+#tab-analysis table.obst th,#tab-analysis table.obst td{padding:3px 6px;text-align:center;white-space:nowrap}#tab-analysis table.obst td:first-child{text-align:left}
+#tab-analysis td.hi{background:#c0392b55}#tab-analysis td.lo{background:#2471a355}#tab-analysis td.ok{color:#8fe3a8}#tab-analysis td.na{opacity:.4}
+#tab-analysis .os{margin:4px 0;padding:5px 8px;border-radius:6px;background:#ffffff10}#tab-analysis .os.jako{background:#c0392b44}#tab-analysis .os.umjereno{background:#e67e2244}

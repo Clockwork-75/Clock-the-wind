@@ -351,7 +351,7 @@ export function importPackage(buf) {
 
 // the models of the cloud package one by one (data/models/<id>.ctw): only the chosen ones are downloaded and joined
 export const CLOUD_MODELS = [
-  { id: 'dir_aladin', name: 'ALADIN-HR', res: '2 km · DHMZ', color: '#ff1744', note: 'DHMZ ALADIN-HR20 – optimiziran za vjetar, cijeli Jadran, 72 h, svaki sat (runovi 00 i 12 UTC)' },
+  { id: 'dir_aladin', name: 'ALADIN-HR', res: '2 km · DHMZ', color: '#ff3d00', note: 'DHMZ ALADIN-HR20 – optimiziran za vjetar, cijeli Jadran, 72 h, svaki sat (runovi 00 i 12 UTC)' },
   { id: 'italia_meteo_arpae_icon_2i', name: 'ICON-2I', res: '2.2 km · ItaliaMeteo', note: 'južni i srednji Jadran, 72 h, svaki sat' },
   { id: 'dir_icon_d2', name: 'ICON-D2', res: '2.2 km · DWD', note: 'sjeverni Jadran do ~43.2°N, 48 h, svaki sat' },
   { id: 'dir_icon_eu', name: 'ICON-EU', res: '7 km · DWD', note: 'cijeli Jadran, do 120 h' },

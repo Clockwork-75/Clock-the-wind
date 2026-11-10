@@ -199,6 +199,7 @@ const MODEL_COLORS = {
   italia_meteo_arpae_icon_2i: '#ff1744', icon_d2: '#ff9100', icon_eu: '#ffffff', ecmwf_ifs: '#e040fb', ecmwf: '#e040fb',
   gfs_seamless: '#ffee00', gfs: '#ffee00', knmi_harmonie_arome_europe: '#111111', meteofrance_arpege_europe: '#ff80ab',
   ukmo_global_deterministic_10km: '#8d6e63', ecmwf_aifs025_single: '#9e9e9e',
+  aladin: '#ff3d00', arpege: '#ff80ab', moja: '#b388ff',
   'mm:mix': '#ff6e40', 'mm:ecmwf-ifs': '#7c4dff', 'mm:mm-swiss1k': '#f8bbd0',
 };
 const CLOCKW_COLORS = ['#18ffff', '#64ffda', '#00b8d4', '#b2ff59', '#40c4ff', '#a7ffeb'];   // ClockW1, ClockW2, … (turquoise family)
@@ -306,6 +307,7 @@ function useSet(set) {
   setupTimeline();
   renderChips();
   redraw();
+  if (state.ovObs && state.obs && typeof autoMoja === 'function') setTimeout(() => autoMoja(), 50);   // a new forecast: MOJA again
 }
 // the map shows only the chosen model's own data (and its own days 4–15): never pieces of other models or of older
 // downloads – that mosaic made hard rectangular seams. Where the model has no data the colours fade out softly.
@@ -630,7 +632,7 @@ function openSheet(tab) {
   $('#sheet').classList.remove('hidden');
   $$('.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   $$('.tabbody').forEach(b => b.classList.toggle('on', b.id === 'tab-' + tab));
-  ({ course: renderCourseTab, routing: renderRoutingTab, compare: renderCompareTab, data: renderDataTab, settings: renderSettingsTab })[tab]();
+  ({ course: renderCourseTab, routing: renderRoutingTab, compare: renderCompareTab, analysis: renderAnalysisTab, data: renderDataTab, settings: renderSettingsTab })[tab]();
 }
 $$('.tabs [data-tab]').forEach(b => b.onclick = () => openSheet(b.dataset.tab));
 $('#sheetClose').onclick = () => { $('#sheet').classList.add('hidden'); setEditing(false); };
@@ -1742,6 +1744,7 @@ function obsRank() {
   const pl = o.places.filter(p => !p.stale && p.wspd != null && Date.now() / 1000 - p.t < 3 * 3600);
   const res = [];
   for (const id of s.models) {
+    if (id === 'moja') continue;   // MOJA is pulled towards these very measurements – not a fair competitor here
     const f = s.fields[id]; let n = 0, ae = 0, b = 0;
     for (const p of pl) { const e = obsModelErr(p, f); if (e == null) continue; n++; ae += Math.abs(e); b += e; }
     if (n >= 4) res.push({ id, mae: ae / n, bias: b / n, n });
@@ -1812,10 +1815,119 @@ function showObs(p) {
 $('#ovObs').onclick = async () => {
   state.ovObs = settings.ovObs = !state.ovObs; saveSettings(); syncToggles();
   clearInterval(obsTimer); obsTimer = null;
-  if (state.ovObs) { await loadObs(); obsTimer = setInterval(async () => { await loadObs(true); drawObs(); }, 10 * 60000); }
+  if (state.ovObs) { await loadObs(); autoMoja(); obsTimer = setInterval(async () => { await loadObs(true); autoMoja(); drawObs(); }, 10 * 60000); }
   drawObs();
 };
-setTimeout(async () => { state.ovObs = !!settings.ovObs; syncToggles(); if (state.ovObs) { await loadObs(); drawObs(); obsTimer = setInterval(async () => { await loadObs(true); drawObs(); }, 10 * 60000); } }, 1500);
+setTimeout(async () => { state.ovObs = !!settings.ovObs; syncToggles(); if (state.ovObs) { await loadObs(); autoMoja(); drawObs(); obsTimer = setInterval(async () => { await loadObs(true); autoMoja(); drawObs(); }, 10 * 60000); } }, 1500);
+
+// ---------------- "MOJA" – our own forecast from the models and the live measurements ----------------
+// 1) every model's speed is corrected by its measured error (ratio measured/model over the places, last hours);
+// 2) the models are blended with weights ∝ 1/error² (the ones that hit the measurements count more);
+// 3) the first hours are pulled towards the measurements: the remaining error at each buoy/station is spread to the
+//    sea around it (inverse distance, ~60 km) and fades out over ~6 h.
+const MOJA_META = { id: 'moja', name: 'MOJA', res: 'modeli + mjerenja', color: '#b388ff', note: 'Naša prognoza: modeli ispravljeni i ponderirani prema mjerenjima, prvih sati povučena prema stvarnom stanju' };
+registerModel(MOJA_META);
+function mojaStats() {
+  const o = state.obs, s = state.set; if (!o || !s) return null;
+  const now = Date.now() / 1000;
+  const pl = o.places.filter(p => !p.stale && p.wspd != null && now - p.t < 3 * 3600);
+  const ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && s.fields[id].vars.u);
+  const st = [];
+  for (const id of ids) {
+    const f = s.fields[id]; let n = 0, ae = 0, sm = 0, sx = 0;
+    for (const p of pl) {
+      const q = sample(f, ['u', 'v'], p.lat, p.lon, p.t * 1000, []); if (q[0] !== q[0]) continue;
+      const m = Math.hypot(q[0], q[1]), x = p.h === 3 ? p.wspd * U3_10 : p.wspd;
+      n++; ae += Math.abs(m - x); sm += m; sx += x;
+    }
+    if (n < 4) continue;
+    // a longer record (24 h / 7 days) from the measurements workflow, when there is one, steadies the weights
+    const long = ((o.skill || {})['24h'] || []).find(r => r.id === id) || ((o.skill || {})['72h'] || []).find(r => r.id === id);
+    const mae = long && long.n >= 40 ? 0.5 * (ae / n) + 0.5 * long.mae : ae / n;
+    st.push({ id, f, n, mae, ratio: Math.max(0.6, Math.min(1.6, sx / Math.max(1, sm))) });
+  }
+  if (!st.length) return null;
+  const wsum = st.reduce((a, r) => a + 1 / Math.max(1, r.mae) ** 2, 0);
+  st.forEach(r => { r.w = 1 / Math.max(1, r.mae) ** 2 / wsum; });
+  return { st: st.sort((a, b) => b.w - a.w), pl };
+}
+function buildMoja() {
+  const s = state.set, ms = mojaStats(); if (!ms) return null;
+  const B = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 }, d = 0.05;
+  const nx = Math.round((B.e - B.w) / d) + 1, ny = Math.round((B.n - B.s) / d) + 1, N = nx * ny;
+  const H1 = 3600000, t0 = Math.floor(Date.now() / H1) * H1 - H1, T = 49;
+  const times = Array.from({ length: T }, (_, i) => t0 + i * H1);
+  const u = new Float32Array(T * N).fill(NaN), v = new Float32Array(T * N).fill(NaN), g = new Float32Array(T * N).fill(NaN);
+  const q = [];
+  const blend = (lat, lon, t, out) => {
+    let su = 0, sv = 0, ss = 0, sg = 0, w = 0, wg = 0;
+    for (const r of ms.st) {
+      sample(r.f, ['u', 'v', 'gust'], lat, lon, t, q); if (q[0] !== q[0]) continue;
+      const sp = Math.hypot(q[0], q[1]);
+      su += r.w * q[0]; sv += r.w * q[1]; ss += r.w * sp * r.ratio; w += r.w;
+      if (q[2] === q[2]) { sg += r.w * q[2] * r.ratio; wg += r.w; }
+    }
+    if (!w) { out[0] = out[1] = out[2] = NaN; return out; }
+    const mu = su / w, mv = sv / w, mag = Math.hypot(mu, mv), sp = ss / w;   // direction from the vector mean, speed from the corrected speeds
+    out[0] = mag > 0.01 ? mu / mag * sp : 0; out[1] = mag > 0.01 ? mv / mag * sp : 0; out[2] = wg ? sg / wg : NaN;
+    return out;
+  };
+  // remaining error at the measurement places (now)
+  const res = [], b = [];
+  for (const p of ms.pl) { blend(p.lat, p.lon, p.t * 1000, b); if (b[0] !== b[0]) continue; const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; res.push({ lat: p.lat, lon: p.lon, k: x / Math.max(1, Math.hypot(b[0], b[1])) }); }
+  for (let ti = 0; ti < T; ti++) {
+    const t = times[ti], lead = (t - Date.now()) / H1, fade = lead <= 0 ? 1 : Math.exp(-lead / 4);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const lat = B.s + j * d, lon = B.w + i * d, o = ti * N + j * nx + i;
+      blend(lat, lon, t, b); if (b[0] !== b[0]) continue;
+      let k = 1;
+      if (fade > 0.02 && res.length) {   // inverse-distance spread of the measured/forecast ratio, within ~60 km
+        let sw = 0, sk = 0;
+        for (const r of res) { const dk = Math.hypot((r.lat - lat) * 111, (r.lon - lon) * 111 * Math.cos(lat * Math.PI / 180)); if (dk > 60) continue; const w = 1 / (dk * dk + 25); sw += w; sk += w * Math.max(0.5, Math.min(2, r.k)); }
+        if (sw) { const wloc = Math.min(1, sw * 400); k = 1 + (sk / sw - 1) * wloc * fade; }
+      }
+      u[o] = b[0] * k; v[o] = b[1] * k; g[o] = b[2] === b[2] ? b[2] * k : NaN;
+    }
+  }
+  const f = { lat0: B.s, lon0: B.w, dlat: d, dlon: d, nx, ny, times, vars: { u, v, gust: g }, validUntil: times[T - 1], model: 'moja', meta: MOJA_META, run: { runInit: Date.now() },
+    weights: ms.st.map(r => ({ id: r.id, w: r.w, mae: r.mae, ratio: r.ratio })) };
+  fillTimeGaps(f);
+  s.fields.moja = f; if (!s.models.includes('moja')) s.models.unshift('moja');
+  renderChips();
+  return f;
+}
+// built by itself whenever fresh measurements arrive (and after a new forecast), so MOJA is always current
+function autoMoja() { if (!state.obs || !state.set) return; try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
+// ---------------- the Analysis tab ----------------
+function renderAnalysisTab() {
+  const el = $('#tab-analysis'), o = state.obs, s = state.set;
+  if (!o) { el.innerHTML = '<div class="note">Uključi <b>+ Sada</b> (bočna traka) – mjerenja se učitaju i ovdje se pojavi analiza.</div>'; loadObs().then(() => { if (state.obs) renderAnalysisTab(); }); return; }
+  if (!s) { el.innerHTML = '<div class="note">Prvo preuzmi prognozu (kartica Prognoza).</div>'; return; }
+  const ms = mojaStats(), mf = s.fields.moja;
+  const ids = s.models.filter(id => !isDerived(id) || id === 'moja');
+  const now = Date.now() / 1000;
+  const pl = o.places.filter(p => !p.stale && p.wspd != null && now - p.t < 3 * 3600).sort((a, b) => (a.kind === 'buoy' ? 0 : 1) - (b.kind === 'buoy' ? 0 : 1) || b.lat - a.lat);
+  const cell = e => e == null ? '<td class="na">–</td>' : `<td class="${e >= 3 ? 'hi' : e <= -3 ? 'lo' : 'ok'}">${e > 0 ? '+' : ''}${e.toFixed(0)}</td>`;
+  const sk = k => ((o.skill || {})[k] || []).filter(r => modelById(r.id));
+  const rankRow = (label, rows) => rows.length ? `<tr><td>${label}</td>${rows.slice(0, 5).map((r, i) => `<td class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)}${Math.abs(r.bias) >= 1.5 ? ` <small>${r.bias > 0 ? '+' : ''}${r.bias.toFixed(0)}</small>` : ''}</td>`).join('')}</tr>` : `<tr><td>${label}</td><td colspan="5" class="muted">skuplja se – arhiva prognoza počela 10.11.</td></tr>`;
+  const nowRank = obsRank().map(r => ({ ...r }));
+  el.innerHTML = `
+    <h3>Rang modela prema mjerenjima <small>(prosječna greška vjetra, kn · + precjenjuje / − podcjenjuje)</small></h3>
+    <table class="rank">${rankRow('Sada', nowRank)}${rankRow('Zadnja 24 h', sk('24h'))}${rankRow('Zadnja 3 dana', sk('72h'))}${rankRow('7 dana', sk('7d'))}${rankRow('7 dana · prvih 12 h', sk('7d_0-12'))}${rankRow('7 dana · 24–48 h unaprijed', sk('7d_24-48'))}</table>
+    <h3>MOJA prognoza</h3>
+    ${ms ? `<div class="note">Težine prema tome koliko modeli sada pogađaju mjerenja: ${ms.st.map(r => `<b style="color:${mcol(r.id)}">${modelById(r.id).name}</b> ${(r.w * 100).toFixed(0)} %${Math.abs(r.ratio - 1) >= 0.08 ? ` <small>(×${r.ratio.toFixed(2)})</small>` : ''}`).join(' · ')}.
+      Brzine svakog modela ispravljene su za njegovo odstupanje; prvih ~6 h prognoza je povučena prema izmjerenom na plutačama i postajama.</div>
+      <button id="btnMoja" class="btn primary block">${mf ? '↻ Ponovno izračunaj MOJU prognozu' : 'Izračunaj MOJU prognozu'}</button>
+      ${mf ? '<div class="note">MOJA je na traci modela (bijela) – za kartu, replay i routing (Routing → modeli).</div>' : ''}` : '<div class="note">Za MOJU prognozu treba bar 4 svježa mjerenja koja modeli pokrivaju.</div>'}
+    <h3>Sada: izmjereno i odstupanje modela <small>(kn; plutače preračunate na 10 m)</small></h3>
+    <div class="tblwrap"><table class="obst"><tr><th>Mjesto</th><th>Izmj.</th>${ids.map(id => `<th style="color:${mcol(id)}">${modelById(id).name}${id === 'moja' ? '<small>*</small>' : ''}</th>`).join('')}</tr>
+    ${pl.map(p => { const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; return `<tr><td>${p.kind === 'buoy' ? '◆ ' : p.kind === 'lighthouse' ? '○ ' : ''}${p.name}</td><td><b>${x.toFixed(0)}</b>${p.wgust != null ? `<small>/${(p.wgust * (p.h === 3 ? U3_10 : 1)).toFixed(0)}</small>` : ''}</td>${ids.map(id => cell(obsModelErr(p, s.fields[id]))).join('')}</tr>`; }).join('')}</table></div>
+    <h3>Signali iz mreže mjerenja</h3>
+    ${(o.signals || []).map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="note">Nema posebnih signala.</div>'}
+    <div class="note">Mjerenja: DHMZ (plutače očitane s grafova, obalne postaje), zadnje ${fmtTime(o.created * 1000, false)}. Crveno = model jači od izmjerenog za 3+ kn, plavo = slabiji. *MOJA je za sadašnji trenutak povučena prema ovim mjerenjima, pa ovdje nije u rangu – njezina vrijednost je u satima koji dolaze.</div>`;
+  const bm = el.querySelector('#btnMoja');
+  if (bm) bm.onclick = () => { bm.disabled = true; bm.textContent = 'Računam…'; setTimeout(() => { const f = buildMoja(); if (f) { selectModel('moja'); toast('MOJA prognoza izračunata – prikazana na karti'); } renderAnalysisTab(); }, 30); };
+}
 const routeLayer = L.layerGroup().addTo(map);
 let boatMarkers = {};
 const okRoutes = () => Object.values(state.routes).filter(r => r && r.ok).sort((a, b) => a.eta - b.eta);
@@ -2001,7 +2113,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 4.0 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 4.1 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2254,7 +2366,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 4.0 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 4.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

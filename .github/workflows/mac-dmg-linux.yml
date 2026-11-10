@@ -20,9 +20,13 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq hfsprogs cmake zlib1g-dev libbz2-dev >/dev/null
-          git clone -q --depth 1 https://github.com/fanquake/libdmg-hfsplus.git /tmp/libdmg
-          (cd /tmp/libdmg && cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null && make -j4 >/dev/null)
-          ls /tmp/libdmg/dmg/dmg /tmp/libdmg/hfs/hfsplus
+          # mozilla's fork still has the 'hfsplus' tool (adds files with their permissions without mounting)
+          git clone -q --depth 1 https://github.com/mozilla/libdmg-hfsplus.git /tmp/libdmg
+          (cd /tmp/libdmg && cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null && make -j4 >/dev/null 2>&1)
+          mkdir -p /tmp/bin
+          cp "$(find /tmp/libdmg -type f -name hfsplus -perm -u+x | head -1)" /tmp/bin/hfsplus
+          cp "$(find /tmp/libdmg -type f -name dmg -perm -u+x | head -1)" /tmp/bin/dmg
+          ls -la /tmp/bin
           curl -sSL -o /tmp/rc.tgz https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz \
             && tar -xzf /tmp/rc.tgz -C /tmp && find /tmp -maxdepth 2 -name rcodesign -type f -exec cp {} /tmp/rcodesign \; || echo "rcodesign nije dostupan"
       - name: Složi aplikaciju
@@ -48,16 +52,16 @@ jobs:
           MB=$(( $(du -sm stage | cut -f1) + 40 ))
           dd if=/dev/zero of=raw.img bs=1M count=$MB status=none
           mkfs.hfsplus -v "Clock the Wind" raw.img >/dev/null
-          H=/tmp/libdmg/hfs/hfsplus
+          H=/tmp/bin/hfsplus
           $H raw.img addall stage
           $H raw.img chmod 755 "/Clock the Wind.app/Contents/MacOS/ClockTheWind"
           $H raw.img symlink /Applications /Applications
           $H raw.img ls "/Clock the Wind.app/Contents/MacOS"
-          /tmp/libdmg/dmg/dmg dmg raw.img Clock-the-Wind.dmg >/dev/null
+          /tmp/bin/dmg dmg raw.img Clock-the-Wind.dmg >/dev/null
           cp Clock-the-Wind.dmg "Clock-the-Wind-$VER.dmg"
           ls -la *.dmg
           # check: the DMG opens again and holds the app
-          /tmp/libdmg/dmg/dmg extract Clock-the-Wind.dmg check.img >/dev/null
+          /tmp/bin/dmg extract Clock-the-Wind.dmg check.img >/dev/null
           $H check.img ls "/Clock the Wind.app/Contents"
           $H check.img ls "/Clock the Wind.app/Contents/Resources/web/js" | head -5
       - name: Objavi link za preuzimanje

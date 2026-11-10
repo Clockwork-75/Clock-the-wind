@@ -107,6 +107,7 @@ const state = {
   colorOverLand: settings.colorOverLand, basemap: settings.basemap, theme: 'dark', set: null, modelId: null,
   routes: {}, selected: null, polar: null, boat: null, editing: false, particleDensity: settings.particleDensity,
   colors: settings.colors, hiRes: settings.hiRes, newRuns: [], landAt: null,
+  modelName: id => (modelById(id) || {}).name || id,
 };
 const minDepth = () => settings.avoidShallow ? settings.draft + settings.depthMargin : 0.05;
 
@@ -539,10 +540,11 @@ const syncToggles = () => {
   $('#ovCurrents').classList.toggle('on', !!state.ovCurrents);
   $('#ovRain').classList.toggle('on', !!state.ovRain);
   $('#ovDepth').classList.toggle('on', !!state.ovDepth);
+  $('#ovIsobars').classList.toggle('on', !!state.ovIsobars);
   $('#tglColors').classList.toggle('on', state.colors !== false);
 };
 if (settings.ovDepth === undefined) settings.ovDepth = true; // depths visible by default
-[['#ovWaves', 'ovWaves'], ['#ovCurrents', 'ovCurrents'], ['#ovRain', 'ovRain'], ['#ovDepth', 'ovDepth']].forEach(([id, k]) => {
+[['#ovWaves', 'ovWaves'], ['#ovCurrents', 'ovCurrents'], ['#ovRain', 'ovRain'], ['#ovDepth', 'ovDepth'], ['#ovIsobars', 'ovIsobars']].forEach(([id, k]) => {
   state[k] = !!settings[k];
   $(id).onclick = () => { state[k] = settings[k] = !state[k]; saveSettings(); syncToggles(); wxLayer.draw(); chartLayer.draw(); depthLayer.draw(); };
 });

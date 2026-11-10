@@ -54,7 +54,7 @@ async function dwd(kind) {
   const steps = [];
   for (let h = 0; h <= max; h += (kind === 'eu' && h >= 78) ? 3 : 1) { const v = run + h * H; if (v >= t0 && v <= t1) steps.push(h); }
   const msgs = [];
-  await pool(steps.flatMap(h => ['u_10m', 'v_10m', 'vmax_10m'].map(v => [h, v])), 8, async ([h, v]) => {
+  await pool(steps.flatMap(h => ['u_10m', 'v_10m', 'vmax_10m', 'pmsl'].map(v => [h, v])), 8, async ([h, v]) => {
     const b = await get(url(run, h, v)); if (!b) return;
     const raw = bunzip(b); if (raw) addMsgs(raw, msgs);
   });
@@ -76,7 +76,7 @@ async function ecmwf() {
     // take whichever the step has, otherwise the gusts end early and the map would show stale ones
     const idxs = idx.toString().trim().split('\n').map(l => JSON.parse(l));
     const g = ['10fg', '10fg3', '10fg6', 'i10fg'].find(n => idxs.some(j => j.param === n));
-    const want = new Set(['10u', '10v', ...(g ? [g] : [])]);
+    const want = new Set(['10u', '10v', 'msl', ...(g ? [g] : [])]);
     for (const j of idxs.filter(j => want.has(j.param))) {
       const b = await get(base(run, h) + '.grib2', { Range: `bytes=${j._offset}-${j._offset + j._length - 1}` });
       if (b) addMsgs(b, msgs, WIDE);
@@ -89,7 +89,7 @@ async function ecmwf() {
 // ---------------- NOAA GFS (server-side subset) ----------------
 async function gfs() {
   const b = WIDE;
-  const url = (run, h) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&lev_10_m_above_ground=on&lev_surface=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
+  const url = (run, h) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&var_PRMSL=on&lev_10_m_above_ground=on&lev_surface=on&lev_mean_sea_level=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
   let run = Math.floor((Date.now() - 4.5 * H) / (6 * H)) * 6 * H, ok = false;
   const need = r => Math.max(120, Math.min(384, Math.ceil((t1 - r) / H / 6) * 6));
   for (let k = 0; k < 3 && !ok; k++) { const t = await get(url(run, need(run)), {}, 1); ok = !!(t && t.length > 100); if (!ok) run -= 6 * H; }
@@ -123,7 +123,7 @@ async function arpege() {
     const buf = await get(url(host, run, rg));
     if (!buf) { log(`ARPEGE ${rg}: nema (run završava ranije)`); break; }
     const before = msgs.length;
-    for (const m of decodeGrib(toAB(buf))) { if (!['U', 'V', 'gust', 'gu', 'gv'].includes(m.name)) continue; const c = cropMsg(m, BBOX); if (c) msgs.push(c); }
+    for (const m of decodeGrib(toAB(buf))) { if (!['U', 'V', 'gust', 'gu', 'gv', 'mslp'].includes(m.name)) continue; const c = cropMsg(m, BBOX); if (c) msgs.push(c); }
     log(`ARPEGE ${rg}: ${(buf.length / 1048576).toFixed(0)} MB, ${msgs.length - before} polja`);
   }
   log(`ARPEGE run ${ymd(run)} ${hh(run)}z : ${msgs.length} polja`);

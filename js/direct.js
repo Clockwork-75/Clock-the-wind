@@ -294,7 +294,7 @@ export async function downloadDirect({ bbox, modelIds, window, quality, settings
 
 // ---------- compact package for the iPhone (AirDrop) ----------
 // variables are stored as scaled Int16 (half the size of Float32, gzips far better); NaN = -32768
-const Q = { u: 0.01, v: 0.01, gust: 0.01, cu: 0.01, cv: 0.01, precip: 0.01, lpi: 0.01, wave: 0.01, wavePer: 0.01, waveDir: 0.1, cape: 1 };
+const Q = { mslp: 0.1, u: 0.01, v: 0.01, gust: 0.01, cu: 0.01, cv: 0.01, precip: 0.01, lpi: 0.01, wave: 0.01, wavePer: 0.01, waveDir: 0.1, cape: 1 };
 export async function exportPackage(set) {
   const parts = [], fields = {};
   let off = 0;

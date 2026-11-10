@@ -31,7 +31,8 @@ function varGrib2(d, c, n) {
   if (d === 0 && c === 2 && n === 2) return 'U';
   if (d === 0 && c === 2 && n === 3) return 'V';
   if (d === 0 && c === 2 && n === 22) return 'gust';
-  if (d === 0 && c === 2 && n === 21) return 'gust';   // maximum wind speed (DHMZ ALADIN-HR: hourly max at 10 m)
+  if (d === 0 && c === 2 && n === 21) return 'gust';
+  if (d === 0 && c === 3 && n === 1) return 'mslp';   // pressure reduced to mean sea level (Pa → hPa)   // maximum wind speed (DHMZ ALADIN-HR: hourly max at 10 m)
   if (d === 0 && c === 2 && n === 23) return 'gu';   // gust as u/v components (Météo-France ARPEGE/AROME)
   if (d === 0 && c === 2 && n === 24) return 'gv';
   if (d === 0 && c === 1 && (n === 8 || n === 52 || n === 7)) return 'precip';
@@ -43,7 +44,7 @@ function varGrib2(d, c, n) {
   if (d === 10 && c === 1 && n === 3) return 'cv';
   return null;
 }
-const GRIB1 = { 33: 'U', 34: 'V', 180: 'gust', 61: 'precip', 157: 'cape', 100: 'wave', 101: 'waveDir', 103: 'wavePer', 49: 'cu', 50: 'cv' };
+const GRIB1 = { 2: 'mslp', 33: 'U', 34: 'V', 180: 'gust', 61: 'precip', 157: 'cape', 100: 'wave', 101: 'waveDir', 103: 'wavePer', 49: 'cu', 50: 'cv' };
 
 function grid2(b, s) { // section 3 template 3.0
   const tmpl = u16(b, s + 12);
@@ -313,7 +314,7 @@ export function gribToField(msgs, bbox, id) {
     const t = times.indexOf(m.valid);
     const name = m.name === 'U' ? 'u' : m.name === 'V' ? 'v' : m.name;
     const a = arr(name);
-    const conv = (name === 'u' || name === 'v' || name === 'gust' || name === 'gu' || name === 'gv' || name === 'cu' || name === 'cv') ? MS2KN : 1;
+    const conv = (name === 'u' || name === 'v' || name === 'gust' || name === 'gu' || name === 'gv' || name === 'cu' || name === 'cv') ? MS2KN : name === 'mslp' ? 0.01 : 1;
     for (let j = 0; j < ny; j++) {
       const jj = j0 + j, row = southFirst ? jj : g.nj - 1 - jj;
       for (let i = 0; i < nx; i++) {

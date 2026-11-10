@@ -134,6 +134,7 @@ export class WeatherLayer {
   // stackable overlays, independent of the main colour layer (and of any race/routing)
   drawOverlays(ctx, size) {
     const { map, state } = this, out = [];
+    if (state.ovIsobars) drawIsobars(ctx, map, state, state.modelName);
     // rain: semi-transparent colour only where it actually rains
     if (state.ovRain && state.layer !== 'rain' && state.wind) {
       const step = 4, g = viewGeometry(map, step), L = LAYERS.rain;
@@ -245,6 +246,80 @@ function drawBarb(ctx, x, y, dirFrom, kn, k = 1) {
   };
   draw('rgba(255,255,255,.9)', 3.4); draw(k < 1 ? WIND_ARROW.fill : 'rgba(12,18,30,.95)', 1.4);
   ctx.beginPath(); ctx.arc(0, 0, 2, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+
+// ---------- isobars (mean sea level pressure), on demand ----------
+// from the model on the map; a model without pressure (ALADIN-HR sailing files) borrows it from the next best one
+const ISO_PREF = ['dir_arpege', 'dir_icon_eu', 'dir_icon_d2', 'italia_meteo_arpae_icon_2i', 'dir_ecmwf', 'dir_gfs'];
+function isoSource(state) {
+  const t = state.time, out = [], ok = f => { if (!f || !f.vars) return false; const g = f.ext && t > f.times[f.times.length - 1] ? f.ext : f; if (!g.vars || !g.vars.mslp) return false; const c = g.lat0 + g.dlat * (g.ny >> 1), d = g.lon0 + g.dlon * (g.nx >> 1); sample(f, ['mslp'], c, d, t, out); return out[0] === out[0]; };
+  if (ok(state.wind)) return { f: state.wind, id: state.modelId };
+  const s = state.set; if (!s) return null;
+  for (const id of [...ISO_PREF, ...s.models]) if (s.fields[id] && ok(s.fields[id])) return { f: s.fields[id], id };
+  return null;
+}
+export function drawIsobars(ctx, map, state, nameOf = id => id) {
+  const src = isoSource(state); if (!src) return;
+  const size = map.getSize(), step = 14, W = Math.ceil(size.x / step) + 1, Hh = Math.ceil(size.y / step) + 1;
+  const P = new Float32Array(W * Hh), out = [];
+  let lo = Infinity, hi = -Infinity;
+  for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
+    const ll = map.containerPointToLatLng([i * step, j * step]);
+    sample(src.f, ['mslp'], ll.lat, ll.lng, state.time, out);
+    const v = out[0]; P[j * W + i] = v;
+    if (v === v) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  }
+  if (!(hi > lo)) return;
+  ctx.save(); ctx.lineJoin = 'round';
+  const labels = [];
+  for (let L = Math.ceil(lo / 2) * 2; L <= hi; L += 2) {
+    const major = L % 10 === 0, segs = [];
+    for (let j = 0; j < Hh - 1; j++) for (let i = 0; i < W - 1; i++) {
+      const a = P[j * W + i], b = P[j * W + i + 1], c = P[(j + 1) * W + i + 1], d = P[(j + 1) * W + i];
+      if (!(a === a && b === b && c === c && d === d)) continue;
+      const x = i * step, y = j * step, pts = [];
+      const cut = (p, q, x1, y1, x2, y2) => { if ((p < L) !== (q < L)) { const k = (L - p) / (q - p); pts.push([x1 + (x2 - x1) * k, y1 + (y2 - y1) * k]); } };
+      cut(a, b, x, y, x + step, y); cut(b, c, x + step, y, x + step, y + step); cut(c, d, x + step, y + step, x, y + step); cut(d, a, x, y + step, x, y);
+      if (pts.length >= 2) segs.push([pts[0], pts[1]]);
+      if (pts.length === 4) segs.push([pts[2], pts[3]]);
+    }
+    if (!segs.length) continue;
+    ctx.beginPath(); for (const [p, q] of segs) { ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); }
+    ctx.lineWidth = major ? 3.6 : 2.6; ctx.strokeStyle = 'rgba(10,20,40,.45)'; ctx.stroke();
+    ctx.lineWidth = major ? 1.8 : 1; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+    // a label now and then along the line, never two close together
+    for (let k = 0; k < segs.length; k += 7) {
+      const [p] = segs[k];
+      if (p[0] < 24 || p[1] < 16 || p[0] > size.x - 24 || p[1] > size.y - 16) continue;
+      if (labels.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 170)) continue;
+      labels.push([p[0], p[1], L]);
+    }
+  }
+  // centres of high (V) and low (N) pressure: the extreme within ~100 px that stands out from its surroundings
+  const R = 7, marks = [];
+  for (let j = 2; j < Hh - 2; j++) for (let i = 2; i < W - 2; i++) {
+    const v = P[j * W + i]; if (v !== v) continue;
+    let isMax = true, isMin = true, sum = 0, n = 0;
+    for (let dj = -R; dj <= R && (isMax || isMin); dj++) for (let di = -R; di <= R; di++) { const jj = j + dj, ii = i + di; if (jj < 0 || ii < 0 || jj >= Hh || ii >= W) continue; const w = P[jj * W + ii]; if (w !== w) continue; if (w > v) isMax = false; if (w < v) isMin = false; sum += w; n++; }
+    if (!n) continue; const m = sum / n;
+    const near = q => Math.hypot(q[0] - i * step, q[1] - j * step) < 120;
+    if (isMax && v - m > 0.8 && !marks.some(near)) marks.push([i * step, j * step, 'V', v]);
+    else if (isMin && m - v > 0.8 && !marks.some(near)) marks.push([i * step, j * step, 'N', v]);
+  }
+  ctx.font = '700 10px -apple-system,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const [x, y, L] of labels) { if (marks.some(q => Math.hypot(q[0] - x, q[1] - y) < 40)) continue; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,20,40,.9)'; ctx.strokeText(String(L), x, y); ctx.fillStyle = '#fff'; ctx.fillText(String(L), x, y); }
+  for (const [x, y, k, v] of marks.slice(0, 8)) {
+    ctx.font = '800 20px -apple-system,system-ui,sans-serif'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,20,40,.9)';
+    ctx.strokeText(k, x, y); ctx.fillStyle = k === 'V' ? '#7fb2ff' : '#ff6b6b'; ctx.fillText(k, x, y);
+    ctx.font = '700 10px -apple-system,system-ui,sans-serif'; ctx.lineWidth = 3; ctx.strokeText(v.toFixed(0), x, y + 15); ctx.fillStyle = '#fff'; ctx.fillText(v.toFixed(0), x, y + 15);
+  }
+  // source of the pressure field, when it is not the model on the map
+  if (src.id !== state.modelId) {
+    ctx.font = '600 11px -apple-system,system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,20,40,.9)';
+    const t = `Izobare: ${nameOf(src.id)}`; ctx.strokeText(t, 12, 84); ctx.fillStyle = '#fff'; ctx.fillText(t, 12, 84);
+  }
   ctx.restore();
 }
 

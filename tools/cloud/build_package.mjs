@@ -99,10 +99,38 @@ async function gfs() {
   const f = gribToField(msgs, null, 'dir_gfs'); f.run = { runInit: run }; return f;
 }
 
+// ---------------- Météo-France ARPEGE Europe 0.1° (open data on data.gouv.fr, no key) ----------------
+// files of 12 h each (all hours inside), package SP1 = 10 m wind + gusts; runs 00/06/12/18 UTC, up to 102 h
+async function arpege() {
+  const HOSTS = ['https://object.data.gouv.fr/meteofrance-pnt/pnt', 'https://object.files.data.gouv.fr/meteofrance-pnt/pnt'];
+  const RANGES = ['000H012H', '013H024H', '025H036H', '037H048H', '049H060H', '061H072H', '073H084H', '085H096H', '097H102H'];
+  const stamp = r => new Date(r).toISOString().slice(0, 19) + 'Z';   // 2026-11-10T00:00:00Z
+  const url = (host, r, rg) => `${host}/${stamp(r)}/arpege/01/SP1/arpege__01__SP1__${rg}__${stamp(r)}.grib2`;
+  let run = Math.floor((Date.now() - 3 * H) / (6 * H)) * 6 * H, host = null;
+  for (let k = 0; k < 6 && !host; k++) {
+    for (const h of HOSTS) if (await exists(url(h, run, RANGES[0]))) { host = h; break; }
+    if (!host) { log(`ARPEGE: nema ${url(HOSTS[0], run, RANGES[0])}`); run -= 6 * H; }
+  }
+  if (!host) throw new Error('ARPEGE: nijedan run nije dostupan');
+  const msgs = [];
+  for (const rg of RANGES) {
+    if (run + parseInt(rg.slice(5, 8), 10) * H < t0) continue;   // all of it already in the past
+    const buf = await get(url(host, run, rg));
+    if (!buf) { log(`ARPEGE ${rg}: nema (run završava ranije)`); break; }
+    const before = msgs.length;
+    for (const m of decodeGrib(toAB(buf))) { if (!['U', 'V', 'gust', 'gu', 'gv'].includes(m.name)) continue; const c = cropMsg(m, BBOX); if (c) msgs.push(c); }
+    log(`ARPEGE ${rg}: ${(buf.length / 1048576).toFixed(0)} MB, ${msgs.length - before} polja`);
+  }
+  log(`ARPEGE run ${ymd(run)} ${hh(run)}z (${host.includes('files') ? 'object.files' : 'object'}): ${msgs.length} polja`);
+  const f = gribToField(msgs.filter(m => m.valid >= t0 - H), null, 'dir_arpege'); f.run = { runInit: run };
+  f.meta = { id: 'dir_arpege', name: 'ARPEGE', res: '0.1° · Météo-France', color: '#e040fb', note: 'Météo-France ARPEGE Europe 0.1° (~11 km) – do ~4 dana, svaki sat' };
+  return f;
+}
+
 // ---------------- build ----------------
 const fields = {}, errors = [];
 const times = []; for (let t = t0; t <= t1; t += H) times.push(t);
-for (const [name, job] of [['ICON-D2', () => dwd('d2')], ['ICON-EU', () => dwd('eu')], ['ECMWF', ecmwf], ['GFS', gfs]]) {
+for (const [name, job] of [['ICON-D2', () => dwd('d2')], ['ICON-EU', () => dwd('eu')], ['ARPEGE', arpege], ['ECMWF', ecmwf], ['GFS', gfs]].filter(([n]) => !process.env.CTW_ONLY || process.env.CTW_ONLY.split(',').includes(n))) {
   try { const f = await job(); fields[f.model] = f; }
   catch (e) { errors.push(`${name}: ${e.message}`); log('!!', name, e.message); }
 }
@@ -119,7 +147,7 @@ try {
   catch (e2) { errors.push('valovi/struje: ' + e2.message); }
 }
 if (!fields.marine) fields.marine = { lat0: BBOX.s, lon0: BBOX.w, dlat: 1, dlon: 1, nx: 1, ny: 1, times, vars: { wave: new Float32Array(times.length).fill(NaN), waveDir: new Float32Array(times.length).fill(NaN), wavePer: new Float32Array(times.length).fill(NaN), cu: new Float32Array(times.length).fill(NaN), cv: new Float32Array(times.length).fill(NaN) } };
-const order = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'dir_icon_eu', 'dir_ecmwf', 'dir_gfs'];
+const order = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'dir_icon_eu', 'dir_arpege', 'dir_ecmwf', 'dir_gfs'];
 const models = order.filter(id => fields[id]);
 if (!models.length) { console.error('Nijedan model – paket se ne zapisuje', errors); process.exit(1); }
 const set = { id: 'cloud-' + Date.now(), created: Date.now(), bbox: BBOX, quality: 'cloud', source: 'cloud', mode: 'forecast', window: { t0, t1 }, models, empty: [], errors, times, fields };

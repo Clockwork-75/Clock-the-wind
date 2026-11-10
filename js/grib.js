@@ -31,6 +31,8 @@ function varGrib2(d, c, n) {
   if (d === 0 && c === 2 && n === 2) return 'U';
   if (d === 0 && c === 2 && n === 3) return 'V';
   if (d === 0 && c === 2 && n === 22) return 'gust';
+  if (d === 0 && c === 2 && n === 23) return 'gu';   // gust as u/v components (Météo-France ARPEGE/AROME)
+  if (d === 0 && c === 2 && n === 24) return 'gv';
   if (d === 0 && c === 1 && (n === 8 || n === 52 || n === 7)) return 'precip';
   if (d === 0 && c === 7 && n === 6) return 'cape';
   if (d === 10 && c === 0 && n === 3) return 'wave';
@@ -203,7 +205,7 @@ function parseGrib2(b, o, msgs) {
       else if (b[p + 5] === 255) bitmap = null;
     } else if (sn === 7) {
       const name = varGrib2(disc, prod.cat, prod.num);
-      const isWind10 = (name === 'U' || name === 'V') ? (prod.surf === 103 && Math.abs(prod.level - 10) < 0.5) || prod.surf === 1 : true;
+      const isWind10 = (name === 'U' || name === 'V' || name === 'gu' || name === 'gv') ? (prod.surf === 103 && Math.abs(prod.level - 10) < 0.5) || prod.surf === 1 : true;
       if (name && isWind10) {
         let vals;
         if (rep.tmpl === 0) vals = unpackSimple(b, p + 5, rep.n, b[rep.s + 19], f32(b, rep.s + 11), s16(b, rep.s + 15), s16(b, rep.s + 17));
@@ -309,7 +311,7 @@ export function gribToField(msgs, bbox, id) {
     const t = times.indexOf(m.valid);
     const name = m.name === 'U' ? 'u' : m.name === 'V' ? 'v' : m.name;
     const a = arr(name);
-    const conv = (name === 'u' || name === 'v' || name === 'gust' || name === 'cu' || name === 'cv') ? MS2KN : 1;
+    const conv = (name === 'u' || name === 'v' || name === 'gust' || name === 'gu' || name === 'gv' || name === 'cu' || name === 'cv') ? MS2KN : 1;
     for (let j = 0; j < ny; j++) {
       const jj = j0 + j, row = southFirst ? jj : g.nj - 1 - jj;
       for (let i = 0; i < nx; i++) {
@@ -320,6 +322,9 @@ export function gribToField(msgs, bbox, id) {
     }
   }
   if (!vars.u || !vars.v) throw new Error('GRIB nema vjetar na 10 m (U/V)');
+  // gusts given as u/v components: their strength is what the app shows
+  if (vars.gu && vars.gv) { if (!vars.gust) { const g = vars.gust = new Float32Array(T * N); for (let i = 0; i < g.length; i++) g[i] = Math.hypot(vars.gu[i], vars.gv[i]); } delete vars.gu; delete vars.gv; }
+  else { delete vars.gu; delete vars.gv; }
   return { lat0: south + j0 * dlat, lon0: west + i0 * dlon, dlat, dlon, nx, ny, model: id, times, vars, validUntil: times[T - 1], run: { runInit: times[0] } };
 }
 

@@ -345,6 +345,7 @@ function selectModel(id) {
   state.modelId = id;
   state.wind = withFallback(state.set, id);
   renderChips(); redraw(); updatePointCard();
+  if (state.ovObs) drawObs();
 }
 function renderChips() {
   const el = $('#modelChips');
@@ -543,6 +544,7 @@ const syncToggles = () => {
   $('#ovRain').classList.toggle('on', !!state.ovRain);
   $('#ovDepth').classList.toggle('on', !!state.ovDepth);
   $('#ovIsobars').classList.toggle('on', !!state.ovIsobars);
+  $('#ovObs').classList.toggle('on', !!state.ovObs);
   $('#tglColors').classList.toggle('on', state.colors !== false);
 };
 if (settings.ovDepth === undefined) settings.ovDepth = true; // depths visible by default
@@ -1707,6 +1709,113 @@ async function runRouting(ids, override = {}) {
 }
 
 // ---------------- routes on the map ----------------
+
+// ---------------- live measurements ("Sada"): DHMZ buoys, lighthouses and coastal stations ----------------
+// collected every 30 min by GitHub (tools/obs/collect.py → branch obs); buoys are read from DHMZ's graphs (wind at 3 m)
+const OBS_URL = 'https://raw.githubusercontent.com/Clockwork-75/Clock-the-wind/obs/obs.json';
+const obsLayer = L.layerGroup();
+let obsTimer = null;
+const U3_10 = 1.12;   // wind at 10 m ≈ 1.12 × wind at 3 m over the open sea (log profile)
+async function loadObs(force = false) {
+  if (!force && state.obs && Date.now() - state.obs._got < 8 * 60000) return state.obs;
+  try {
+    const r = await fetch(OBS_URL + '?t=' + Math.floor(Date.now() / 300000), { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const o = await r.json(); o._got = Date.now(); state.obs = o;
+    try { localStorage.setItem('ctw.obs', JSON.stringify(o)); } catch { }
+  } catch (e) {
+    if (!state.obs) { try { state.obs = JSON.parse(localStorage.getItem('ctw.obs')); } catch { } }
+    if (!state.obs) toast('Mjerenja trenutno nisu dostupna (' + e.message + ')', 4000);
+  }
+  return state.obs;
+}
+// the model on the map against what is measured now (buoy wind brought from 3 m to 10 m)
+function obsModelErr(p, f) {
+  if (!f || p.wspd == null || p.stale) return null;
+  const o = sample(f, ['u', 'v'], p.lat, p.lon, p.t * 1000, []);
+  if (o[0] !== o[0]) return null;
+  const m = Math.hypot(o[0], o[1]), meas = p.h === 3 ? p.wspd * U3_10 : p.wspd;
+  return m - meas;
+}
+function obsRank() {
+  const o = state.obs, s = state.set; if (!o || !s) return [];
+  const pl = o.places.filter(p => !p.stale && p.wspd != null && Date.now() / 1000 - p.t < 3 * 3600);
+  const res = [];
+  for (const id of s.models) {
+    const f = s.fields[id]; let n = 0, ae = 0, b = 0;
+    for (const p of pl) { const e = obsModelErr(p, f); if (e == null) continue; n++; ae += Math.abs(e); b += e; }
+    if (n >= 4) res.push({ id, mae: ae / n, bias: b / n, n });
+  }
+  return res.sort((a, b) => a.mae - b.mae);
+}
+const arrowSvg = (deg, col) => `<svg viewBox="-10 -10 20 20" style="transform:rotate(${(deg + 180) % 360}deg)"><path d="M0 -8 L4 4 L0 1.5 L-4 4Z" fill="${col}" stroke="#0a1426" stroke-width="1"/></svg>`;
+function drawObs() {
+  obsLayer.clearLayers();
+  const card = $('#obsCard');
+  if (!state.ovObs || !state.obs) { card.classList.add('hidden'); if (map.hasLayer(obsLayer)) map.removeLayer(obsLayer); return; }
+  if (!map.hasLayer(obsLayer)) obsLayer.addTo(map);
+  const o = state.obs, f = state.wind;
+  for (const p of o.places) {
+    const col = p.stale ? '#8a96a8' : speedColor(p.wspd || 0);
+    const err = obsModelErr(p, f);
+    const lab = `${p.wspd != null ? Math.round(p.wspd) : '–'}${p.wgust != null ? '/' + Math.round(p.wgust) : ''}`;
+    const showErr = err != null && Math.abs(err) >= 3 && (p.kind !== 'station' || map.getZoom() >= 9);   // the open sea always, coastal stations only zoomed in
+    const html = `<div class="obsm ${p.kind}${p.stale ? ' stale' : ''}">${p.wdir != null ? arrowSvg(p.wdir, col) : '<i class="calm"></i>'}<b>${lab}</b>${p.hs != null ? `<em>${p.hs.toFixed(1)} m</em>` : ''}${showErr ? `<u class="${err > 0 ? 'hi' : 'lo'}">${err > 0 ? '+' : ''}${Math.round(err)}</u>` : ''}</div>`;
+    L.marker([p.lat, p.lon], { pane: 'routes', icon: L.divIcon({ className: 'obsicon', html, iconSize: [0, 0] }) })
+      .on('click', () => showObs(p)).addTo(obsLayer);
+  }
+  const age = Math.round((Date.now() / 1000 - o.created) / 60);
+  const rank = obsRank().slice(0, 4);
+  const sig = (o.signals || []).slice(0, 5);
+  card.innerHTML = `<div class="oh"><b>Sada</b> · izmjereno ${fmtTime(o.created * 1000, false)} <small>(prije ${age} min)</small><button class="x" aria-label="Zatvori">×</button></div>
+    ${rank.length ? `<div class="or"><small>Najbliže mjerenjima sada:</small> ${rank.map((r, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)}${Math.abs(r.bias) >= 1.5 ? ` <small>(${r.bias > 0 ? 'precjenjuje' : 'podcjenjuje'} ${Math.abs(r.bias).toFixed(0)} kn)</small>` : ''}</span>`).join('')}</div>` : ''}
+    ${[['24h', 'Zadnja 24 h'], ['7d', 'Zadnjih 7 dana']].map(([k, l]) => { const r = ((o.skill || {})[k] || []).filter(x => modelById(x.id)); return r.length ? `<div class="or"><small>${l}:</small> ${r.slice(0, 4).map((x, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(x.id)}"></i>${modelById(x.id).name} ±${x.mae.toFixed(1)}${Math.abs(x.bias) >= 1.5 ? ` <small>(${x.bias > 0 ? '+' : ''}${x.bias.toFixed(0)})</small>` : ''}</span>`).join('')}</div>` : ''; }).join('')}
+    ${sig.map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="os none"><small>Nema posebnih signala u mreži mjerenja.</small></div>'}`;
+  card.classList.remove('hidden');
+  card.querySelector('.x').onclick = () => card.classList.add('hidden');
+}
+map.on('zoomend', () => { if (state.ovObs) drawObs(); });
+const speedColor = kn => { const L = LAYERS.wind.scale, i = L.idx(kn) * 4, c = L.lut; return `rgb(${c[i]},${c[i + 1]},${c[i + 2]})`; };
+function sparkline(series, keys, opts = {}) {
+  const ts = Object.keys(series).map(Number).sort((a, b) => a - b); if (ts.length < 2) return '';
+  const W = 280, Hh = 70, t0 = ts[0], t1 = ts[ts.length - 1];
+  const vals = keys.flatMap(k => ts.map(t => series[t][k]).filter(v => v != null));
+  if (!vals.length) return '';
+  let lo = Math.min(...vals), hi = Math.max(...vals); if (opts.zero) lo = 0; if (hi - lo < (opts.min || 1)) hi = lo + (opts.min || 1);
+  const X = t => 4 + (t - t0) / (t1 - t0) * (W - 8), Y = v => Hh - 12 - (v - lo) / (hi - lo) * (Hh - 20);
+  const cols = opts.colors || ['#5ab0ff', '#ff5a5a'];
+  const paths = keys.map((k, j) => { let d = '', pen = false; for (const t of ts) { const v = series[t][k]; if (v == null) { pen = false; continue; } d += `${pen ? 'L' : 'M'}${X(t).toFixed(1)} ${Y(v).toFixed(1)}`; pen = true; } return `<path d="${d}" fill="none" stroke="${cols[j]}" stroke-width="1.6"/>`; }).join('');
+  // day boundaries (local midnight)
+  let grid = ''; for (let t = Math.ceil(t0 / 3600) * 3600; t <= t1; t += 3600) { if (tzHour(t * 1000) === 0) grid += `<line x1="${X(t)}" x2="${X(t)}" y1="0" y2="${Hh - 10}" stroke="#ffffff22"/>`; }
+  return `<div class="spark"><small>${opts.title || ''}</small><svg viewBox="0 0 ${W} ${Hh}">${grid}${paths}<text x="2" y="9" class="sl">${hi.toFixed(opts.dec ?? 0)}</text><text x="2" y="${Hh - 12}" class="sl">${lo.toFixed(opts.dec ?? 0)}</text></svg></div>`;
+}
+function showObs(p) {
+  const o = state.obs, sr = (o.series && o.series[p.id]) || {};
+  const dirTxt = d => d == null ? '–' : `${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(d / 45) % 8]} ${Math.round(d)}°`;
+  const err = obsModelErr(p, state.wind), mname = modelById(state.modelId).name;
+  const row = (l, v) => v == null || v === '' ? '' : `<tr><td>${l}</td><td><b>${v}</b></td></tr>`;
+  const html = `<div class="obspop"><b>${p.name}</b> <small>${p.kind === 'buoy' ? 'plutača DHMZ' : p.kind === 'lighthouse' ? 'svjetionik' : 'postaja'} · ${fmtTime(p.t * 1000, false)}${p.stale ? ' · <span class="warn">staro mjerenje</span>' : ''}</small>
+    <table>${row('Vjetar', p.wspd != null ? `${p.wspd.toFixed(0)} kn ${dirTxt(p.wdir)}${p.h === 3 ? ' <small>(3 m)</small>' : ''}` : null)}${row('Udari', p.wgust != null ? p.wgust.toFixed(0) + ' kn' : null)}
+    ${row(mname, err != null ? `${(err + (p.h === 3 ? p.wspd * U3_10 : p.wspd)).toFixed(0)} kn <small>(${err > 0 ? '+' : ''}${err.toFixed(0)} kn${p.h === 3 ? ', 10 m' : ''})</small>` : null)}
+    ${row('Tlak', p.pres != null ? `${p.pres.toFixed(1)} hPa${p.dp3 != null ? ` <small>(${p.dp3 > 0 ? '+' : ''}${p.dp3.toFixed(1)} u 3 h)</small>` : ''}` : null)}
+    ${row('Temperatura', p.tair != null ? `${p.tair.toFixed(1)} °C${p.dT1 != null && Math.abs(p.dT1) >= 1 ? ` <small>(${p.dT1 > 0 ? '+' : ''}${p.dT1.toFixed(1)} u 1 h)</small>` : ''}` : null)}
+    ${row('Vlaga', p.rh != null ? `${Math.round(p.rh)} %${p.drh3 != null && Math.abs(p.drh3) >= 5 ? ` <small>(${p.drh3 > 0 ? '+' : ''}${p.drh3} u 3 h)</small>` : ''}` : null)}
+    ${row('Valovi', p.hs != null ? `${p.hs.toFixed(1)} m${p.hmax != null ? ` · max ${p.hmax.toFixed(1)} m` : ''}${p.tp != null ? ` · ${p.tp.toFixed(1)} s` : ''}${p.vdir != null ? ` · iz ${dirTxt(p.vdir)}` : ''}` : null)}
+    ${row('More', p.sst != null ? p.sst.toFixed(1) + ' °C' : null)}</table>
+    ${sparkline(sr, ['wspd', 'wgust'], { title: 'Vjetar i udari (kn), 72 h', zero: true, min: 10 })}
+    ${sparkline(sr, ['pres'], { title: 'Tlak (hPa)', colors: ['#c9a2ff'], dec: 0, min: 4 })}
+    ${p.kind === 'buoy' ? sparkline(sr, ['hs', 'hmax'], { title: 'Valovi (m)', colors: ['#5ab0ff', '#ff5a8a'], zero: true, dec: 1, min: 1 }) : ''}
+    ${sparkline(sr, ['tair'], { title: 'Temperatura zraka (°C)', colors: ['#ff8a5a'], dec: 0, min: 2 })}
+    <small class="muted">DHMZ, izvorni nekontrolirani podaci${p.kind === 'buoy' ? '; plutača očitana s grafa' : ''}.</small></div>`;
+  L.popup({ maxWidth: 320, className: 'obspopup' }).setLatLng([p.lat, p.lon]).setContent(html).openOn(map);
+}
+$('#ovObs').onclick = async () => {
+  state.ovObs = settings.ovObs = !state.ovObs; saveSettings(); syncToggles();
+  clearInterval(obsTimer); obsTimer = null;
+  if (state.ovObs) { await loadObs(); obsTimer = setInterval(async () => { await loadObs(true); drawObs(); }, 10 * 60000); }
+  drawObs();
+};
+setTimeout(async () => { state.ovObs = !!settings.ovObs; syncToggles(); if (state.ovObs) { await loadObs(); drawObs(); obsTimer = setInterval(async () => { await loadObs(true); drawObs(); }, 10 * 60000); } }, 1500);
 const routeLayer = L.layerGroup().addTo(map);
 let boatMarkers = {};
 const okRoutes = () => Object.values(state.routes).filter(r => r && r.ok).sort((a, b) => a.eta - b.eta);
@@ -1892,7 +2001,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 3.9 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 4.0 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2145,7 +2254,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 3.9 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 4.0 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

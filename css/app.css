@@ -478,3 +478,25 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
 /* port / starboard tack tag (P red, S green, like the navigation lights) */
 .tk{display:inline-block;min-width:1.1em;padding:0 .25em;margin-left:.2em;border-radius:4px;font-weight:800;font-size:.85em;text-align:center;color:#fff}
 .tk-p{background:#d93a3a}.tk-s{background:#1f9d55}
+
+/* live measurements ("Sada") */
+.obsicon{position:relative}
+.obsm{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:pointer;font:700 11px -apple-system,system-ui,sans-serif;color:#fff;text-shadow:0 0 3px #0a1426,0 0 3px #0a1426}
+.obsm svg{width:26px;height:26px}
+.obsm.buoy svg{width:32px;height:32px}
+.obsm.buoy:before{content:"";position:absolute;top:9px;width:14px;height:14px;border-radius:3px;transform:rotate(45deg);background:#ffb000;border:2px solid #0a1426;z-index:-1}
+.obsm.lighthouse:before{content:"";position:absolute;top:8px;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #0a1426;z-index:-1}
+.obsm.station:before{content:"";position:absolute;top:9px;width:8px;height:8px;border-radius:50%;background:#9fb3c8;border:1.5px solid #0a1426;z-index:-1}
+.obsm.stale{opacity:.55}
+.obsm i.calm{display:block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;margin:7px}
+.obsm em{font-style:normal;font-weight:600;color:#9fe3ff}
+.obsm u{text-decoration:none;font-size:10px;padding:0 3px;border-radius:3px}
+.obsm u.hi{background:#c0392b}.obsm u.lo{background:#2471a3}
+#obsCard{position:absolute;left:10px;top:70px;z-index:900;max-width:340px;padding:8px 10px;font-size:12px;line-height:1.35}
+#obsCard .oh{display:flex;align-items:center;gap:6px}#obsCard .oh .x{margin-left:auto;background:none;border:0;color:inherit;font-size:18px;cursor:pointer}
+#obsCard .or{margin:4px 0}#obsCard .or span{display:inline-block;margin-right:8px;white-space:nowrap}#obsCard .or span.best{font-weight:700}
+#obsCard .or i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px}
+#obsCard .os{margin-top:4px;padding:4px 6px;border-radius:6px;background:#ffffff10}#obsCard .os.jako{background:#c0392b44}#obsCard .os.umjereno{background:#e67e2244}
+.obspop table{width:100%;font-size:12px;margin:4px 0}.obspop td{padding:1px 4px 1px 0}.obspop .spark small{display:block;margin-top:4px;opacity:.8}
+.obspop svg{width:100%;height:70px;background:#0a142610;border-radius:4px}.obspop .sl{font-size:8px;fill:#556677}
+@media (max-width:700px){#obsCard{top:auto;bottom:calc(var(--tlh,120px) + 70px);max-width:calc(100% - 20px)}}

@@ -230,6 +230,64 @@ if bn and not bs: sig('umjereno', 'Bura na sjeveru, jug je još nema', f'Jaka bu
 jn, js = strong(south + ['Molunat', 'Lastovo', 'Dubrovnik'], 100, 170), strong(north, 100, 170)
 if jn and not js: sig('umjereno', 'Jugo na jugu, sjever ga još nema', f'Jako jugo mjeri se na: {", ".join(jn)}. Na sjeveru još ne – širi se prema Kvarneru.')
 
+# ---------------- scoring the models against the measurements ----------------
+# every cloud package publishes the models' wind at these places for the next 48 h (data/models/points.json); we keep
+# them for 3 days and, as the measurements come in, add each model's error to hourly totals (kept 8 days):
+# speed error = model − measured (buoys brought from 3 m to 10 m), split by how far ahead the forecast was made
+U3_10 = 1.12
+fc = hist.setdefault('fc', {})
+try:
+    raw, _ = get('https://clockwork-75.github.io/Clock-the-wind/data/models/points.json?t=%d' % int(now))
+    pts = json.loads(raw)
+    if str(pts['created']) not in fc: fc[str(pts['created'])] = pts; print('nova prognoza za ocjenu:', dt.datetime.fromtimestamp(pts['created'] / 1000, ZG))
+except Exception as e: print('!! točke prognoze', e)
+for k in list(fc):
+    if int(k) / 1000 < now - 3 * 24 * H: del fc[k]
+agg = hist.setdefault('score', {})        # hour → model → lead bin → [sum |e|, sum e, n]
+done = set(hist.setdefault('scored', []))
+BINS = (('0-12', 0, 12), ('12-24', 12, 24), ('24-48', 24, 49))
+def measured(pid, t):
+    if pid.startswith('b:'):
+        s = hist['buoys'].get(pid[2:], {}); v = s.get(str(t))
+        return v['wspd'] * U3_10 if v and v.get('wspd') is not None else None
+    s = hist['stations'].get(pid[2:], {}); v = s.get(str(t))
+    return v['wspd'] if v and v.get('wspd') is not None else None
+for created, P_ in sorted(fc.items()):
+    t0 = P_['t0'] // 1000
+    for k in range(len(next(iter(P_['models'].values())))):
+        t = t0 + k * H
+        if t > now: break
+        lead = (t * 1000 - int(created)) / 3600000
+        if lead < 0: continue
+        b = next((n for n, lo, hi in BINS if lo <= lead < hi), None)
+        if not b: continue
+        for j, pid in enumerate(P_['places']):
+            key = f'{created}|{pid}|{t}'
+            if key in done: continue
+            m = measured(pid, t)
+            if m is None: continue
+            done.add(key)
+            for mid, rows in P_['models'].items():
+                f = rows[k][j]
+                if f is None: continue
+                e = f - m
+                c = agg.setdefault(str(t), {}).setdefault(mid, {}).setdefault(b, [0, 0, 0])
+                c[0] += abs(e); c[1] += e; c[2] += 1
+for t in list(agg):
+    if int(t) < now - 8 * 24 * H: del agg[t]
+hist['scored'] = [k for k in done if int(k.rsplit('|', 1)[1]) >= now - 4 * 24 * H]
+def skill(hours, bins=None):
+    tot = {}
+    for t, mm in agg.items():
+        if int(t) < now - hours * H: continue
+        for mid, bb in mm.items():
+            for b, (sa, se, n) in bb.items():
+                if bins and b not in bins: continue
+                x = tot.setdefault(mid, [0, 0, 0]); x[0] += sa; x[1] += se; x[2] += n
+    return sorted(({'id': m, 'mae': round(sa / n, 2), 'bias': round(se / n, 2), 'n': n} for m, (sa, se, n) in tot.items() if n >= 20), key=lambda r: r['mae'])
+SKILL = {'24h': skill(24), '72h': skill(72), '7d': skill(7 * 24), '7d_0-12': skill(7 * 24, ['0-12']), '7d_24-48': skill(7 * 24, ['24-48'])}
+print('Rang modela 24 h:', ', '.join(f"{r['id']} ±{r['mae']}" for r in SKILL['24h']) or 'još nema dovoljno podataka')
+
 # 72 h series for the app (buoys every 30 min, stations hourly)
 series = {}
 for bid, name, lat, lon in BUOYS:
@@ -240,7 +298,7 @@ for nm in COAST:
     series['s:' + nm] = {t: {k: v[k] for k in ('wspd', 'wdir', 'pres', 'tair', 'rh') if v.get(k) is not None} for t, v in sorted(s.items()) if int(t) >= now - 72 * H}
 
 json.dump(hist, open(os.path.join(OUT, 'history.json'), 'w'), separators=(',', ':'))
-json.dump({'created': int(now), 'places': places, 'signals': signals, 'series': series, 'errors': errors,
+json.dump({'created': int(now), 'places': places, 'signals': signals, 'series': series, 'errors': errors, 'skill': SKILL,
            'note': 'DHMZ izvorni nekontrolirani podaci; plutače očitane s grafova (vjetar na 3 m).'},
           open(os.path.join(OUT, 'obs.json'), 'w'), separators=(',', ':'), ensure_ascii=False)
 print(f'Mjesta: {len(places)}, signali: {len(signals)}', '|', ' · '.join(s['title'] for s in signals))

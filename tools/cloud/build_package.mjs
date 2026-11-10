@@ -203,6 +203,24 @@ mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, Buffer.from(await blob.arrayBuffer()));
 writeFileSync(OUT.replace(/\.ctw$/, '.json'), JSON.stringify({ created: set.created, models: models.map(id => ({ id, run: fields[id].run && fields[id].run.runInit, until: fields[id].validUntil })), errors }, null, 1));
 log(`Zapisano ${OUT}: ${(blob.size / 1048576).toFixed(1)} MB, modeli: ${models.join(', ')}`);
+// the models' wind at the measurement places (buoys, lighthouses, stations), every hour for 48 h: the measurements
+// workflow keeps these and scores the models against what was then measured
+try {
+  const ob = await get('https://raw.githubusercontent.com/Clockwork-75/Clock-the-wind/obs/obs.json?t=' + Date.now());
+  const places = ob ? JSON.parse(ob.toString()).places.map(p => ({ id: p.id, lat: p.lat, lon: p.lon })) : [];
+  if (places.length) {
+    const { sample, fillTimeGaps } = await import('../../js/field.js');
+    const h0 = Math.ceil(Date.now() / H) * H - H, pts = { created: set.created, t0: h0, step: H, places: places.map(p => p.id), models: {} };
+    for (const id of models) {
+      const f = fields[id]; fillTimeGaps(f); const rows = [], o = [];
+      for (let k = 0; k <= 48; k++) rows.push(places.map(p => { sample(f, ['u', 'v'], p.lat, p.lon, h0 + k * H, o); return o[0] === o[0] ? Math.round(Math.hypot(o[0], o[1]) * 10) / 10 : null; }));
+      pts.models[id] = rows;
+    }
+    mkdirSync(join(dirname(OUT), 'models'), { recursive: true });
+    writeFileSync(join(dirname(OUT), 'models', 'points.json'), JSON.stringify(pts));
+    log(`Točke mjerenja: ${places.length} mjesta × ${models.length} modela × 49 h`);
+  }
+} catch (e) { log('!! točke mjerenja', e.message); }
 // every model also as its own file, so the app downloads only the chosen ones (data/models/<id>.ctw + index.json)
 const MD = join(dirname(OUT), 'models'); mkdirSync(MD, { recursive: true });
 const index = { created: set.created, window: set.window, models: [] };

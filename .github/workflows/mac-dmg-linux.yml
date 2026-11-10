@@ -1,0 +1,72 @@
+# Clock the Wind – Mac app (DMG) built on Linux, for when GitHub's macOS machines are not available.
+# HFS+ image with the app (executable kept 755) + Applications link, compressed to a real .dmg with libdmg-hfsplus;
+# the app is ad-hoc signed with rcodesign. Published like the Mac build:
+# https://github.com/Clockwork-75/Clock-the-wind/releases/latest/download/Clock-the-Wind.dmg
+name: Mac DMG (Linux)
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mac-dmg
+  cancel-in-progress: true
+jobs:
+  dmg:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Alati (hfsprogs, libdmg-hfsplus, rcodesign)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq hfsprogs cmake zlib1g-dev libbz2-dev >/dev/null
+          git clone -q --depth 1 https://github.com/fanquake/libdmg-hfsplus.git /tmp/libdmg
+          (cd /tmp/libdmg && cmake . -DCMAKE_BUILD_TYPE=Release >/dev/null && make -j4 >/dev/null)
+          ls /tmp/libdmg/dmg/dmg /tmp/libdmg/hfs/hfsplus
+          curl -sSL -o /tmp/rc.tgz https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz \
+            && tar -xzf /tmp/rc.tgz -C /tmp && find /tmp -maxdepth 2 -name rcodesign -type f -exec cp {} /tmp/rcodesign \; || echo "rcodesign nije dostupan"
+      - name: Složi aplikaciju
+        run: |
+          set -euo pipefail
+          VER=$(grep -oE "Verzija [0-9]+(\.[0-9]+)+" js/app.js | head -1 | cut -d' ' -f2)
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          mkdir -p stage
+          cp -R "mac/Clock the Wind.app" stage/
+          WEB="stage/Clock the Wind.app/Contents/Resources/web"
+          mkdir -p "$WEB"
+          for f in index.html manifest.webmanifest sw.js css data docs icons img js vendor; do cp -R "$f" "$WEB/"; done
+          rm -f "$WEB/data/"*.ctw
+          PL="stage/Clock the Wind.app/Contents/Info.plist"
+          sed -i -E "s#(<key>CFBundle(ShortVersionString|Version)</key>)<string>[^<]*</string>#\1<string>$VER</string>#" "$PL"
+          grep -A0 "CFBundleShortVersionString" "$PL"
+          chmod 755 "stage/Clock the Wind.app/Contents/MacOS/ClockTheWind"
+          if [ -x /tmp/rcodesign ]; then /tmp/rcodesign sign "stage/Clock the Wind.app" && /tmp/rcodesign verify "stage/Clock the Wind.app/Contents/MacOS/ClockTheWind" || echo "potpis nije uspio – aplikacija ostaje nepotpisana"; fi
+          du -sh stage
+      - name: Napravi DMG
+        run: |
+          set -euo pipefail
+          MB=$(( $(du -sm stage | cut -f1) + 40 ))
+          dd if=/dev/zero of=raw.img bs=1M count=$MB status=none
+          mkfs.hfsplus -v "Clock the Wind" raw.img >/dev/null
+          H=/tmp/libdmg/hfs/hfsplus
+          $H raw.img addall stage
+          $H raw.img chmod 755 "/Clock the Wind.app/Contents/MacOS/ClockTheWind"
+          $H raw.img symlink /Applications /Applications
+          $H raw.img ls "/Clock the Wind.app/Contents/MacOS"
+          /tmp/libdmg/dmg/dmg dmg raw.img Clock-the-Wind.dmg >/dev/null
+          cp Clock-the-Wind.dmg "Clock-the-Wind-$VER.dmg"
+          ls -la *.dmg
+          # check: the DMG opens again and holds the app
+          /tmp/libdmg/dmg/dmg extract Clock-the-Wind.dmg check.img >/dev/null
+          $H check.img ls "/Clock the Wind.app/Contents"
+          $H check.img ls "/Clock the Wind.app/Contents/Resources/web/js" | head -5
+      - name: Objavi link za preuzimanje
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="mac-$VER"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" Clock-the-Wind.dmg "Clock-the-Wind-$VER.dmg" --latest \
+            --title "Clock the Wind $VER za Mac" \
+            --notes "Dvaput klikni Clock-the-Wind.dmg u Preuzimanjima, povuci Clock the Wind u Applications (Zamijeni). Prvo pokretanje: Postavke sustava → Privatnost i sigurnost → Ipak otvori."

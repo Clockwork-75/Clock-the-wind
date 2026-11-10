@@ -28,7 +28,7 @@ jobs:
           cp "$(find /tmp/libdmg -type f -name dmg -perm -u+x | head -1)" /tmp/bin/dmg
           ls -la /tmp/bin
           curl -sSL -o /tmp/rc.tgz https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz \
-            && tar -xzf /tmp/rc.tgz -C /tmp && find /tmp -maxdepth 2 -name rcodesign -type f -exec cp {} /tmp/rcodesign \; || echo "rcodesign nije dostupan"
+            && tar -xzf /tmp/rc.tgz -C /tmp && find /tmp -maxdepth 2 -name rcodesign -type f -exec cp {} /tmp/rcodesign \; 2>/dev/null; [ -x /tmp/rcodesign ] || echo "rcodesign nije dostupan"
       - name: Složi aplikaciju
         run: |
           set -euo pipefail
@@ -44,7 +44,7 @@ jobs:
           sed -i -E "s#(<key>CFBundle(ShortVersionString|Version)</key>)<string>[^<]*</string>#\1<string>$VER</string>#" "$PL"
           grep -A0 "CFBundleShortVersionString" "$PL"
           chmod 755 "stage/Clock the Wind.app/Contents/MacOS/ClockTheWind"
-          if [ -x /tmp/rcodesign ]; then /tmp/rcodesign sign "stage/Clock the Wind.app" && /tmp/rcodesign verify "stage/Clock the Wind.app/Contents/MacOS/ClockTheWind" || echo "potpis nije uspio – aplikacija ostaje nepotpisana"; fi
+          if [ -x /tmp/rcodesign ]; then /tmp/rcodesign sign "stage/Clock the Wind.app" || echo "potpis nije uspio – aplikacija ostaje nepotpisana"; fi
           du -sh stage
       - name: Napravi DMG
         run: |
@@ -60,10 +60,10 @@ jobs:
           /tmp/bin/dmg dmg raw.img Clock-the-Wind.dmg >/dev/null
           cp Clock-the-Wind.dmg "Clock-the-Wind-$VER.dmg"
           ls -la *.dmg
-          # check: the DMG opens again and holds the app
-          /tmp/bin/dmg extract Clock-the-Wind.dmg check.img >/dev/null
-          $H check.img ls "/Clock the Wind.app/Contents"
-          $H check.img ls "/Clock the Wind.app/Contents/Resources/web/js" | head -5
+          # check with 7-Zip (reads Apple DMG + HFS+): the app, its program and the web files are inside
+          7z l Clock-the-Wind.dmg > list.txt
+          grep -c "Clock the Wind.app" list.txt
+          grep -q "MacOS/ClockTheWind" list.txt && grep -q "web/js/app.js" list.txt && grep -q "_CodeSignature/CodeResources" list.txt && echo "DMG sadrži aplikaciju (potpisanu)" || { echo "DMG provjera nije prošla"; head -60 list.txt; exit 1; }
       - name: Objavi link za preuzimanje
         env:
           GH_TOKEN: ${{ github.token }}

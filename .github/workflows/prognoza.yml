@@ -43,3 +43,9 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # a previous publication can still be closing on GitHub's side ("in progress deployment"): wait and try again
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 120
+      - if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4

@@ -1892,7 +1892,7 @@ function buildMoja() {
   const f = { lat0: B.s, lon0: B.w, dlat: d, dlon: d, nx, ny, times, vars: { u, v, gust: g }, validUntil: times[T - 1], model: 'moja', meta: MOJA_META, run: { runInit: Date.now() },
     weights: ms.st.map(r => ({ id: r.id, w: r.w, mae: r.mae, ratio: r.ratio })) };
   fillTimeGaps(f);
-  s.fields.moja = f; if (!s.models.includes('moja')) s.models.unshift('moja');
+  s.fields.moja = f; if (!s.models.includes('moja')) s.models.push('moja');   // ALADIN stays first; MOJA at the end of the bar
   renderChips();
   return f;
 }
@@ -1918,7 +1918,7 @@ function renderAnalysisTab() {
     ${ms ? `<div class="note">Težine prema tome koliko modeli sada pogađaju mjerenja: ${ms.st.map(r => `<b style="color:${mcol(r.id)}">${modelById(r.id).name}</b> ${(r.w * 100).toFixed(0)} %${Math.abs(r.ratio - 1) >= 0.08 ? ` <small>(×${r.ratio.toFixed(2)})</small>` : ''}`).join(' · ')}.
       Brzine svakog modela ispravljene su za njegovo odstupanje; prvih ~6 h prognoza je povučena prema izmjerenom na plutačama i postajama.</div>
       <button id="btnMoja" class="btn primary block">${mf ? '↻ Ponovno izračunaj MOJU prognozu' : 'Izračunaj MOJU prognozu'}</button>
-      ${mf ? '<div class="note">MOJA je na traci modela (bijela) – za kartu, replay i routing (Routing → modeli).</div>' : ''}` : '<div class="note">Za MOJU prognozu treba bar 4 svježa mjerenja koja modeli pokrivaju.</div>'}
+      ${mf ? '<div class="note">MOJA je na kraju trake modela (ljubičasta) – za kartu, replay i routing. ALADIN-HR ostaje prvi.</div>' : ''}` : '<div class="note">Za MOJU prognozu treba bar 4 svježa mjerenja koja modeli pokrivaju.</div>'}
     <h3>Sada: izmjereno i odstupanje modela <small>(kn; plutače preračunate na 10 m)</small></h3>
     <div class="tblwrap"><table class="obst"><tr><th>Mjesto</th><th>Izmj.</th>${ids.map(id => `<th style="color:${mcol(id)}">${modelById(id).name}${id === 'moja' ? '<small>*</small>' : ''}</th>`).join('')}</tr>
     ${pl.map(p => { const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; return `<tr><td>${p.kind === 'buoy' ? '◆ ' : p.kind === 'lighthouse' ? '○ ' : ''}${p.name}</td><td><b>${x.toFixed(0)}</b>${p.wgust != null ? `<small>/${(p.wgust * (p.h === 3 ? U3_10 : 1)).toFixed(0)}</small>` : ''}</td>${ids.map(id => cell(obsModelErr(p, s.fields[id]))).join('')}</tr>`; }).join('')}</table></div>

@@ -19,7 +19,7 @@ jobs:
           OPEN_METEO_KEY: ${{ secrets.OPEN_METEO_KEY }}
           CHECK: arpege
         run: |
-          mkdir -p shots && curl -sSL -A "Mozilla/5.0" -o shots/dhmz_zahtjev.docx https://www.meteo.hr/proizvodi/zahtjevi/Zahtjev_meteoroloski_podatak_informacija.docx && ls -la shots || true
+          mkdir -p shots && for u in https://www.meteo.hr https://meteo.hr http://www.meteo.hr; do curl -sSL -m 40 -A "Mozilla/5.0" -o shots/dhmz_zahtjev.docx "$u/proizvodi/zahtjevi/Zahtjev_meteoroloski_podatak_informacija.docx" && file shots/dhmz_zahtjev.docx && break; echo "nema $u"; done; ls -la shots || true
           npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -1
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &

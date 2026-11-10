@@ -131,10 +131,39 @@ async function arpege() {
   return f;
 }
 
+// ---------------- DHMZ ALADIN-HR20 (2 km, wind-optimised) – open GRIB data for sailors ----------------
+// runs 00 and 12 UTC (ready ~02:50 / 14:50 UTC), 72 h, hourly, domain ADR = whole Adriatic. The login is DHMZ's
+// shared open-data account, read from the GitHub secrets ALADIN_USER / ALADIN_PASS (not stored in the repository).
+async function aladin() {
+  const user = process.env.ALADIN_USER, pass = process.env.ALADIN_PASS;
+  if (!user || !pass) throw new Error('ALADIN-HR: nema prijave (GitHub tajne ALADIN_USER / ALADIN_PASS)');
+  const BASE = 'https://radar.dhz.hr/~aladinhr/opendata/sailing/';
+  const auth = { Authorization: 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64') };
+  const list = async u => { const b = await get(u, auth); return b ? [...b.toString().matchAll(/href="([^"?/][^"]*)"/g)].map(m => m[1]) : []; };
+  const top = await list(BASE);
+  const files = top.filter(n => !n.endsWith('/'));
+  for (const d of top.filter(n => n.endsWith('/'))) files.push(...(await list(BASE + d)).filter(n => !n.endsWith('/')).map(n => d + n));
+  const adr = files.filter(n => /adr/i.test(n) && !/\.(html?|txt|png|jpe?g|pdf|nc)$/i.test(n)).sort();
+  log(`ALADIN-HR: ${files.length} datoteka, ADR: ${adr.slice(-3).join(', ')}`);
+  if (!adr.length) throw new Error('ALADIN-HR: nema datoteke za cijeli Jadran (ADR)');
+  const f0 = adr[adr.length - 1];
+  let buf = await get(BASE + f0, auth); if (!buf) throw new Error('ALADIN-HR: preuzimanje nije uspjelo');
+  if (buf[0] === 0x42 && buf[1] === 0x5a) buf = bunzip(buf);
+  else if (buf[0] === 0x1f && buf[1] === 0x8b) buf = (await import('node:zlib')).gunzipSync(buf);
+  const msgs = []; for (const m of decodeGrib(toAB(buf))) { const c = cropMsg(m, BBOX); if (c) msgs.push(c); }
+  log(`ALADIN-HR ${f0}: ${(buf.length / 1048576).toFixed(1)} MB, ${msgs.length} polja`);
+  const all = msgs.filter(m => m.valid >= t0 - H);
+  const f = gribToField(all.length ? all : msgs, null, 'dir_aladin');
+  const ts = msgs.map(m => m.valid).sort((a, b) => a - b);
+  f.run = { runInit: Math.floor(ts[0] / (12 * H)) * 12 * H };
+  f.meta = { id: 'dir_aladin', name: 'ALADIN-HR', res: '2 km · DHMZ', color: '#ff1744', note: 'DHMZ ALADIN-HR20 – 2 km, optimiziran za vjetar, cijeli Jadran, 72 h, svaki sat' };
+  return f;
+}
+
 // ---------------- build ----------------
 const fields = {}, errors = [];
 const times = []; for (let t = t0; t <= t1; t += H) times.push(t);
-for (const [name, job] of [['ICON-D2', () => dwd('d2')], ['ICON-EU', () => dwd('eu')], ['ARPEGE', arpege], ['ECMWF', ecmwf], ['GFS', gfs]].filter(([n]) => !process.env.CTW_ONLY || process.env.CTW_ONLY.split(',').includes(n))) {
+for (const [name, job] of [['ICON-D2', () => dwd('d2')], ['ICON-EU', () => dwd('eu')], ['ALADIN', aladin], ['ARPEGE', arpege], ['ECMWF', ecmwf], ['GFS', gfs]].filter(([n]) => !process.env.CTW_ONLY || process.env.CTW_ONLY.split(',').includes(n))) {
   try { const f = await job(); fields[f.model] = f; }
   catch (e) { errors.push(`${name}: ${e.message}`); log('!!', name, e.message); }
 }
@@ -151,7 +180,7 @@ try {
   catch (e2) { errors.push('valovi/struje: ' + e2.message); }
 }
 if (!fields.marine) fields.marine = { lat0: BBOX.s, lon0: BBOX.w, dlat: 1, dlon: 1, nx: 1, ny: 1, times, vars: { wave: new Float32Array(times.length).fill(NaN), waveDir: new Float32Array(times.length).fill(NaN), wavePer: new Float32Array(times.length).fill(NaN), cu: new Float32Array(times.length).fill(NaN), cv: new Float32Array(times.length).fill(NaN) } };
-const order = ['italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'dir_icon_eu', 'dir_arpege', 'dir_ecmwf', 'dir_gfs'];
+const order = ['dir_aladin', 'italia_meteo_arpae_icon_2i', 'dir_icon_d2', 'dir_icon_eu', 'dir_arpege', 'dir_ecmwf', 'dir_gfs'];
 const models = order.filter(id => fields[id]);
 if (!models.length) { console.error('Nijedan model – paket se ne zapisuje', errors); process.exit(1); }
 const set = { id: 'cloud-' + Date.now(), created: Date.now(), bbox: BBOX, quality: 'cloud', source: 'cloud', mode: 'forecast', window: { t0, t1 }, models, empty: [], errors, times, fields };

@@ -31,6 +31,7 @@ function varGrib2(d, c, n) {
   if (d === 0 && c === 2 && n === 2) return 'U';
   if (d === 0 && c === 2 && n === 3) return 'V';
   if (d === 0 && c === 2 && n === 22) return 'gust';
+  if (d === 0 && c === 2 && n === 21) return 'gust';   // maximum wind speed (DHMZ ALADIN-HR: hourly max at 10 m)
   if (d === 0 && c === 2 && n === 23) return 'gu';   // gust as u/v components (Météo-France ARPEGE/AROME)
   if (d === 0 && c === 2 && n === 24) return 'gv';
   if (d === 0 && c === 1 && (n === 8 || n === 52 || n === 7)) return 'precip';

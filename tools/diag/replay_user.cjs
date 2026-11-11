@@ -37,6 +37,7 @@ const md5 = b => crypto.createHash('md5').update(b).digest('hex').slice(0, 8);
     }, layer);
     console.log(`\n===== sloj ${layer}:`, JSON.stringify(info));
     await p.evaluate(() => window.ctw.fn.replayPlay());
+    await p.addStyleTag({ content: '.leaflet-particles-pane{visibility:hidden!important}' });   // moving particles would differ in every shot
     const clip = { x: 150, y: 250, width: 500, height: 350 };
     let prev = null;
     for (let k = 0; k < 6; k++) {

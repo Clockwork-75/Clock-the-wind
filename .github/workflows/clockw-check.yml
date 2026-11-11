@@ -19,14 +19,14 @@ jobs:
           OPEN_METEO_KEY: ${{ secrets.OPEN_METEO_KEY }}
           ALADIN_USER: ${{ secrets.ALADIN_USER }}
           ALADIN_PASS: ${{ secrets.ALADIN_PASS }}
-          CHECK: probe2
+          CHECK: probe3
         run: |
           npm init -y >/dev/null && npm i playwright-core@1.56.0 2>&1 | tail -1
           export CHROME=$(command -v google-chrome || command -v chromium); echo "browser: $CHROME"
           python3 -m http.server 8080 >/dev/null 2>&1 &
           sleep 2
           npm i playwright@1.56.0 2>&1 | tail -1 && npx playwright install --with-deps webkit 2>&1 | tail -2
-          if [ "${CHECK:-}" = "probe2" ]; then node tools/diag/obs_probe2.mjs; elif [ "${CHECK:-}" = "real" ]; then CTW_ONLY=ALADIN,ARPEGE,ECMWF,GFS,ICON-EU node tools/cloud/build_package.mjs data/latest.ctw && cat data/models/index.json && node tools/diag/real_errors.mjs; mkdir -p shots; elif [ "${CHECK:-}" = "obs" ]; then node tools/diag/obs_probe.mjs; elif [ "${CHECK:-}" = "aladin" ]; then CTW_ONLY=ALADIN,ARPEGE,ECMWF node tools/cloud/build_package.mjs data/latest.ctw && ls -la data/models && cat data/models/index.json && node tools/diag/cloud_models_check.cjs http://localhost:8080/; mkdir -p shots; elif [ "${CHECK:-}" = "arpege" ]; then CTW_ONLY=ARPEGE node tools/cloud/build_package.mjs /tmp/arpege.ctw; node tools/diag/arpege_check.mjs /tmp/arpege.ctw; mkdir -p shots; else ENGINE=webkit node tools/diag/render_check.cjs http://localhost:8080/; fi
+          if [ "${CHECK:-}" = "probe3" ]; then python3 tools/diag/obs_probe3.py; elif [ "${CHECK:-}" = "probe2" ]; then node tools/diag/obs_probe2.mjs; elif [ "${CHECK:-}" = "real" ]; then CTW_ONLY=ALADIN,ARPEGE,ECMWF,GFS,ICON-EU node tools/cloud/build_package.mjs data/latest.ctw && cat data/models/index.json && node tools/diag/real_errors.mjs; mkdir -p shots; elif [ "${CHECK:-}" = "obs" ]; then node tools/diag/obs_probe.mjs; elif [ "${CHECK:-}" = "aladin" ]; then CTW_ONLY=ALADIN,ARPEGE,ECMWF node tools/cloud/build_package.mjs data/latest.ctw && ls -la data/models && cat data/models/index.json && node tools/diag/cloud_models_check.cjs http://localhost:8080/; mkdir -p shots; elif [ "${CHECK:-}" = "arpege" ]; then CTW_ONLY=ARPEGE node tools/cloud/build_package.mjs /tmp/arpege.ctw; node tools/diag/arpege_check.mjs /tmp/arpege.ctw; mkdir -p shots; else ENGINE=webkit node tools/diag/render_check.cjs http://localhost:8080/; fi
           mkdir -p shots && ls shots
       - name: Snimke na granu diag-shots
         if: always()

@@ -32,7 +32,7 @@ def templates():
     global TEMPL
     if TEMPL is not None: return TEMPL
     TEMPL = {}
-    for size in (13, 14, 15):
+    for size in (10, 11, 12, 13, 14, 15):   # 10–12: smaller labels of the automatic-station graphs
         f = ImageFont.truetype(FONT, size)
         for ch in '0123456789':
             im = Image.new('L', (40, 40), 0); ImageDraw.Draw(im).text((8, 8), ch, fill=255, font=f)
@@ -104,10 +104,11 @@ def read_label(gray_crop):
     except ValueError: return None
 
 # ---------- axes ----------
-def find_panels(a):
+def find_panels(a, thr=330):
     """frames of the panels: (top, bottom, left spine, right spine) – the spines differ between panels"""
-    dark = dark_mask(a, 150)
-    rows = [y for y in range(a.shape[0]) if dark[y].sum() > 600]
+    dark = dark_mask(a, thr)   # frames: black on the buoy graphs, light grey on the station graphs (thr=700)
+    W = a.shape[1]
+    rows = [y for y in range(a.shape[0]) if dark[y].sum() > 0.6 * W]   # frame lines span most of the width (997 px buoys, 700 px stations)
     lines = []
     for y in rows:
         if lines and y - lines[-1] <= 1: continue
@@ -115,15 +116,15 @@ def find_panels(a):
     panels = []
     for i in range(len(lines) - 1):
         t, b = lines[i], lines[i + 1]
-        if b - t < 60: continue
+        if b - t < 50: continue
         frac = dark[t + 5:b - 5].mean(0)
-        sp = np.nonzero(frac > 0.95)[0]
-        if len(sp) >= 2 and sp.max() - sp.min() > 600: panels.append((t, b, int(sp.min()), int(sp.max())))
+        sp = np.nonzero(frac > 0.9)[0]
+        if len(sp) >= 2 and sp.max() - sp.min() > 0.6 * W: panels.append((t, b, int(sp.min()), int(sp.max())))
     return panels
 
-def y_axis(a, top, bot, left):
+def y_axis(a, top, bot, left, tthr=300):
     """tick marks left of the spine and their labels → (pixel_y, value) pairs"""
-    dark = dark_mask(a, 300)
+    dark = dark_mask(a, tthr)
     ticks = [y for y in range(top, bot + 1) if dark[y, left - 4] and dark[y, left - 2]]
     tt = []
     for y in ticks:
@@ -186,9 +187,9 @@ def series_colour(a, top, bot, left, right, near_rgb, tol=110):
     k = np.argmax(np.where(ok, counts, -1))
     return tuple(int(x) for x in vals[k])
 
-def y_axis_right(a, top, bot, right):
+def y_axis_right(a, top, bot, right, tthr=300):
     """ticks right of the right spine and their labels (e.g. relative humidity on the temperature panel)"""
-    dark = dark_mask(a, 300)
+    dark = dark_mask(a, tthr)
     tt = []
     for y in range(top, bot + 1):
         if dark[y, right + 2] and dark[y, right + 4] and (not tt or y - tt[-1] > 1): tt.append(y)
@@ -222,11 +223,12 @@ PANELS = [   # order of the frames in the image; series: (key, approximate colou
 ]
 DIR_LABELS = {'N': 0, 'E': 90, 'S': 180, 'W': 270}
 
-def dir_axis(a, top, bot, left):
-    """direction panels: labels E, S, W, N from the bottom up; gridded at 90° steps"""
-    dark = dark_mask(a, 300)
+def dir_axis(a, top, bot, left, tthr=300, skip_bottom=False):
+    """direction panels: labels E, S, W, N from the bottom up; gridded at 90° steps
+    (station graphs also tick the bottom frame line = 0°: skip_bottom drops it)"""
+    dark = dark_mask(a, tthr)
     tt = []
-    for y in range(top, bot + 1):
+    for y in range(top, (bot - 2 if skip_bottom else bot) + 1):
         if dark[y, left - 4] and dark[y, left - 2] and (not tt or y - tt[-1] > 1): tt.append(y)
     if len(tt) < 4: return None
     # bottom→top: E(90) S(180) W(270) N(360)
@@ -264,3 +266,43 @@ if __name__ == '__main__':
         good = [x for x in v if x is not None]
         print(k, len(good), 'zadnje', [x for x in v if x is not None][-3:] if good else '-')
     print(json.dumps(r['axes']))
+
+# ---------- DHMZ automatic stations (vrijeme.hr/amp/<code>.png): two local days, 10-minute values ----------
+AMP_SERIES = [  # (key, approximate colour, kind) looked for in the panels after the two wind panels
+    ('pres', (95, 140, 20), 'lin'),
+    ('tair', (255, 20, 20), 'lin'),
+]
+def read_amp(path):
+    a = np.asarray(Image.open(path).convert('RGB')).astype(int)
+    panels = [(t, b, l, r) for (t, b, l, r) in find_panels(a, 700)]
+    if len(panels) < 2: raise SystemExit(f'{path}: {len(panels)} panels – layout changed, nothing read')
+    out = {'series': {}, 'axes': {}, 'frames': {}}
+    (dt_, db_, dl_, dr_), (wt, wb, wl, wr) = panels[0], panels[1]
+    out['frames']['wind'] = [wt, wb, wl, wr]
+    ax = dir_axis(a, dt_, db_, dl_, 700, skip_bottom=True)
+    if ax:
+        col = series_colour(a, dt_, db_, dl_, dr_, (31, 119, 180))
+        if col:
+            ys = curve(a, dt_, db_, dl_, dr_, col, tol=60, dots=True)
+            out['series']['wdir'] = [None if y is None else round(val(ax, y) % 360, 1) for y in ys]
+    ax = fit_axis(y_axis(a, wt, wb, wl, 700))
+    if ax:
+        # thin anti-aliased lines: no exact colour repeats enough – match by distance to the legend colour
+        for key, rgb in (('wspd', (45, 130, 185)), ('wgust', (255, 20, 185))):
+            ys = curve(a, wt, wb, wl, wr, rgb, tol=110)
+            vals = [None if y is None else round(val(ax, y), 3) for y in ys]
+            if sum(v is not None for v in vals) > 20: out['series'][key] = vals
+    for (t, b, l, r) in panels[2:]:
+        for key, rgb, kind in AMP_SERIES:
+            if key in out['series']: continue
+            ys = curve(a, t, b, l, r, rgb, tol=110)
+            if sum(y is not None for y in ys) <= 20: continue
+            axp = fit_axis(y_axis(a, t, b, l, 700))
+            if not axp: continue
+            out['series'][key] = [None if y is None else round(val(axp, y), 2) for y in ys]
+            if key == 'tair':   # relative humidity: black line on the right axis of the same panel
+                axr = fit_axis(y_axis_right(a, t, b, r, 700))
+                if axr:
+                    yr = curve(a, t, b, l, r, (0, 0, 0), tol=180)
+                    out['series']['rh'] = [None if y is None else round(val(axr, y), 1) for y in yr]
+    return out

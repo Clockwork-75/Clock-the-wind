@@ -41,7 +41,7 @@ COMPASS = {'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5, 'E': 90, 'ESE': 112.5, 'S
 # and comes back by itself when its source answers again. One place can have several sources (DHMZ 10-min graph,
 # hourly DHMZ XML, METAR, ARSO): they are merged – the freshest wind wins, the rest fills in what it lacks.
 # feeds: ('buoy', id) DHMZ buoy graph · ('amp', code) DHMZ automatic station graph · ('xml', name) hourly DHMZ XML ·
-#        ('metar', ICAO) airport · ('arso', id) Slovenian coastal station
+#        ('metar', ICAO) airport · ('arso', id) Slovenian coastal station · ('izor', station id) Institute of Oceanography (IZOR)
 # coordinates of amp-only places are approximate (from the station's location); XML places use DHMZ's own
 REGISTRY = [
     # id, name, kind, lat, lon, feeds
@@ -67,7 +67,8 @@ REGISTRY = [
     ('a:zavizan', 'Zavižan (Velebit)', 'station', 44.815, 14.976, [('amp', 'zavizan'), ('xml', 'Zavižan')]),
     ('s:Rab', 'Rab', 'station', 44.756, 14.769, [('amp', 'rab'), ('xml', 'Rab')]),
     ('a:prizna', 'Prizna', 'station', 44.618, 14.973, [('amp', 'prizna')]),
-    ('s:Mali Lošinj', 'Mali Lošinj', 'station', 44.533, 14.472, [('amp', 'mlosinj'), ('xml', 'Mali Lošinj')]),
+    ('s:Mali Lošinj', 'Mali Lošinj', 'station', 44.533, 14.472, [('amp', 'mlosinj'), ('xml', 'Mali Lošinj'), ('izor', '9')]),
+    ('i:14', 'Cres (IZOR)', 'station', 44.9587, 14.4077, [('izor', '14')]),
     ('s:Mali Lošinj - Ćunski', 'Mali Lošinj - Ćunski', 'station', 44.565, 14.437, [('xml', 'Mali Lošinj - Ćunski'), ('metar', 'LDLO')]),
     ('a:velirat', 'Veli Rat - svjetionik', 'lighthouse', 44.152, 14.823, [('amp', 'velirat')]),
     ('a:jasenice', 'Jasenice (Maslenica)', 'station', 44.225, 15.530, [('amp', 'jasenice')]),
@@ -77,6 +78,10 @@ REGISTRY = [
     ('a:mostciov', 'Most Čiovo', 'station', 43.516, 16.252, [('amp', 'mostciov')]),
     ('s:Split-aerodrom', 'Split-aerodrom', 'station', 43.539, 16.301, [('xml', 'Split-aerodrom'), ('metar', 'LDSP')]),
     ('s:Split-Marjan', 'Split-Marjan', 'station', 43.508, 16.426, [('amp', 'split'), ('xml', 'Split-Marjan')]),
+    ('i:1', 'Split - IZOR', 'station', 43.5084, 16.3881, [('izor', '1')]),
+    ('i:3', 'Split - BIOS DVA (IZOR)', 'station', 43.5278, 16.4254, [('izor', '3')]),
+    ('i:7', 'Stari Grad (IZOR)', 'station', 43.1810, 16.5759, [('izor', '7')]),
+    ('i:8', 'Vis (IZOR)', 'station', 43.0619, 16.1842, [('izor', '8')]),
     ('m:LDSB', 'Brač-aerodrom', 'station', 43.286, 16.680, [('metar', 'LDSB')]),
     ('s:Hvar', 'Hvar', 'station', 43.171, 16.437, [('amp', 'hvar'), ('xml', 'Hvar')]),
     ('s:Komiža', 'Komiža', 'station', 43.048, 16.085, [('xml', 'Komiža')]),
@@ -87,6 +92,7 @@ REGISTRY = [
     ('a:deltaner', 'Delta Neretve', 'station', 43.030, 17.470, [('amp', 'deltaner')]),
     ('a:komarna', 'Komarna', 'station', 42.928, 17.535, [('amp', 'komarna')]),
     ('a:palagruz', 'Palagruža - svjetionik', 'lighthouse', 42.393, 16.255, [('amp', 'palagruz')]),
+    ('i:5', 'Sobra, Mljet (IZOR)', 'station', 42.7395, 17.6200, [('izor', '5')]),
     ('s:Lastovo', 'Lastovo', 'station', 42.768, 16.900, [('amp', 'lastovo'), ('xml', 'Lastovo')]),
     ('a:mostdub', 'Most Dubrovnik', 'station', 42.664, 18.070, [('amp', 'mostdub1'), ('amp', 'mostdub2')]),
     ('s:Dubrovnik', 'Dubrovnik', 'station', 42.645, 18.085, [('amp', 'dubrovni'), ('xml', 'Dubrovnik')]),
@@ -98,9 +104,10 @@ AMP_CODES = sorted({k for r in REGISTRY for s, k in r[5] if s == 'amp'})
 METARS = sorted({k for r in REGISTRY for s, k in r[5] if s == 'metar'})
 ARSO = {'koper': 'observationAms_KOPER_KAPET-IJA', 'portoroz': 'observationAms_PORTOROZ_SECOVLJE'}
 # how often each source measures and after how long without news a place turns grey
-STEP = {'buoy': 600, 'amp': 600, 'xml': 3600, 'metar': 1800, 'arso': 1800}
-LIVE = {'buoy': 3 * H, 'amp': 2 * H, 'xml': 3 * H, 'metar': 2 * H, 'arso': 2 * H}
-STORE = {'buoy': 'buoys', 'amp': 'amp', 'xml': 'stations', 'metar': 'metar', 'arso': 'arso'}
+STEP = {'buoy': 600, 'amp': 600, 'xml': 3600, 'metar': 1800, 'arso': 1800, 'izor': 600}
+LIVE = {'buoy': 3 * H, 'amp': 2 * H, 'xml': 3 * H, 'metar': 2 * H, 'arso': 2 * H, 'izor': 2 * H}
+STORE = {'buoy': 'buoys', 'amp': 'amp', 'xml': 'stations', 'metar': 'metar', 'arso': 'arso', 'izor': 'izor'}
+IZOR = sorted({k for r in REGISTRY for s, k in r[5] if s == 'izor'})
 
 LOCAL = os.environ.get('CTW_OBS_LOCAL')    # tests only: answer from saved files instead of the network
 def get(url, timeout=40):
@@ -253,7 +260,7 @@ def amp_series(png_path, lm):
             if k in v: v[k] = round(v[k], 1)
         for k, (lo, hi) in {'wspd': (0, 120), 'wgust': (0, 160), 'tair': (-30, 45), 'pst': (750, 1060), 'rh': (0, 101)}.items():
             if k in v and not (lo <= v[k] <= hi): del v[k]
-        if 'wgust' in v and 'wspd' in v and v['wgust'] < v['wspd'] - 1: del v['wgust']
+        if 'wgust' in v and 'wspd' in v and v['wgust'] < v['wspd'] - 1: del v['wspd']   # a misread mean (the gust line is thicker and reliable)
         if 'wdir' in v and 'wspd' not in v and 'wgust' not in v: del v['wdir']
         if v: clean[str(slot)] = v
     return clean, tlast
@@ -314,9 +321,56 @@ for aid, fname in ARSO.items():
         print(f'ARSO {aid}: {dt.datetime.fromtimestamp(t, ZG):%d.%m. %H:%M}', rec)
     except Exception as e: errors.append(f'ARSO {aid}: {e}'); print('!! ARSO', aid, e)
 
+# ---------------- IZOR (Institute of Oceanography and Fisheries, Split) real-time stations, every 5–10 min ----------------
+hist.setdefault('izor', {})
+for iid in IZOR:
+    try:
+        raw, _ = get(f'http://faust.izor.hr/autodatapub/postaja_json_r?p_pos_id={iid}&jezik=&p_grupa=')
+        rows = json.loads(raw)
+        when = next((r['Vrijednost'] for r in rows if r.get('par_id') == 0), None)
+        t = int(dt.datetime.strptime(when, '%d.%m.%y %H:%M').replace(tzinfo=ZG).timestamp())
+        val_ = {r.get('par_id'): r.get('Vrijednost') for r in rows}
+        rec = {}
+        if isinstance(val_.get(6), (int, float)): rec['wspd'] = round(val_[6] * KN, 1)
+        if isinstance(val_.get(10), (int, float)): rec['wdir'] = round(val_[10])
+        for k, pid_ in (('tair', 1), ('rh', 3), ('pres', 5)):
+            if isinstance(val_.get(pid_), (int, float)): rec[k] = val_[pid_]
+        if rec: hist['izor'].setdefault(iid, {})[str(t)] = rec
+        print(f'IZOR {iid}: {dt.datetime.fromtimestamp(t, ZG):%d.%m.%Y %H:%M}', rec)
+    except Exception as e: errors.append(f'IZOR {iid}: {e}'); print('!! IZOR', iid, e)
+
+# ---------------- DHMZ sea temperature (more_n.xml: a few readings a day) ----------------
+SEA = {'Crikvenica': 's:Crikvenica', 'Dubrovnik': 's:Dubrovnik', 'Komiža': 's:Komiža', 'Mali Losinj': 's:Mali Lošinj', 'Malinska': 's:Malinska',
+       'Opatija': 's:Opatija', 'Pula': 's:Pula-aerodrom', 'Rab': 's:Rab', 'Rovinj-Sv.Ivan n/p': 's:Sv. Ivan na pučini - svjetionik',
+       'Šibenik': 's:Šibenik', 'Zadar': 's:Zadar', 'Split': 's:Split-Marjan', 'Hvar': 's:Hvar', 'Lastovo': 's:Lastovo'}
+hist.setdefault('sea', {})
+try:
+    raw, _ = get('https://vrijeme.hr/more_n.xml')
+    root = ET.fromstring(raw)
+    day = dt.datetime.strptime(root.findtext('Datum').strip(), '%d.%m.%Y').replace(tzinfo=ZG)
+    rows = root.findall('Podatci')
+    hours = [int(x.text) for x in rows[0].findall('Termin')]
+    n = 0
+    for r in rows[1:]:
+        pid = SEA.get((r.findtext('Postaja') or '').strip())
+        if not pid: continue
+        for hh, x in zip(hours, r.findall('Termin')):
+            v = num(x.text)
+            if v is not None and 2 <= v <= 35:
+                hist['sea'].setdefault(pid, {})[str(int((day + dt.timedelta(hours=hh)).timestamp()))] = {'sst': v}; n += 1
+    print(f'Temperatura mora: {n} mjerenja')
+except Exception as e: errors.append(f'temperatura mora: {e}'); print('!! temperatura mora', e)
+
+# the last time every source answered – kept beyond the 7 days, so a place silent for months can still say since when
+seen_feed = hist.setdefault('seen_feed', {})
+for src, store in (('buoy', 'buoys'), ('xml', 'stations'), ('amp', 'amp'), ('metar', 'metar'), ('arso', 'arso'), ('izor', 'izor')):
+    for key, ser in hist.get(store, {}).items():
+        ts = [int(t) for t, v in ser.items() if v and int(t) <= now + 900]
+        if ts: seen_feed[f'{src}:{key}'] = max(seen_feed.get(f'{src}:{key}', 0), max(ts))
+
 # keep 7 days
 cut = now - 7 * 24 * H
-for grp in ('buoys', 'stations', 'amp', 'metar', 'arso'):
+for grp in ('buoys', 'stations', 'amp', 'metar', 'arso', 'sea', 'izor'):
     for k in list(hist.get(grp, {})):
         # 10-minute values: all of the last 24 h, older ones every 30 min (enough for scoring and the 72 h graphs)
         hist[grp][k] = {t: v for t, v in hist[grp][k].items() if int(t) >= cut and (grp != 'amp' or int(t) >= now - 24 * H or int(t) % 1800 == 0)}
@@ -350,6 +404,7 @@ def feed_series(src, key):
 def newest(s, need=None):
     for t in sorted((int(x) for x in s), reverse=True):
         r = s[str(t)]
+        if not r or t > now + 900: continue
         if need is None or any(r.get(k) is not None for k in need): return t, r
     return None, None
 
@@ -362,6 +417,7 @@ for pid, name, kind, lat, lon, feeds in REGISTRY:
         if t: cand.append((t, src, key, r))
     anyt = [newest(feed_series(s, k))[0] for s, k in feeds]
     anyt = [t for t in anyt if t]
+    anyt += [seen_feed[f'{s_}:{k_}'] for s_, k_ in feeds if f'{s_}:{k_}' in seen_feed]
     if anyt: seen[pid] = max(seen.get(pid, 0), max(anyt))
     pl = {'id': pid, 'name': name, 'kind': kind, 'lat': lat, 'lon': lon, 'h': 3 if kind == 'buoy' else 10,
           'src': [s + ':' + k for s, k in feeds]}
@@ -374,7 +430,7 @@ for pid, name, kind, lat, lon, feeds in REGISTRY:
             pl['t'] = t; pl.update({k: r[k] for k in ('wspd', 'wgust', 'wdir') if r.get(k) is not None})
         places.append(pl); continue
     # the freshest wind wins; at equal age the 10-minute graph (it has gusts) before the hourly XML
-    order = {'amp': 0, 'buoy': 1, 'arso': 2, 'metar': 3, 'xml': 4}
+    order = {'amp': 0, 'buoy': 1, 'izor': 2, 'arso': 3, 'metar': 4, 'xml': 5}
     t, src, key, _ = max(live, key=lambda c: (c[0] // 600, -order[c[1]]))
     s = feed_series(src, key)
     v = latest_each(s, t) if src in ('buoy', 'amp') else dict(s[str(t)])
@@ -398,6 +454,11 @@ for pid, name, kind, lat, lon, feeds in REGISTRY:
     if old3h and v.get('rh') is not None: pl['drh3'] = round(v['rh'] - old3h['rh'])
     pl.pop('pst', None)
     places.append(pl)
+# sea temperature: changes slowly – the newest reading of the last 24 h
+for pl in places:
+    if pl.get('sst') is not None: continue
+    t, r = newest(hist['sea'].get(pl['id'], {}))
+    if t and now - t <= 24 * H: pl['sst'] = r['sst']; pl['sst_t'] = t
 live_places = [p for p in places if not p.get('off')]
 print(f'Mjesta: {len(live_places)} javlja se, {len(places) - len(live_places)} ne javlja se:',
       ', '.join(f"{p['name']} (od {dt.datetime.fromtimestamp(p['seen'], ZG):%d.%m. %H:%M})" if p.get('seen') else p['name'] for p in places if p.get('off')))
@@ -457,9 +518,9 @@ BINS = (('0-12', 0, 12), ('12-24', 12, 24), ('24-48', 24, 49))
 def measured(pid, t):
     """measured wind at the full hour t as a vector (u, v toward which it blows, kn) + speed; buoys brought from 3 m to 10 m.
     Every source of the place is tried: 10-minute value at the hour first, then hourly XML, then the nearest METAR/ARSO."""
-    for src, key in sorted(FEEDS.get(pid, []), key=lambda f: {'amp': 0, 'buoy': 1, 'xml': 2, 'arso': 3, 'metar': 4}[f[0]]):
+    for src, key in sorted(FEEDS.get(pid, []), key=lambda f: {'amp': 0, 'buoy': 1, 'xml': 2, 'izor': 3, 'arso': 4, 'metar': 5}[f[0]]):
         s = feed_series(src, key)
-        v = s.get(str(t)) if src != 'metar' and src != 'arso' else at(s, t, tol=20 * 60, key='wspd')
+        v = s.get(str(t)) if src in ('amp', 'buoy', 'xml') else at(s, t, tol=20 * 60, key='wspd')
         if not v or v.get('wspd') is None: continue
         sp = v['wspd'] * (U3_10 if src == 'buoy' else 1)
         if sp < 0.5: return (0.0, 0.0, 0.0)
@@ -539,20 +600,21 @@ series = {}
 KEEP = ('wspd', 'wgust', 'wdir', 'pres', 'tair', 'rh', 'hs', 'hmax', 'tp', 'vdir', 'sst')
 for pid, name, kind, lat, lon, feeds in REGISTRY:
     out = {}
-    for src, key in sorted(feeds, key=lambda f: {'buoy': 0, 'amp': 1, 'xml': 2, 'arso': 3, 'metar': 4}[f[0]]):
+    for src, key in sorted(feeds, key=lambda f: {'buoy': 0, 'amp': 1, 'izor': 2, 'xml': 3, 'arso': 4, 'metar': 5}[f[0]]):
         have = sorted(int(x) for x in out)
         for t_, v in sorted(feed_series(src, key).items()):
             ti = int(t_)
             if ti < now - 72 * H: continue
             if src in ('buoy', 'amp') and ti % 1800: continue            # every 30 min is enough for the graphs
-            if src not in ('buoy', 'amp') and any(abs(ti - h) < 25 * 60 for h in have): continue   # already covered
+            if t_ not in out and src not in ('buoy', 'amp') and any(abs(ti - h) < 25 * 60 for h in have): continue   # already covered
+            # (at the same full hour the hourly XML still fills in what the graph lacks: sea-level pressure)
             r = {k: v[k] for k in KEEP if v.get(k) is not None}
             if r: out.setdefault(t_, {}).update({k: x for k, x in r.items() if k not in out.get(t_, {})})
     if out: series[pid] = dict(sorted(out.items(), key=lambda kv: int(kv[0])))
 
 json.dump(hist, open(os.path.join(OUT, 'history.json'), 'w'), separators=(',', ':'))
 json.dump({'created': int(now), 'places': places, 'signals': signals, 'series': series, 'errors': errors, 'skill': SKILL, 'grads': GRADS,
-           'note': 'DHMZ izvorni nekontrolirani podaci (plutače i automatske postaje očitane s grafova, plutače vjetar na 3 m); METAR (aerodromi); ARSO (Koper, Portorož).'},
+           'note': 'DHMZ izvorni nekontrolirani podaci (plutače i automatske postaje očitane s grafova, plutače vjetar na 3 m); METAR (aerodromi); ARSO (Koper, Portorož); IZOR.'},
           open(os.path.join(OUT, 'obs.json'), 'w'), separators=(',', ':'), ensure_ascii=False)
 print(f'Mjesta: {len(places)} ({len(live_places)} javlja se), signali: {len(signals)}', '|', ' · '.join(s['title'] for s in signals))
 for p in live_places[:60]: print('  ', p['name'], p.get('by'), {k: p.get(k) for k in ('wspd', 'wgust', 'wdir', 'pres', 'dp3', 'hs', 'tair', 'rh')})

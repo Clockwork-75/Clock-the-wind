@@ -512,3 +512,8 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
 
 #tab-analysis td.bad{background:#c0392b66}#tab-analysis td.mid{background:#e6b22255}#tab-analysis table.obst td small{display:block;font-size:10px;opacity:.85}
 .obsm u.dir{background:#8e44ad}
+.obsm.off{opacity:.6}
+.obsm.off b{color:#c3ccd8;font-weight:600}
+.obsm.off i.calm{border-color:#8a96a8;border-style:dashed}
+.obsm.off:before{background:#6b7686 !important}
+.obspop p.warn{margin:6px 0;color:#ffb36b}

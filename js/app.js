@@ -188,6 +188,8 @@ const fmtTime = (t, withDay = true) => {
   const dayIdx = new Date(d.toLocaleString('en-US', { timeZone: TZ })).getDay();
   return (withDay ? `${DAYS[dayIdx]} ${g('day')}.${g('month')}. ` : '') + `${g('hour')}:${g('minute')}`;
 };
+// a date that may be long ago ("ne javlja se od 24.06. 08:00"; the year only when it is not this year)
+const fmtDate = t => { const p = new Intl.DateTimeFormat('hr-HR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(t)); const g = k => (p.find(x => x.type === k) || {}).value; return `${g('day')}.${g('month')}.${g('year') !== String(new Date().getFullYear()) ? g('year') + '.' : ''} ${g('hour')}:${g('minute')}`; };
 // model run time, shown in local (Croatian) time like every other time in the app – e.g. the 00z run is "09.11. 01h"
 const fmtRun = t => { const p = new Intl.DateTimeFormat('hr-HR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', hour12: false }).formatToParts(new Date(t)); const g = k => (p.find(x => x.type === k) || {}).value; return `${g('day')}.${g('month')}. ${g('hour')}h`; };
 const raceStart = () => course.start || defaultStart();
@@ -1724,6 +1726,8 @@ async function loadObs(force = false) {
     const r = await fetch(OBS_URL + '?t=' + Math.floor(Date.now() / 300000), { cache: 'no-cache' });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const o = await r.json(); o._got = Date.now(); state.obs = o;
+    // a place whose sources do not answer stays on the map (grey) but is never used for scoring, MOJA or signals
+    for (const p of o.places || []) if (p.off) p.stale = true;
     try { localStorage.setItem('ctw.obs', JSON.stringify(o)); } catch { }
   } catch (e) {
     if (!state.obs) { try { state.obs = JSON.parse(localStorage.getItem('ctw.obs')); } catch { } }
@@ -1771,6 +1775,11 @@ function drawObs() {
   if (!map.hasLayer(obsLayer)) obsLayer.addTo(map);
   const o = state.obs, f = state.wind;
   for (const p of o.places) {
+    if (p.off) {   // the source does not answer: grey, "ne javlja se od …" in the popup
+      L.marker([p.lat, p.lon], { pane: 'routes', icon: L.divIcon({ className: 'obsicon', html: `<div class="obsm ${p.kind} off"><i class="calm"></i><b>–</b></div>`, iconSize: [0, 0] }) })
+        .on('click', () => showObs(p)).addTo(obsLayer);
+      continue;
+    }
     const col = p.stale ? '#8a96a8' : speedColor(p.wspd || 0);
     const err = obsModelErr(p, f);
     const lab = `${p.wspd != null ? Math.round(p.wspd) : '–'}${p.wgust != null ? '/' + Math.round(p.wgust) : ''}`;
@@ -1783,6 +1792,7 @@ function drawObs() {
   const rank = obsRank().slice(0, 4);
   const sig = (o.signals || []).slice(0, 5);
   card.innerHTML = `<div class="oh"><b>Sada</b> · izmjereno ${fmtTime(o.created * 1000, false)} <small>(prije ${age} min)</small><button class="x" aria-label="Zatvori">×</button></div>
+    <div class="or"><small>Mjesta: ${o.places.filter(p => !p.off).length} se javlja${o.places.some(p => p.off) ? ` · ${o.places.filter(p => p.off).length} ne javlja se (siva)` : ''}</small></div>
     ${rank.length ? `<div class="or"><small>Najbliže mjerenjima sada (cijeli vjetar: snaga + smjer):</small> ${rank.map((r, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)} kn${r.dir != null ? ` · ${Math.round(r.dir)}°` : ''}</span>`).join('')}</div>` : ''}
     ${[['24h', 'Zadnja 24 h'], ['7d', 'Zadnjih 7 dana']].map(([k, l]) => { const r = ((o.skill || {})[k] || []).filter(x => modelById(x.id)); return r.length ? `<div class="or"><small>${l}:</small> ${r.slice(0, 4).map((x, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(x.id)}"></i>${modelById(x.id).name} ±${x.mae.toFixed(1)}${x.dir != null ? ` · ${x.dir}°` : ''}</span>`).join('')}</div>` : ''; }).join('')}
     ${sig.map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="os none"><small>Nema posebnih signala u mreži mjerenja.</small></div>'}`;
@@ -1809,7 +1819,19 @@ function showObs(p) {
   const dirTxt = d => d == null ? '–' : `${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(d / 45) % 8]} ${Math.round(d)}°`;
   const err = obsModelErr(p, state.wind), mname = modelById(state.modelId).name;
   const row = (l, v) => v == null || v === '' ? '' : `<tr><td>${l}</td><td><b>${v}</b></td></tr>`;
-  const html = `<div class="obspop"><b>${p.name}</b> <small>${p.kind === 'buoy' ? 'plutača DHMZ' : p.kind === 'lighthouse' ? 'svjetionik' : 'postaja'} · ${fmtTime(p.t * 1000, false)}${p.stale ? ' · <span class="warn">staro mjerenje</span>' : ''}</small>
+  const SRC = { amp: 'DHMZ automatska postaja (10 min)', xml: 'DHMZ (satno)', buoy: 'DHMZ plutača', metar: 'METAR (aerodrom)', arso: 'ARSO', izor: 'IZOR (Institut za oceanografiju)' };
+  const srcs = [...new Set((p.src || []).map(x => SRC[x.split(':')[0]] || x))].join(' · ');
+  const kindTxt = p.kind === 'buoy' ? 'plutača DHMZ' : p.kind === 'lighthouse' ? 'svjetionik' : 'postaja';
+  if (p.off) {
+    const recent = p.seen && Date.now() / 1000 - p.seen < 3 * 3600;
+    const html = `<div class="obspop"><b>${p.name}</b> <small>${kindTxt}</small>
+      <p class="warn">${recent ? 'Javlja se, ali trenutno bez podataka o vjetru.' : p.seen ? `Ne javlja se od ${fmtDate(p.seen * 1000)}.` : 'Ne javlja se.'}</p>
+      ${p.wspd != null && p.t ? `<small class="muted">Zadnji vjetar: ${Math.round(p.wspd)} kn ${dirTxt(p.wdir)} (${fmtDate(p.t * 1000)})</small><br>` : ''}
+      <small class="muted">Izvori: ${srcs}. Aplikacija ih pita pri svakom osvježavanju – čim se jave, mjesto se vraća samo.</small></div>`;
+    L.popup({ maxWidth: 320, className: 'obspopup' }).setLatLng([p.lat, p.lon]).setContent(html).openOn(map);
+    return;
+  }
+  const html = `<div class="obspop"><b>${p.name}</b> <small>${kindTxt} · ${fmtTime(p.t * 1000, false)}${p.stale ? ' · <span class="warn">staro mjerenje</span>' : ''}</small>
     <table>${row('Vjetar', p.wspd != null ? `${p.wspd.toFixed(0)} kn ${dirTxt(p.wdir)}${p.h === 3 ? ' <small>(3 m)</small>' : ''}` : null)}${row('Udari', p.wgust != null ? p.wgust.toFixed(0) + ' kn' : null)}
     ${row(mname, err ? `${err.fs.toFixed(0)} kn ${dirTxt(err.fdir)} <small>(greška ${err.vec.toFixed(0)} kn${err.dir != null ? `, smjer ${Math.round(err.dir)}°` : ''}${p.h === 3 ? '; usporedba na 10 m' : ''})</small>` : null)}
     ${row('Tlak', p.pres != null ? `${p.pres.toFixed(1)} hPa${p.dp3 != null ? ` <small>(${p.dp3 > 0 ? '+' : ''}${p.dp3.toFixed(1)} u 3 h)</small>` : ''}` : null)}
@@ -1821,7 +1843,7 @@ function showObs(p) {
     ${sparkline(sr, ['pres'], { title: 'Tlak (hPa)', colors: ['#c9a2ff'], dec: 0, min: 4 })}
     ${p.kind === 'buoy' ? sparkline(sr, ['hs', 'hmax'], { title: 'Valovi (m)', colors: ['#5ab0ff', '#ff5a8a'], zero: true, dec: 1, min: 1 }) : ''}
     ${sparkline(sr, ['tair'], { title: 'Temperatura zraka (°C)', colors: ['#ff8a5a'], dec: 0, min: 2 })}
-    <small class="muted">DHMZ, izvorni nekontrolirani podaci${p.kind === 'buoy' ? '; plutača očitana s grafa' : ''}.</small></div>`;
+    <small class="muted">Izvori: ${srcs}${p.by && (p.src || []).length > 1 ? ` – vjetar sada iz: ${SRC[p.by] || p.by}` : ''}. Izvorni nekontrolirani podaci${p.kind === 'buoy' ? '; plutača očitana s grafa' : (p.src || []).some(x => x.startsWith('amp:')) ? '; automatska postaja očitana s grafa' : ''}.</small></div>`;
   L.popup({ maxWidth: 320, className: 'obspopup' }).setLatLng([p.lat, p.lon]).setContent(html).openOn(map);
 }
 $('#ovObs').onclick = async () => {
@@ -2210,7 +2232,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 4.3 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 4.4 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2463,7 +2485,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 4.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 4.4 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>
@@ -2595,4 +2617,4 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
 })();
 window.ctw = { state, settings, course, map,
   fn: { viewCheck, courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
-    markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };
+    showObs: p => showObs(p), markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };

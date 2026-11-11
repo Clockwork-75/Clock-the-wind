@@ -480,9 +480,10 @@ function setTime(t, fromSlider = false) {
   const ended = !!(state.wind && state.time > state.wind.validUntil + 30 * 60000);
   const notYet = !!(state.wind && state.wind.strictTime && state.time < state.wind.times[0] - 30 * 60000);
   $('#tlInfo').textContent = `${m ? m.name : ''}${run ? ' run ' + fmtRun(run.runInit) : ''} · ${relTxt}${ended ? ' · IZVAN dosega modela' : ''}`;
+  // the wind picture first and on its own: whatever else fails below, the map shows the wind of this moment
+  try { wxLayer.draw(); } catch (e) { noteErr(e); }
   showEnded(ended, m, notYet);
   drawTimeline();
-  wxLayer.draw();
   updateBoats();
   updatePointCard();
 }
@@ -2207,7 +2208,7 @@ const replaySpeed = () => REPLAY_SPEEDS.includes(settings.replaySpeed) ? setting
 const speedLabel = v => v >= 300 ? `${v / 60} min/s` : `${v} s/s`;
 // how long the whole replay takes at speed v (from the first start to the last finish)
 const replayDur = v => { const R = replayRange(); if (!R) return ''; const m = (R.t1 - R.t0) / v / 60000; return m < 1 ? `${Math.round(m * 60)} s` : m < 90 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1).replace('.', ',')} h`; };
-const rp = { on: false, raf: 0, last: 0, lastFull: 0, every: 250, full: 0 };
+const rp = { on: false, raf: 0, last: 0, lastFull: 0, every: 250, full: 0, pend: false, pendAt: 0, same: 0, heal: 0 };
 // the last errors on this device (shown by Postavke → Provjera prikaza)
 const errLog = [];
 function noteErr(e) { const m = (e && (e.message || e.reason && e.reason.message || e.reason)) || String(e); errLog.push(`${fmtTime(Date.now(), false)} ${String(m).slice(0, 120)}`); if (errLog.length > 6) errLog.shift(); console.error(e); }
@@ -2232,7 +2233,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 4.4 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 4.5 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2250,7 +2251,7 @@ function viewCheck() {
   wxLayer.draw(); const h0 = hash();
   const t0 = st.time; setTime(t0 + 2 * H); const h1 = hash(); setTime(t0);
   L.push(`Slika vjetra: platno ${cv ? cv.width + '×' + cv.height : 'nema'}, obojenih uzoraka ${h0[1]} · nacrtano za +2 h ${h0[0] === h1[0] ? 'ISTO' : 'drugačije'}`);
-  L.push(`Replay: ${rp.on ? 'radi' : 'stoji'} · iscrtavanja ${rp.full} · svakih ${Math.round(rp.every)} ms · brzina ${replaySpeed()} s/s`);
+  L.push(`Replay: ${rp.on ? 'radi' : 'stoji'} · iscrtavanja ${rp.full} · obnova platna ${rp.heal} · svakih ${Math.round(rp.every)} ms · brzina ${replaySpeed()} s/s`);
   L.push(errLog.length ? 'Greške: ' + errLog.join(' | ') : 'Greške: nema');
   return L;
 }
@@ -2269,8 +2270,28 @@ function replayPlay() {
   if (playing) { clearInterval(playing); playing = null; }
   if (boatPopup) map.closePopup(boatPopup);
   if (state.time >= R.t1 || state.time < R.t0) setTime(R.t0);
-  rp.on = true; rp.last = performance.now(); rp.lastFull = 0;
+  rp.on = true; rp.last = performance.now(); rp.lastFull = 0; rp.pend = false; rp.same = 0; rp.dh = rp.ph = null; rp.heal = 0;
   clearInterval(rp.raf);
+  // full redraw (wind colours, arrows, timeline). Made inside the browser's own drawing turn (requestAnimationFrame) so the
+  // screen takes it over; then checked: if the wind DATA under the view changed but the canvas pixels did not, the canvas
+  // has stopped accepting drawing (real Safari, long replays) – it is replaced by a fresh one and drawn again
+  const full = () => {
+    if (!rp.pend) return; rp.pend = false;
+    if (!rp.on && state.time < R.t1) return;
+    const a = performance.now(); rp.lastFull = a;
+    try { followRouteWind(state.time); } catch (e) { noteErr(e); }
+    try { setTime(state.time); rp.full++; } catch (e) { noteErr(e); }
+    try {
+      if (state.colors !== false || state.arrows !== 'none') {
+        const dh = wxLayer.dataHash(), ph = wxLayer.pixelHash();
+        rp.same = rp.dh != null && dh !== rp.dh && ph === rp.ph ? rp.same + 1 : 0;
+        rp.dh = dh; rp.ph = ph;
+        if (rp.same >= 2 && rp.heal < 5) { rp.heal++; rp.same = 0; noteErr(new Error('slika vjetra se nije mijenjala – platno obnovljeno')); wxLayer.renew(); wxLayer.draw(); rp.ph = wxLayer.pixelHash(); }
+      }
+      wxLayer.present();
+    } catch (e) { noteErr(e); }
+    const cost = performance.now() - a; rp.every = Math.max(250, Math.min(1500, cost * 2.5));   // leave time for the boats
+  };
   const tick = () => {
     const now = performance.now();
     if (!rp.on) return clearInterval(rp.raf);
@@ -2278,14 +2299,11 @@ function replayPlay() {
     // screen): earlier each step was capped at 0.1 s, so slow redraws made the whole race crawl
     const dt = Math.min(1000, now - rp.last); rp.last = now;
     const t = Math.min(R.t1, state.time + dt * replaySpeed());
-    if (now - rp.lastFull > rp.every || t >= R.t1) {                              // full redraw: wind colours, arrows, particles' field
-      rp.lastFull = now;
-      try { followRouteWind(t); } catch (e) { noteErr(e); }
-      try { setTime(t); rp.full++; } catch (e) { noteErr(e); state.time = t; }   // never stops the replay or freezes the map
-      const cost = performance.now() - now; rp.every = Math.max(250, Math.min(1500, cost * 2.5));   // leave time for the boats
-    }
-    else { state.time = t; updateBoats(); }                                       // boats every frame
-    if (t >= R.t1) { rp.on = false; clearInterval(rp.raf); renderReplayBar(); }
+    state.time = t;
+    if (t >= R.t1) { rp.on = false; clearInterval(rp.raf); rp.pend = true; full(); renderReplayBar(); return; }
+    if (rp.pend) { if (now - rp.pendAt > 400) full(); else updateBoats(); }      // no drawing turn came (background window): draw now
+    else if (now - rp.lastFull > rp.every) { rp.pend = true; rp.pendAt = now; requestAnimationFrame(full); updateBoats(); }
+    else updateBoats();                                                           // boats every frame
   };
   rp.raf = setInterval(tick, 33);   // timer (not rAF) so the race keeps running in a background window too
   renderReplayBar();
@@ -2485,7 +2503,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 4.4 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 4.5 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>
@@ -2617,4 +2635,4 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
 })();
 window.ctw = { state, settings, course, map,
   fn: { viewCheck, courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
-    showObs: p => showObs(p), viewCheckLite: () => ({ full: rp.full, every: Math.round(rp.every), on: rp.on, err: errLog.slice(-2) }), markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };
+    showObs: p => showObs(p), viewCheckLite: () => ({ full: rp.full, every: Math.round(rp.every), on: rp.on, heal: rp.heal, err: errLog.slice(-2) }), wx: () => wxLayer, markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };

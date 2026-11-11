@@ -49,12 +49,14 @@ function makeCanvasPane(map, name, z) {
   const pane = map.createPane(name);
   pane.style.zIndex = z;
   pane.style.pointerEvents = 'none';
-  const canvas = L.DomUtil.create('canvas', 'ctw-canvas', pane);
-  const ctx = canvas.getContext('2d');
+  const p = { pane };
+  const make = () => { p.canvas = L.DomUtil.create('canvas', 'ctw-canvas', pane); p.ctx = p.canvas.getContext('2d'); };
+  make();
   // the backing store is (re)allocated only when the size really changes: assigning canvas.width – even the same value –
   // allocates a new full-screen bitmap, and iOS Safari, with its hard canvas-memory limit, stops drawing into the canvas
   // when the replay redraws several times a second (the last picture stayed frozen on the map)
-  const fit = () => {
+  p.fit = () => {
+    const { canvas, ctx } = p;
     const size = map.getSize(), dpr = window.devicePixelRatio || 1;
     const W = Math.round(size.x * dpr), H = Math.round(size.y * dpr);
     if (canvas.width !== W || canvas.height !== H) {
@@ -64,7 +66,9 @@ function makeCanvasPane(map, name, z) {
     L.DomUtil.setPosition(canvas, map.containerPointToLayerPoint([0, 0]));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
-  return { pane, canvas, ctx, fit };
+  // a canvas the browser stopped painting into (seen on real Safari during long replays) is replaced by a fresh one
+  p.renew = () => { const old = p.canvas; old.width = old.height = 0; old.remove(); make(); p.fit(); };
+  return p;
 }
 
 // latitude for each screen row (mercator) + linear longitude
@@ -87,9 +91,36 @@ export class WeatherLayer {
     const redraw = () => this.draw();
     map.on('moveend zoomend resize viewreset', redraw);
     map.on('move', () => { if (!this._raf) this._raf = requestAnimationFrame(() => { this._raf = 0; this.draw(); }); });
-    map.on('zoomstart', () => { this.p.canvas.style.opacity = 0; });
-    map.on('zoomend', () => { this.p.canvas.style.opacity = 1; });
+    map.on('zoomstart', () => { this.p.pane.style.opacity = 0; });
+    map.on('zoomend', () => { this.p.pane.style.opacity = ''; });
   }
+  // ---- guards for the replay: is what the canvas holds really following the data? ----
+  // the wind the picture must show: a coarse fingerprint of the field over the view at the time on the map
+  dataHash() {
+    const { map, state } = this, f = state.wind; if (!f) return '';
+    const size = map.getSize(), out = [], a = [];
+    for (let j = 1; j <= 4; j++) for (let i = 1; i <= 5; i++) {
+      const ll = map.containerPointToLatLng([size.x * i / 6, size.y * j / 5]);
+      sample(f, ['u', 'v'], ll.lat, ll.lng, state.time, out);
+      a.push(out[0] === out[0] ? Math.round(Math.hypot(out[0], out[1]) / 1.5) + ':' + Math.round(Math.atan2(out[0], out[1]) * 12 / Math.PI) : '-');
+    }
+    return a.join(',');
+  }
+  // what the canvas really holds: three pixel rows read back (this also makes the browser finish its pending drawing)
+  pixelHash() {
+    const { canvas, ctx } = this.p; let h = 7;
+    try {
+      for (const k of [0.3, 0.5, 0.7]) {
+        const d = ctx.getImageData(0, Math.floor(canvas.height * k), canvas.width, 1).data;
+        for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7 + d[i + 3]) % 1000000007;
+      }
+    } catch (e) { return 'err:' + e.message; }
+    return String(h);
+  }
+  // nudge the compositor: the pane is marked changed, so the screen takes over the new picture also when the browser
+  // would not notice a redraw made from a timer
+  present() { const st = this.p.canvas.style; this._flip = !this._flip; st.outline = this._flip ? '1px solid transparent' : '0 solid transparent'; }
+  renew() { this.p.renew(); this.off = document.createElement('canvas'); this.offRain = null; }
   draw() {
     const { map, state } = this; const { ctx } = this.p;
     this.p.fit();
@@ -534,9 +565,36 @@ export class DepthLayer {
     this.map = map; this.state = state;
     this.p = makeCanvasPane(map, 'depth', 330);
     map.on('moveend zoomend resize viewreset', () => this.draw());
-    map.on('zoomstart', () => { this.p.canvas.style.opacity = 0; });
-    map.on('zoomend', () => { this.p.canvas.style.opacity = 1; });
+    map.on('zoomstart', () => { this.p.pane.style.opacity = 0; });
+    map.on('zoomend', () => { this.p.pane.style.opacity = ''; });
   }
+  // ---- guards for the replay: is what the canvas holds really following the data? ----
+  // the wind the picture must show: a coarse fingerprint of the field over the view at the time on the map
+  dataHash() {
+    const { map, state } = this, f = state.wind; if (!f) return '';
+    const size = map.getSize(), out = [], a = [];
+    for (let j = 1; j <= 4; j++) for (let i = 1; i <= 5; i++) {
+      const ll = map.containerPointToLatLng([size.x * i / 6, size.y * j / 5]);
+      sample(f, ['u', 'v'], ll.lat, ll.lng, state.time, out);
+      a.push(out[0] === out[0] ? Math.round(Math.hypot(out[0], out[1]) / 1.5) + ':' + Math.round(Math.atan2(out[0], out[1]) * 12 / Math.PI) : '-');
+    }
+    return a.join(',');
+  }
+  // what the canvas really holds: three pixel rows read back (this also makes the browser finish its pending drawing)
+  pixelHash() {
+    const { canvas, ctx } = this.p; let h = 7;
+    try {
+      for (const k of [0.3, 0.5, 0.7]) {
+        const d = ctx.getImageData(0, Math.floor(canvas.height * k), canvas.width, 1).data;
+        for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7 + d[i + 3]) % 1000000007;
+      }
+    } catch (e) { return 'err:' + e.message; }
+    return String(h);
+  }
+  // nudge the compositor: the pane is marked changed, so the screen takes over the new picture also when the browser
+  // would not notice a redraw made from a timer
+  present() { const st = this.p.canvas.style; this._flip = !this._flip; st.outline = this._flip ? '1px solid transparent' : '0 solid transparent'; }
+  renew() { this.p.renew(); this.off = document.createElement('canvas'); this.offRain = null; }
   draw() {
     const { map, state } = this; const { ctx } = this.p;
     this.p.fit();
@@ -561,9 +619,36 @@ export class ChartLayer {
     // the vector polygons alone decide where land is (no 135 m staircase)
     this.lutVec = this.lut.slice(); this.lutVec.set([...DEPTH_STYLE[0][1], 255], 0);
     map.on('moveend zoomend resize viewreset', () => this.draw());
-    map.on('zoomstart', () => { this.p.canvas.style.opacity = 0; });
-    map.on('zoomend', () => { this.p.canvas.style.opacity = 1; });
+    map.on('zoomstart', () => { this.p.pane.style.opacity = 0; });
+    map.on('zoomend', () => { this.p.pane.style.opacity = ''; });
   }
+  // ---- guards for the replay: is what the canvas holds really following the data? ----
+  // the wind the picture must show: a coarse fingerprint of the field over the view at the time on the map
+  dataHash() {
+    const { map, state } = this, f = state.wind; if (!f) return '';
+    const size = map.getSize(), out = [], a = [];
+    for (let j = 1; j <= 4; j++) for (let i = 1; i <= 5; i++) {
+      const ll = map.containerPointToLatLng([size.x * i / 6, size.y * j / 5]);
+      sample(f, ['u', 'v'], ll.lat, ll.lng, state.time, out);
+      a.push(out[0] === out[0] ? Math.round(Math.hypot(out[0], out[1]) / 1.5) + ':' + Math.round(Math.atan2(out[0], out[1]) * 12 / Math.PI) : '-');
+    }
+    return a.join(',');
+  }
+  // what the canvas really holds: three pixel rows read back (this also makes the browser finish its pending drawing)
+  pixelHash() {
+    const { canvas, ctx } = this.p; let h = 7;
+    try {
+      for (const k of [0.3, 0.5, 0.7]) {
+        const d = ctx.getImageData(0, Math.floor(canvas.height * k), canvas.width, 1).data;
+        for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7 + d[i + 3]) % 1000000007;
+      }
+    } catch (e) { return 'err:' + e.message; }
+    return String(h);
+  }
+  // nudge the compositor: the pane is marked changed, so the screen takes over the new picture also when the browser
+  // would not notice a redraw made from a timer
+  present() { const st = this.p.canvas.style; this._flip = !this._flip; st.outline = this._flip ? '1px solid transparent' : '0 solid transparent'; }
+  renew() { this.p.renew(); this.off = document.createElement('canvas'); this.offRain = null; }
   draw() {
     const { map, state } = this; const { ctx } = this.p;
     this.p.fit();

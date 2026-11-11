@@ -5,9 +5,9 @@ let pw; try { pw = require('playwright'); } catch { pw = require('playwright-cor
 const crypto = require('crypto');
 const base = process.argv[2] || 'http://localhost:8080/';
 (async () => {
-  for (const eng of (process.env.ENGINES || 'webkit,chromium').split(',')) {
+  for (const eng of (process.env.ENGINES || 'webkit').split(',')) {
     const b = await pw[eng].launch(eng === 'chromium' && process.env.CHROME ? { executablePath: process.env.CHROME } : {});
-    for (const [vw, vh, dpr, speed, only] of [[1180, 820, 2, 600, ['dir_arpege']], [390, 844, 3, 600, ['dir_arpege']], [1180, 820, 2, 1800, ['dir_arpege']], [1180, 820, 2, 600, null]]) {
+    for (const [vw, vh, dpr, speed, only] of [[1180, 820, 2, 600, ['dir_arpege']], [390, 844, 3, 1800, ['dir_arpege']]]) {
       const p = await b.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: dpr });
       p.on('pageerror', e => console.log('PAGE ERROR', e.message));
       await p.addInitScript(() => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'race', source: 'cloud' })); });

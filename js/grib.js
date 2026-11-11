@@ -207,7 +207,9 @@ function parseGrib2(b, o, msgs) {
       else if (b[p + 5] === 255) bitmap = null;
     } else if (sn === 7) {
       // ECMWF writes mean sea level pressure as 'pressure' (0-3-0) on the mean-sea-level surface (101)
-      const name = varGrib2(disc, prod.cat, prod.num) || (disc === 0 && prod.cat === 3 && prod.num === 0 && prod.surf === 101 ? 'mslp' : null);
+      let name = varGrib2(disc, prod.cat, prod.num) || (disc === 0 && prod.cat === 3 && prod.num === 0 && prod.surf === 101 ? 'mslp' : null);
+      // air temperature, dew point and relative humidity at 2 m (for the humidity comparison with the measurements)
+      if (!name && disc === 0 && prod.surf === 103 && Math.abs(prod.level - 2) < 0.5) name = prod.cat === 0 && prod.num === 0 ? 't2' : prod.cat === 0 && prod.num === 6 ? 'td2' : prod.cat === 1 && prod.num === 1 ? 'rh' : null;
       const isWind10 = (name === 'U' || name === 'V' || name === 'gu' || name === 'gv') ? (prod.surf === 103 && Math.abs(prod.level - 10) < 0.5) || prod.surf === 1 : true;
       if (name && isWind10) {
         let vals;
@@ -316,16 +318,20 @@ export function gribToField(msgs, bbox, id) {
     const name = m.name === 'U' ? 'u' : m.name === 'V' ? 'v' : m.name;
     const a = arr(name);
     const conv = (name === 'u' || name === 'v' || name === 'gust' || name === 'gu' || name === 'gv' || name === 'cu' || name === 'cv') ? MS2KN : name === 'mslp' ? 0.01 : 1;
+    const off = name === 't2' || name === 'td2' ? -273.15 : 0;   // K → °C
     for (let j = 0; j < ny; j++) {
       const jj = j0 + j, row = southFirst ? jj : g.nj - 1 - jj;
       for (let i = 0; i < nx; i++) {
         const ii = i0 + i, col = westFirst ? ii : g.ni - 1 - ii;
         const v = m.vals[row * g.ni + col];
-        a[t * N + j * nx + i] = v === v ? v * conv : NaN;
+        a[t * N + j * nx + i] = v === v ? v * conv + off : NaN;
       }
     }
   }
   if (!vars.u || !vars.v) throw new Error('GRIB nema vjetar na 10 m (U/V)');
+  // relative humidity from temperature and dew point (ECMWF gives these, not the humidity itself) – Magnus formula
+  if (vars.t2 && vars.td2 && !vars.rh) { const r = vars.rh = new Float32Array(T * N); for (let i = 0; i < r.length; i++) { const t = vars.t2[i], d = vars.td2[i]; r[i] = t === t && d === d ? Math.min(100, 100 * Math.exp(17.625 * d / (243.04 + d) - 17.625 * t / (243.04 + t))) : NaN; } }
+  delete vars.td2;
   // gusts given as u/v components: their strength is what the app shows
   if (vars.gu && vars.gv) { if (!vars.gust) { const g = vars.gust = new Float32Array(T * N); for (let i = 0; i < g.length; i++) g[i] = Math.hypot(vars.gu[i], vars.gv[i]); } delete vars.gu; delete vars.gv; }
   else { delete vars.gu; delete vars.gv; }

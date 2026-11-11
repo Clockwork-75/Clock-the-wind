@@ -1972,6 +1972,26 @@ function pressureHtml() {
     <tr><td>Promjena u 3 h: model − izmjereno</td><td></td>${ids.map(id => { const a = avg(td[id]); return a == null ? '<td class="na">–</td>' : `<td class="${Math.abs(a) >= 1 ? 'mid' : 'ok'}">${a > 0 ? '+' : ''}${a.toFixed(1)}</td>`; }).join('')}</tr></table></div>
     <div class="note">„Preslab” = model ima manju razliku tlaka od izmjerene → vjerojatno podcjenjuje buru/jugo (MOJA mu podiže brzine). Promjena u 3 h: ako tlak stvarno pada brže od modela (negativan broj), promjena vremena dolazi ranije ili jača nego što model kaže. Vlaga i temperatura zasad ulaze kroz signale (dolazak juga, prodor bure).</div>`;
 }
+// humidity and temperature: each model against the measured, now and over the last 3 h (does the model see the
+// moist jugo air or the cold bura air arriving?)
+function humidityHtml() {
+  const o = state.obs, s = state.set; if (!o || !s) return '';
+  const ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && (s.fields[id].vars.rh || s.fields[id].vars.t2));
+  if (!ids.length) return '';
+  const q = [], acc = {};
+  const add = (id, k, v) => { const a = (acc[id] = acc[id] || {}); (a[k] = a[k] || []).push(v); };
+  for (const p of o.places.filter(p => !p.stale && (p.rh != null || p.tair != null))) for (const id of ids) {
+    const f = s.fields[id], t = p.t * 1000, t3 = t - 3 * 3600000, has3 = t3 >= f.times[0];
+    if (p.rh != null && f.vars.rh) { sample(f, ['rh'], p.lat, p.lon, t, q); const r = q[0]; if (r === r) { add(id, 'rh', r - p.rh); if (has3 && p.drh3 != null) { sample(f, ['rh'], p.lat, p.lon, t3, q); if (q[0] === q[0]) add(id, 'drh', (r - q[0]) - p.drh3); } } }
+    if (p.tair != null && f.vars.t2) { sample(f, ['t2'], p.lat, p.lon, t, q); const x = q[0]; if (x === x) { add(id, 't', x - p.tair); if (p.dT1 != null && t - 3600000 >= f.times[0]) { sample(f, ['t2'], p.lat, p.lon, t - 3600000, q); if (q[0] === q[0]) add(id, 'dt', (x - q[0]) - p.dT1); } } }
+  }
+  const avg = a => a && a.length >= 3 ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const row = (label, k, unit, warn) => `<tr><td>${label}</td>${ids.map(id => { const a = avg((acc[id] || {})[k]); return a == null ? '<td class="na">–</td>' : `<td class="${Math.abs(a) >= warn ? 'mid' : 'ok'}">${a > 0 ? '+' : ''}${a.toFixed(1)}${unit}</td>`; }).join('')}</tr>`;
+  return `<h3>Vlaga i temperatura <small>(model − izmjereno, prosjek po plutačama i postajama)</small></h3>
+    <div class="tblwrap"><table class="obst"><tr><th></th>${ids.map(id => `<th style="color:${mcol(id)}">${modelById(id).name}</th>`).join('')}</tr>
+    ${row('Vlaga sada', 'rh', ' %', 10)}${row('Promjena vlage u 3 h', 'drh', ' %', 8)}${row('Temperatura sada', 't', ' °C', 1.5)}${row('Promjena temperature u 1 h', 'dt', ' °C', 1)}</table></div>
+    <div class="note">Vlažan zrak juga i hladan zrak bure dolaze s vjetrom. Model koji kasni s porastom vlage (negativna promjena vlage) ili s padom temperature (pozitivna promjena) vjerojatno kasni i s promjenom vjetra. Model koji ovdje dobro prati mjerenja bolje „vidi” zračnu masu koja stiže.</div>`;
+}
 // ---------------- the Analysis tab ----------------
 function renderAnalysisTab() {
   const el = $('#tab-analysis'), o = state.obs, s = state.set;
@@ -1998,6 +2018,7 @@ function renderAnalysisTab() {
     <div class="tblwrap"><table class="obst"><tr><th>Mjesto</th><th>Izmj.</th>${ids.map(id => `<th style="color:${mcol(id)}">${modelById(id).name}${id === 'moja' ? '<small>*</small>' : ''}</th>`).join('')}</tr>
     ${pl.map(p => { const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; return `<tr><td>${p.kind === 'buoy' ? '◆ ' : p.kind === 'lighthouse' ? '○ ' : ''}${p.name}</td><td><b>${x.toFixed(0)}</b>${p.wgust != null ? `<small>/${(p.wgust * (p.h === 3 ? U3_10 : 1)).toFixed(0)}</small>` : ''}<small>${p.wdir != null ? ' ' + ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(p.wdir / 45) % 8] : ''}</small></td>${ids.map(id => cell(obsModelErr(p, s.fields[id]))).join('')}</tr>`; }).join('')}</table></div>
     ${pressureHtml()}
+    ${humidityHtml()}
     <h3>Signali iz mreže mjerenja</h3>
     ${(o.signals || []).map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="note">Nema posebnih signala.</div>'}
     <div class="note">Mjerenja: DHMZ (plutače očitane s grafova, obalne postaje), zadnje ${fmtTime(o.created * 1000, false)}. Zeleno = model pogađa (greška < 4 kn), žuto = 4–8 kn, crveno = 8+ kn (kriva snaga ili krivi smjer). *MOJA je za sadašnji trenutak povučena prema ovim mjerenjima, pa ovdje nije u rangu – njezina vrijednost je u satima koji dolaze.</div>`;

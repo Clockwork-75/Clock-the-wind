@@ -33,7 +33,7 @@ const extra = new Map();
 export const registerModel = m => extra.set(m.id, m);
 export const modelById = id => MODELS.find(m => m.id === id) || MM_MODELS.find(m => m.id === id) || extra.get(id) || { id, name: id, res: '', color: '#bbb' };
 
-const WX_VARS = ['wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'precipitation', 'cape', 'lightning_potential', 'pressure_msl'];
+const WX_VARS = ['wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'precipitation', 'cape', 'lightning_potential', 'pressure_msl', 'relative_humidity_2m', 'temperature_2m'];
 const MARINE_VARS = ['wave_height', 'wave_direction', 'wave_period', 'ocean_current_velocity', 'ocean_current_direction'];
 
 export function makeGrid(bbox, step) {
@@ -123,7 +123,7 @@ async function fetchOpenMeteoModel({ id, grid, times, settings, signal, progress
   const { lats, lons } = coords(grid);
   const N = lats.length, T = times.length, BATCH = 260;
   const make = () => new Float32Array(T * N).fill(NaN);
-  const V = { u: make(), v: make(), gust: make(), precip: make(), cape: make(), lpi: make(), mslp: make() };
+  const V = { u: make(), v: make(), gust: make(), precip: make(), cape: make(), lpi: make(), mslp: make(), rh: make(), t2: make() };
   const key = settings.apiKey ? `&apikey=${encodeURIComponent(settings.apiKey.trim())}` : '';
   for (let s = 0; s < N; s += BATCH) {
     const e = Math.min(N, s + BATCH);
@@ -141,6 +141,8 @@ async function fetchOpenMeteoModel({ id, grid, times, settings, signal, progress
         if (h.cape[q] != null) V.cape[o] = h.cape[q];
         if (h.lightning_potential && h.lightning_potential[q] != null) V.lpi[o] = h.lightning_potential[q];
         if (h.pressure_msl && h.pressure_msl[q] != null) V.mslp[o] = h.pressure_msl[q];   // hPa
+        if (h.relative_humidity_2m && h.relative_humidity_2m[q] != null) V.rh[o] = h.relative_humidity_2m[q];
+        if (h.temperature_2m && h.temperature_2m[q] != null) V.t2[o] = h.temperature_2m[q];
       }
     });
     progress(e / N, `${label}: ${e}/${N} točaka`);

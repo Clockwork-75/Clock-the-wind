@@ -1731,13 +1731,25 @@ async function loadObs(force = false) {
   }
   return state.obs;
 }
-// the model on the map against what is measured now (buoy wind brought from 3 m to 10 m)
+// a model against what is measured now – the WHOLE wind: vector error (kn) = length of the difference between the
+// forecast and the measured wind arrows, so a wrong direction counts as much as a wrong speed; plus the speed error
+// (+ too strong / − too weak) and the direction error (°, only when both blow at least 5 kn)
+function measVec(p) {
+  if (p.wspd == null) return null;
+  const sp = p.h === 3 ? p.wspd * U3_10 : p.wspd;
+  if (sp < 0.5) return { u: 0, v: 0, sp: 0 };
+  if (p.wdir == null) return null;
+  const a = p.wdir * Math.PI / 180;
+  return { u: -sp * Math.sin(a), v: -sp * Math.cos(a), sp, dir: p.wdir };
+}
 function obsModelErr(p, f) {
-  if (!f || p.wspd == null || p.stale) return null;
+  if (!f || p.stale) return null;
+  const m = measVec(p); if (!m) return null;
   const o = sample(f, ['u', 'v'], p.lat, p.lon, p.t * 1000, []);
   if (o[0] !== o[0]) return null;
-  const m = Math.hypot(o[0], o[1]), meas = p.h === 3 ? p.wspd * U3_10 : p.wspd;
-  return m - meas;
+  const fs = Math.hypot(o[0], o[1]), fdir = (Math.atan2(-o[0], -o[1]) * 180 / Math.PI + 360) % 360;
+  const dd = m.sp >= 5 && fs >= 5 ? Math.abs(((fdir - m.dir) % 360 + 540) % 360 - 180) : null;
+  return { vec: Math.hypot(o[0] - m.u, o[1] - m.v), spd: fs - m.sp, dir: dd, fs, fdir };
 }
 function obsRank() {
   const o = state.obs, s = state.set; if (!o || !s) return [];
@@ -1745,9 +1757,9 @@ function obsRank() {
   const res = [];
   for (const id of s.models) {
     if (id === 'moja') continue;   // MOJA is pulled towards these very measurements – not a fair competitor here
-    const f = s.fields[id]; let n = 0, ae = 0, b = 0;
-    for (const p of pl) { const e = obsModelErr(p, f); if (e == null) continue; n++; ae += Math.abs(e); b += e; }
-    if (n >= 4) res.push({ id, mae: ae / n, bias: b / n, n });
+    const f = s.fields[id]; let n = 0, ve = 0, b = 0, sd = 0, nd = 0;
+    for (const p of pl) { const e = obsModelErr(p, f); if (!e) continue; n++; ve += e.vec; b += e.spd; if (e.dir != null) { sd += e.dir; nd++; } }
+    if (n >= 4) res.push({ id, mae: ve / n, bias: b / n, dir: nd >= 3 ? sd / nd : null, n });
   }
   return res.sort((a, b) => a.mae - b.mae);
 }
@@ -1762,8 +1774,8 @@ function drawObs() {
     const col = p.stale ? '#8a96a8' : speedColor(p.wspd || 0);
     const err = obsModelErr(p, f);
     const lab = `${p.wspd != null ? Math.round(p.wspd) : '–'}${p.wgust != null ? '/' + Math.round(p.wgust) : ''}`;
-    const showErr = err != null && Math.abs(err) >= 3 && (p.kind !== 'station' || map.getZoom() >= 9);   // the open sea always, coastal stations only zoomed in
-    const html = `<div class="obsm ${p.kind}${p.stale ? ' stale' : ''}">${p.wdir != null ? arrowSvg(p.wdir, col) : '<i class="calm"></i>'}<b>${lab}</b>${p.hs != null ? `<em>${p.hs.toFixed(1)} m</em>` : ''}${showErr ? `<u class="${err > 0 ? 'hi' : 'lo'}">${err > 0 ? '+' : ''}${Math.round(err)}</u>` : ''}</div>`;
+    const showErr = err && err.vec >= 5 && (p.kind !== 'station' || map.getZoom() >= 9);   // the open sea always, coastal stations only zoomed in
+    const html = `<div class="obsm ${p.kind}${p.stale ? ' stale' : ''}">${p.wdir != null ? arrowSvg(p.wdir, col) : '<i class="calm"></i>'}<b>${lab}</b>${p.hs != null ? `<em>${p.hs.toFixed(1)} m</em>` : ''}${showErr ? `<u class="${err.dir != null && err.dir >= 45 ? 'dir' : err.spd > 0 ? 'hi' : 'lo'}">${err.dir != null && err.dir >= 45 ? '↻' + Math.round(err.dir) + '°' : (err.spd > 0 ? '+' : '') + Math.round(err.spd)}</u>` : ''}</div>`;
     L.marker([p.lat, p.lon], { pane: 'routes', icon: L.divIcon({ className: 'obsicon', html, iconSize: [0, 0] }) })
       .on('click', () => showObs(p)).addTo(obsLayer);
   }
@@ -1771,8 +1783,8 @@ function drawObs() {
   const rank = obsRank().slice(0, 4);
   const sig = (o.signals || []).slice(0, 5);
   card.innerHTML = `<div class="oh"><b>Sada</b> · izmjereno ${fmtTime(o.created * 1000, false)} <small>(prije ${age} min)</small><button class="x" aria-label="Zatvori">×</button></div>
-    ${rank.length ? `<div class="or"><small>Najbliže mjerenjima sada:</small> ${rank.map((r, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)}${Math.abs(r.bias) >= 1.5 ? ` <small>(${r.bias > 0 ? 'precjenjuje' : 'podcjenjuje'} ${Math.abs(r.bias).toFixed(0)} kn)</small>` : ''}</span>`).join('')}</div>` : ''}
-    ${[['24h', 'Zadnja 24 h'], ['7d', 'Zadnjih 7 dana']].map(([k, l]) => { const r = ((o.skill || {})[k] || []).filter(x => modelById(x.id)); return r.length ? `<div class="or"><small>${l}:</small> ${r.slice(0, 4).map((x, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(x.id)}"></i>${modelById(x.id).name} ±${x.mae.toFixed(1)}${Math.abs(x.bias) >= 1.5 ? ` <small>(${x.bias > 0 ? '+' : ''}${x.bias.toFixed(0)})</small>` : ''}</span>`).join('')}</div>` : ''; }).join('')}
+    ${rank.length ? `<div class="or"><small>Najbliže mjerenjima sada (cijeli vjetar: snaga + smjer):</small> ${rank.map((r, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)} kn${r.dir != null ? ` · ${Math.round(r.dir)}°` : ''}</span>`).join('')}</div>` : ''}
+    ${[['24h', 'Zadnja 24 h'], ['7d', 'Zadnjih 7 dana']].map(([k, l]) => { const r = ((o.skill || {})[k] || []).filter(x => modelById(x.id)); return r.length ? `<div class="or"><small>${l}:</small> ${r.slice(0, 4).map((x, i) => `<span class="${i ? '' : 'best'}"><i style="background:${mcol(x.id)}"></i>${modelById(x.id).name} ±${x.mae.toFixed(1)}${x.dir != null ? ` · ${x.dir}°` : ''}</span>`).join('')}</div>` : ''; }).join('')}
     ${sig.map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="os none"><small>Nema posebnih signala u mreži mjerenja.</small></div>'}`;
   card.classList.remove('hidden');
   card.querySelector('.x').onclick = () => card.classList.add('hidden');
@@ -1799,7 +1811,7 @@ function showObs(p) {
   const row = (l, v) => v == null || v === '' ? '' : `<tr><td>${l}</td><td><b>${v}</b></td></tr>`;
   const html = `<div class="obspop"><b>${p.name}</b> <small>${p.kind === 'buoy' ? 'plutača DHMZ' : p.kind === 'lighthouse' ? 'svjetionik' : 'postaja'} · ${fmtTime(p.t * 1000, false)}${p.stale ? ' · <span class="warn">staro mjerenje</span>' : ''}</small>
     <table>${row('Vjetar', p.wspd != null ? `${p.wspd.toFixed(0)} kn ${dirTxt(p.wdir)}${p.h === 3 ? ' <small>(3 m)</small>' : ''}` : null)}${row('Udari', p.wgust != null ? p.wgust.toFixed(0) + ' kn' : null)}
-    ${row(mname, err != null ? `${(err + (p.h === 3 ? p.wspd * U3_10 : p.wspd)).toFixed(0)} kn <small>(${err > 0 ? '+' : ''}${err.toFixed(0)} kn${p.h === 3 ? ', 10 m' : ''})</small>` : null)}
+    ${row(mname, err ? `${err.fs.toFixed(0)} kn ${dirTxt(err.fdir)} <small>(greška ${err.vec.toFixed(0)} kn${err.dir != null ? `, smjer ${Math.round(err.dir)}°` : ''}${p.h === 3 ? '; usporedba na 10 m' : ''})</small>` : null)}
     ${row('Tlak', p.pres != null ? `${p.pres.toFixed(1)} hPa${p.dp3 != null ? ` <small>(${p.dp3 > 0 ? '+' : ''}${p.dp3.toFixed(1)} u 3 h)</small>` : ''}` : null)}
     ${row('Temperatura', p.tair != null ? `${p.tair.toFixed(1)} °C${p.dT1 != null && Math.abs(p.dT1) >= 1 ? ` <small>(${p.dT1 > 0 ? '+' : ''}${p.dT1.toFixed(1)} u 1 h)</small>` : ''}` : null)}
     ${row('Vlaga', p.rh != null ? `${Math.round(p.rh)} %${p.drh3 != null && Math.abs(p.drh3) >= 5 ? ` <small>(${p.drh3 > 0 ? '+' : ''}${p.drh3} u 3 h)</small>` : ''}` : null)}
@@ -1834,22 +1846,54 @@ function mojaStats() {
   const ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && s.fields[id].vars.u);
   const st = [];
   for (const id of ids) {
-    const f = s.fields[id]; let n = 0, ae = 0, sm = 0, sx = 0;
+    const f = s.fields[id]; let n = 0, ve = 0, sm = 0, sx = 0, ds = 0, dc = 0, nd = 0;
     for (const p of pl) {
-      const q = sample(f, ['u', 'v'], p.lat, p.lon, p.t * 1000, []); if (q[0] !== q[0]) continue;
-      const m = Math.hypot(q[0], q[1]), x = p.h === 3 ? p.wspd * U3_10 : p.wspd;
-      n++; ae += Math.abs(m - x); sm += m; sx += x;
+      const e = obsModelErr(p, f); if (!e) continue; const m = measVec(p); n++; ve += e.vec; sm += e.fs; sx += m.sp;
+      if (e.dir != null) { const sd = ((e.fdir - m.dir) % 360 + 540) % 360 - 180; ds += Math.sin(sd * Math.PI / 180); dc += Math.cos(sd * Math.PI / 180); nd++; }
     }
     if (n < 4) continue;
-    // a longer record (24 h / 7 days) from the measurements workflow, when there is one, steadies the weights
-    const long = ((o.skill || {})['24h'] || []).find(r => r.id === id) || ((o.skill || {})['72h'] || []).find(r => r.id === id);
-    const mae = long && long.n >= 40 ? 0.5 * (ae / n) + 0.5 * long.mae : ae / n;
-    st.push({ id, f, n, mae, ratio: Math.max(0.6, Math.min(1.6, sx / Math.max(1, sm))) });
+    // a systematic turn of the model's wind (°, + = the model is turned clockwise of the measured); only when it is clear
+    const dirBias = nd >= 4 && Math.hypot(ds, dc) / nd > 0.6 ? Math.max(-40, Math.min(40, Math.atan2(ds, dc) * 180 / Math.PI)) : 0;
+    // the longer record (24 h, else 3 days) of the measurements workflow steadies the weights once there is one
+    const long = ((o.skill || {})['24h'] || []).find(r => r.id === id && r.n >= 40) || ((o.skill || {})['72h'] || []).find(r => r.id === id && r.n >= 40);
+    const mae = long ? 0.5 * (ve / n) + 0.5 * long.mae : ve / n;
+    const sk = k => (((o.skill || {})[k]) || []).find(r => r.id === id && r.n >= 40);
+    st.push({ id, f, n, mae, dirBias, ratio: Math.max(0.6, Math.min(1.6, sx / Math.max(1, sm))),
+      maeShort: sk('7d_0-12') ? 0.5 * mae + 0.5 * sk('7d_0-12').mae : mae, maeLong: sk('7d_24-48') ? sk('7d_24-48').mae : mae });
   }
   if (!st.length) return null;
   const wsum = st.reduce((a, r) => a + 1 / Math.max(1, r.mae) ** 2, 0);
   st.forEach(r => { r.w = 1 / Math.max(1, r.mae) ** 2 / wsum; });
   return { st: st.sort((a, b) => b.w - a.w), pl };
+}
+// pressure: the measured bura / jugo gradients against the same gradients in each model (mean sea level pressure).
+// The wind of bura and jugo grows with the gradient: a model with a weaker gradient than measured is too weak.
+function pressureCheck() {
+  const o = state.obs, s = state.set; if (!o || !s || !o.grads) return [];
+  const out = [], q = [];
+  const mean = (f, pts, t) => { let a = 0, n = 0; for (const [la, lo] of pts) { sample(f, ['mslp'], la, lo, t, q); if (q[0] === q[0]) { a += q[0]; n++; } } return n === pts.length ? a / n : NaN; };
+  for (const g of o.grads) {
+    const row = { ...g, models: {} };
+    for (const id of s.models) {
+      const f = s.fields[id]; if (!f || isDerived(id) || !f.vars || !f.vars.mslp) continue;
+      const t = o.created * 1000, mg = mean(f, g.a, t) - mean(f, g.b, t);
+      if (mg === mg) row.models[id] = mg;
+    }
+    out.push(row);
+  }
+  return out;
+}
+function mojaPressure(ms) {
+  // the strongest active gradient (|measured| ≥ 3 hPa) sets a speed factor per model: halfway towards measured/model
+  const pc = pressureCheck().filter(g => Math.abs(g.obs) >= 3).sort((a, b) => Math.abs(b.obs) - Math.abs(a.obs))[0];
+  const k = {};
+  if (!pc) return k;
+  for (const r of ms.st) {
+    const mg = pc.models[r.id];
+    if (mg == null || Math.sign(mg) !== Math.sign(pc.obs) || Math.abs(mg) < 1) continue;
+    k[r.id] = 1 + 0.5 * (Math.max(0.7, Math.min(1.4, pc.obs / mg)) - 1);
+  }
+  return k;
 }
 function buildMoja() {
   const s = state.set, ms = mojaStats(); if (!ms) return null;
@@ -1859,38 +1903,48 @@ function buildMoja() {
   const times = Array.from({ length: T }, (_, i) => t0 + i * H1);
   const u = new Float32Array(T * N).fill(NaN), v = new Float32Array(T * N).fill(NaN), g = new Float32Array(T * N).fill(NaN);
   const q = [];
+  const pg = mojaPressure(ms);   // the measured pressure pattern against the models' (bura / jugo strength)
+  // weights by lead time: the next 12 h trust the models that are best in the short range, beyond 24 h those best 1–2 days ahead
+  const wAt = lead => { const ws = ms.st.map(r => { const m = lead < 12 ? r.maeShort : lead < 24 ? 0.5 * (r.maeShort + r.maeLong) : r.maeLong; return 1 / Math.max(1, m) ** 2; }); const sum = ws.reduce((a, x) => a + x, 0); return ws.map(x => x / sum); };
+  let W = ms.st.map(r => r.w), rot = 1;
   const blend = (lat, lon, t, out) => {
     let su = 0, sv = 0, ss = 0, sg = 0, w = 0, wg = 0;
-    for (const r of ms.st) {
-      sample(r.f, ['u', 'v', 'gust'], lat, lon, t, q); if (q[0] !== q[0]) continue;
-      const sp = Math.hypot(q[0], q[1]);
-      su += r.w * q[0]; sv += r.w * q[1]; ss += r.w * sp * r.ratio; w += r.w;
-      if (q[2] === q[2]) { sg += r.w * q[2] * r.ratio; wg += r.w; }
-    }
+    ms.st.forEach((r, ri) => {
+      sample(r.f, ['u', 'v', 'gust'], lat, lon, t, q); if (q[0] !== q[0]) return;
+      const k = r.ratio * (pg[r.id] || 1), sp = Math.hypot(q[0], q[1]), wr = W[ri];
+      // turn the model's wind back by its measured systematic turn (fully now, half of it a day ahead)
+      const a = -r.dirBias * rot * Math.PI / 180, cu = q[0] * Math.cos(a) + q[1] * Math.sin(a), cv = -q[0] * Math.sin(a) + q[1] * Math.cos(a);
+      su += wr * cu; sv += wr * cv; ss += wr * sp * k; w += wr;
+      if (q[2] === q[2]) { sg += wr * q[2] * k; wg += wr; }
+    });
     if (!w) { out[0] = out[1] = out[2] = NaN; return out; }
     const mu = su / w, mv = sv / w, mag = Math.hypot(mu, mv), sp = ss / w;   // direction from the vector mean, speed from the corrected speeds
     out[0] = mag > 0.01 ? mu / mag * sp : 0; out[1] = mag > 0.01 ? mv / mag * sp : 0; out[2] = wg ? sg / wg : NaN;
     return out;
   };
-  // remaining error at the measurement places (now)
+  // what is left between the blend and the measured wind at each place, as a VECTOR (speed and direction)
   const res = [], b = [];
-  for (const p of ms.pl) { blend(p.lat, p.lon, p.t * 1000, b); if (b[0] !== b[0]) continue; const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; res.push({ lat: p.lat, lon: p.lon, k: x / Math.max(1, Math.hypot(b[0], b[1])) }); }
+  W = wAt(0); rot = 1;
+  for (const p of ms.pl) { const m = measVec(p); if (!m) continue; blend(p.lat, p.lon, p.t * 1000, b); if (b[0] !== b[0]) continue; res.push({ lat: p.lat, lon: p.lon, du: m.u - b[0], dv: m.v - b[1], g: p.wgust != null ? (p.h === 3 ? U3_10 : 1) * p.wgust - (b[2] === b[2] ? b[2] : 0) : null }); }
   for (let ti = 0; ti < T; ti++) {
     const t = times[ti], lead = (t - Date.now()) / H1, fade = lead <= 0 ? 1 : Math.exp(-lead / 4);
+    W = wAt(Math.max(0, lead)); rot = lead <= 0 ? 1 : Math.max(0.5, 1 - lead / 48);
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const lat = B.s + j * d, lon = B.w + i * d, o = ti * N + j * nx + i;
       blend(lat, lon, t, b); if (b[0] !== b[0]) continue;
-      let k = 1;
-      if (fade > 0.02 && res.length) {   // inverse-distance spread of the measured/forecast ratio, within ~60 km
-        let sw = 0, sk = 0;
-        for (const r of res) { const dk = Math.hypot((r.lat - lat) * 111, (r.lon - lon) * 111 * Math.cos(lat * Math.PI / 180)); if (dk > 60) continue; const w = 1 / (dk * dk + 25); sw += w; sk += w * Math.max(0.5, Math.min(2, r.k)); }
-        if (sw) { const wloc = Math.min(1, sw * 400); k = 1 + (sk / sw - 1) * wloc * fade; }
+      let du = 0, dv = 0, dg = 0;
+      if (fade > 0.02 && res.length) {   // inverse-distance spread of the vector correction, within ~60 km
+        let sw = 0, su = 0, sv = 0, swg = 0, sgg = 0;
+        for (const r of res) { const dk = Math.hypot((r.lat - lat) * 111, (r.lon - lon) * 111 * Math.cos(lat * Math.PI / 180)); if (dk > 60) continue; const w = 1 / (dk * dk + 25); sw += w; su += w * r.du; sv += w * r.dv; if (r.g != null) { swg += w; sgg += w * r.g; } }
+        if (sw) { const wl = Math.min(1, sw * 400) * fade; du = su / sw * wl; dv = sv / sw * wl; if (swg) dg = sgg / swg * Math.min(1, swg * 400) * fade; }
       }
-      u[o] = b[0] * k; v[o] = b[1] * k; g[o] = b[2] === b[2] ? b[2] * k : NaN;
+      u[o] = b[0] + du; v[o] = b[1] + dv;
+      const sp = Math.hypot(u[o], v[o]);
+      g[o] = b[2] === b[2] ? Math.max(sp, b[2] + dg) : NaN;
     }
   }
   const f = { lat0: B.s, lon0: B.w, dlat: d, dlon: d, nx, ny, times, vars: { u, v, gust: g }, validUntil: times[T - 1], model: 'moja', meta: MOJA_META, run: { runInit: Date.now() },
-    weights: ms.st.map(r => ({ id: r.id, w: r.w, mae: r.mae, ratio: r.ratio })) };
+    weights: ms.st.map(r => ({ id: r.id, w: r.w, mae: r.mae, ratio: r.ratio * (pg[r.id] || 1), dirBias: r.dirBias })) };
   fillTimeGaps(f);
   s.fields.moja = f; if (!s.models.includes('moja')) s.models.push('moja');   // ALADIN stays first; MOJA at the end of the bar
   renderChips();
@@ -1898,6 +1952,26 @@ function buildMoja() {
 }
 // built by itself whenever fresh measurements arrive (and after a new forecast), so MOJA is always current
 function autoMoja() { if (!state.obs || !state.set) return; try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
+function pressureHtml() {
+  const o = state.obs, s = state.set; if (!o || !s) return '';
+  const pc = pressureCheck(), ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && s.fields[id].vars.mslp);
+  if (!ids.length) return '';
+  // pressure level error at the places (hPa) and the measured 3 h tendency against the model's over the same 3 h
+  const q = [], lv = {}, td = {};
+  for (const p of o.places.filter(p => p.pres != null && !p.stale)) for (const id of ids) {
+    const f = s.fields[id]; sample(f, ['mslp'], p.lat, p.lon, p.t * 1000, q); const now_ = q[0]; if (now_ !== now_) continue;
+    (lv[id] = lv[id] || []).push(now_ - p.pres);
+    if (p.dp3 != null && p.t * 1000 - 3 * 3600000 >= f.times[0]) { sample(f, ['mslp'], p.lat, p.lon, p.t * 1000 - 3 * 3600000, q); if (q[0] === q[0]) (td[id] = td[id] || []).push((now_ - q[0]) - p.dp3); }
+  }
+  const avg = a => a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const gcell = (g, id) => { const m = g.models[id]; if (m == null) return '<td class="na">–</td>'; const r = Math.abs(m) >= 1 ? g.obs / m : null; const bad = r != null && Math.abs(g.obs) >= 3 && (r > 1.25 || r < 0.8); return `<td class="${bad ? 'mid' : 'ok'}">${m > 0 ? '+' : ''}${m.toFixed(1)}${bad ? `<small>${r > 1 ? 'preslab' : 'prejak'}</small>` : ''}</td>`; };
+  return `<h3>Tlak <small>(hPa · gradijent = razlika tlaka koja tjera buru ili jugo)</small></h3>
+    <div class="tblwrap"><table class="obst"><tr><th></th><th>Izmj.</th>${ids.map(id => `<th style="color:${mcol(id)}">${modelById(id).name}</th>`).join('')}</tr>
+    ${pc.map(g => `<tr><td>${g.name}</td><td><b>${g.obs > 0 ? '+' : ''}${g.obs.toFixed(1)}</b></td>${ids.map(id => gcell(g, id)).join('')}</tr>`).join('')}
+    <tr><td>Greška razine tlaka (prosjek)</td><td></td>${ids.map(id => { const a = avg(lv[id]); return a == null ? '<td class="na">–</td>' : `<td class="${Math.abs(a) >= 2 ? 'mid' : 'ok'}">${a > 0 ? '+' : ''}${a.toFixed(1)}</td>`; }).join('')}</tr>
+    <tr><td>Promjena u 3 h: model − izmjereno</td><td></td>${ids.map(id => { const a = avg(td[id]); return a == null ? '<td class="na">–</td>' : `<td class="${Math.abs(a) >= 1 ? 'mid' : 'ok'}">${a > 0 ? '+' : ''}${a.toFixed(1)}</td>`; }).join('')}</tr></table></div>
+    <div class="note">„Preslab” = model ima manju razliku tlaka od izmjerene → vjerojatno podcjenjuje buru/jugo (MOJA mu podiže brzine). Promjena u 3 h: ako tlak stvarno pada brže od modela (negativan broj), promjena vremena dolazi ranije ili jača nego što model kaže. Vlaga i temperatura zasad ulaze kroz signale (dolazak juga, prodor bure).</div>`;
+}
 // ---------------- the Analysis tab ----------------
 function renderAnalysisTab() {
   const el = $('#tab-analysis'), o = state.obs, s = state.set;
@@ -1907,24 +1981,26 @@ function renderAnalysisTab() {
   const ids = s.models.filter(id => !isDerived(id) || id === 'moja');
   const now = Date.now() / 1000;
   const pl = o.places.filter(p => !p.stale && p.wspd != null && now - p.t < 3 * 3600).sort((a, b) => (a.kind === 'buoy' ? 0 : 1) - (b.kind === 'buoy' ? 0 : 1) || b.lat - a.lat);
-  const cell = e => e == null ? '<td class="na">–</td>' : `<td class="${e >= 3 ? 'hi' : e <= -3 ? 'lo' : 'ok'}">${e > 0 ? '+' : ''}${e.toFixed(0)}</td>`;
+  // cell: vector error (kn, colour by size) and below it the speed error and the direction error
+  const cell = e => !e ? '<td class="na">–</td>' : `<td class="${e.vec >= 8 ? 'bad' : e.vec >= 4 ? 'mid' : 'ok'}"><b>${e.vec.toFixed(0)}</b><small>${e.spd > 0 ? '+' : ''}${e.spd.toFixed(0)}${e.dir != null ? ' · ' + Math.round(e.dir) + '°' : ''}</small></td>`;
   const sk = k => ((o.skill || {})[k] || []).filter(r => modelById(r.id));
-  const rankRow = (label, rows) => rows.length ? `<tr><td>${label}</td>${rows.slice(0, 5).map((r, i) => `<td class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)}${Math.abs(r.bias) >= 1.5 ? ` <small>${r.bias > 0 ? '+' : ''}${r.bias.toFixed(0)}</small>` : ''}</td>`).join('')}</tr>` : `<tr><td>${label}</td><td colspan="5" class="muted">skuplja se – arhiva prognoza počela 10.11.</td></tr>`;
+  const rankRow = (label, rows) => rows.length ? `<tr><td>${label}</td>${rows.slice(0, 5).map((r, i) => `<td class="${i ? '' : 'best'}"><i style="background:${mcol(r.id)}"></i>${modelById(r.id).name} ±${r.mae.toFixed(1)}<small>${r.dir != null ? ' · ' + Math.round(r.dir) + '°' : ''}${Math.abs(r.bias) >= 1.5 ? ` · ${r.bias > 0 ? '+' : ''}${r.bias.toFixed(0)} kn` : ''}</small></td>`).join('')}</tr>` : `<tr><td>${label}</td><td colspan="5" class="muted">skuplja se – arhiva prognoza počela 10.11.</td></tr>`;
   const nowRank = obsRank().map(r => ({ ...r }));
   el.innerHTML = `
-    <h3>Rang modela prema mjerenjima <small>(prosječna greška vjetra, kn · + precjenjuje / − podcjenjuje)</small></h3>
+    <h3>Rang modela prema mjerenjima <small>(greška cijelog vjetra – snaga i smjer zajedno, kn · prosječna greška smjera ° · snaga + jača / − slabija)</small></h3>
     <table class="rank">${rankRow('Sada', nowRank)}${rankRow('Zadnja 24 h', sk('24h'))}${rankRow('Zadnja 3 dana', sk('72h'))}${rankRow('7 dana', sk('7d'))}${rankRow('7 dana · prvih 12 h', sk('7d_0-12'))}${rankRow('7 dana · 24–48 h unaprijed', sk('7d_24-48'))}</table>
     <h3>MOJA prognoza</h3>
-    ${ms ? `<div class="note">Težine prema tome koliko modeli sada pogađaju mjerenja: ${ms.st.map(r => `<b style="color:${mcol(r.id)}">${modelById(r.id).name}</b> ${(r.w * 100).toFixed(0)} %${Math.abs(r.ratio - 1) >= 0.08 ? ` <small>(×${r.ratio.toFixed(2)})</small>` : ''}`).join(' · ')}.
-      Brzine svakog modela ispravljene su za njegovo odstupanje; prvih ~6 h prognoza je povučena prema izmjerenom na plutačama i postajama.</div>
+    ${ms ? `<div class="note">Težine prema tome koliko modeli sada pogađaju mjerenja: ${ms.st.map(r => `<b style="color:${mcol(r.id)}">${modelById(r.id).name}</b> ${(r.w * 100).toFixed(0)} %${Math.abs(r.ratio - 1) >= 0.08 ? ` <small>(snaga ×${r.ratio.toFixed(2)})</small>` : ''}${Math.abs(r.dirBias) >= 5 ? ` <small>(smjer ${r.dirBias > 0 ? '−' : '+'}${Math.abs(Math.round(r.dirBias))}°)</small>` : ''}`).join(' · ')}.</div>
+      <div class="note"><b>Kako nastaje:</b> 1) svaki model ispravi se za svoje izmjereno odstupanje – snagu (×) i smjer (°); 2) modeli se miješaju s težinama prema grešci cijelog vjetra (za sljedećih 12 h prema kratkoročnoj točnosti, za 1–2 dana prema točnosti na tom roku, kad se skupi arhiva); 3) ako izmjereni gradijent tlaka bure/juga odstupa od modela, brzine se dodatno podignu/spuste; 4) prvih ~6 h prognoza se povlači prema izmjerenoj strelici vjetra (snaga i smjer) i udarima na svakoj plutači i postaji, utjecaj slabi s udaljenošću (~60 km) i vremenom.</div>
       <button id="btnMoja" class="btn primary block">${mf ? '↻ Ponovno izračunaj MOJU prognozu' : 'Izračunaj MOJU prognozu'}</button>
       ${mf ? '<div class="note">MOJA je na kraju trake modela (ljubičasta) – za kartu, replay i routing. ALADIN-HR ostaje prvi.</div>' : ''}` : '<div class="note">Za MOJU prognozu treba bar 4 svježa mjerenja koja modeli pokrivaju.</div>'}
-    <h3>Sada: izmjereno i odstupanje modela <small>(kn; plutače preračunate na 10 m)</small></h3>
+    <h3>Sada: izmjereno i greška modela <small>(veliki broj = greška cijelog vjetra u kn; ispod: snaga ± kn · smjer °; plutače preračunate na 10 m)</small></h3>
     <div class="tblwrap"><table class="obst"><tr><th>Mjesto</th><th>Izmj.</th>${ids.map(id => `<th style="color:${mcol(id)}">${modelById(id).name}${id === 'moja' ? '<small>*</small>' : ''}</th>`).join('')}</tr>
-    ${pl.map(p => { const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; return `<tr><td>${p.kind === 'buoy' ? '◆ ' : p.kind === 'lighthouse' ? '○ ' : ''}${p.name}</td><td><b>${x.toFixed(0)}</b>${p.wgust != null ? `<small>/${(p.wgust * (p.h === 3 ? U3_10 : 1)).toFixed(0)}</small>` : ''}</td>${ids.map(id => cell(obsModelErr(p, s.fields[id]))).join('')}</tr>`; }).join('')}</table></div>
+    ${pl.map(p => { const x = p.h === 3 ? p.wspd * U3_10 : p.wspd; return `<tr><td>${p.kind === 'buoy' ? '◆ ' : p.kind === 'lighthouse' ? '○ ' : ''}${p.name}</td><td><b>${x.toFixed(0)}</b>${p.wgust != null ? `<small>/${(p.wgust * (p.h === 3 ? U3_10 : 1)).toFixed(0)}</small>` : ''}<small>${p.wdir != null ? ' ' + ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(p.wdir / 45) % 8] : ''}</small></td>${ids.map(id => cell(obsModelErr(p, s.fields[id]))).join('')}</tr>`; }).join('')}</table></div>
+    ${pressureHtml()}
     <h3>Signali iz mreže mjerenja</h3>
     ${(o.signals || []).map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="note">Nema posebnih signala.</div>'}
-    <div class="note">Mjerenja: DHMZ (plutače očitane s grafova, obalne postaje), zadnje ${fmtTime(o.created * 1000, false)}. Crveno = model jači od izmjerenog za 3+ kn, plavo = slabiji. *MOJA je za sadašnji trenutak povučena prema ovim mjerenjima, pa ovdje nije u rangu – njezina vrijednost je u satima koji dolaze.</div>`;
+    <div class="note">Mjerenja: DHMZ (plutače očitane s grafova, obalne postaje), zadnje ${fmtTime(o.created * 1000, false)}. Zeleno = model pogađa (greška < 4 kn), žuto = 4–8 kn, crveno = 8+ kn (kriva snaga ili krivi smjer). *MOJA je za sadašnji trenutak povučena prema ovim mjerenjima, pa ovdje nije u rangu – njezina vrijednost je u satima koji dolaze.</div>`;
   const bm = el.querySelector('#btnMoja');
   if (bm) bm.onclick = () => { bm.disabled = true; bm.textContent = 'Računam…'; setTimeout(() => { const f = buildMoja(); if (f) { selectModel('moja'); toast('MOJA prognoza izračunata – prikazana na karti'); } renderAnalysisTab(); }, 30); };
 }
@@ -2113,7 +2189,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 4.1 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 4.2 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2366,7 +2442,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 4.1 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 4.2 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

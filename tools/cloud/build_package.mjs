@@ -210,10 +210,11 @@ try {
   const places = ob ? JSON.parse(ob.toString()).places.map(p => ({ id: p.id, lat: p.lat, lon: p.lon })) : [];
   if (places.length) {
     const { sample, fillTimeGaps } = await import('../../js/field.js');
-    const h0 = Math.ceil(Date.now() / H) * H - H, pts = { created: set.created, t0: h0, step: H, places: places.map(p => p.id), models: {} };
+    const h0 = Math.ceil(Date.now() / H) * H - H, pts = { created: set.created, t0: h0, step: H, places: places.map(p => p.id), uv: true, models: {} };
     for (const id of models) {
       const f = fields[id]; fillTimeGaps(f); const rows = [], o = [];
-      for (let k = 0; k <= 48; k++) rows.push(places.map(p => { sample(f, ['u', 'v'], p.lat, p.lon, h0 + k * H, o); return o[0] === o[0] ? Math.round(Math.hypot(o[0], o[1]) * 10) / 10 : null; }));
+      // the whole wind (u, v in kn): speed AND direction are scored, not the speed alone
+      for (let k = 0; k <= 48; k++) rows.push(places.map(p => { sample(f, ['u', 'v'], p.lat, p.lon, h0 + k * H, o); return o[0] === o[0] ? [Math.round(o[0] * 10) / 10, Math.round(o[1] * 10) / 10] : null; }));
       pts.models[id] = rows;
     }
     mkdirSync(join(dirname(OUT), 'models'), { recursive: true });

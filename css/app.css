@@ -509,3 +509,6 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
 #tab-analysis table.obst th,#tab-analysis table.obst td{padding:3px 6px;text-align:center;white-space:nowrap}#tab-analysis table.obst td:first-child{text-align:left}
 #tab-analysis td.hi{background:#c0392b55}#tab-analysis td.lo{background:#2471a355}#tab-analysis td.ok{color:#8fe3a8}#tab-analysis td.na{opacity:.4}
 #tab-analysis .os{margin:4px 0;padding:5px 8px;border-radius:6px;background:#ffffff10}#tab-analysis .os.jako{background:#c0392b44}#tab-analysis .os.umjereno{background:#e67e2244}
+
+#tab-analysis td.bad{background:#c0392b66}#tab-analysis td.mid{background:#e6b22255}#tab-analysis table.obst td small{display:block;font-size:10px;opacity:.85}
+.obsm u.dir{background:#8e44ad}

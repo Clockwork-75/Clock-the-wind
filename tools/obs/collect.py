@@ -36,7 +36,78 @@ INLAND = ['Gospić', 'Ogulin', 'Karlovac', 'Knin', 'Zavižan', 'Plaški', 'Bosil
 COMPASS = {'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5, 'E': 90, 'ESE': 112.5, 'SE': 135, 'SSE': 157.5, 'S': 180, 'SSW': 202.5,
            'SW': 225, 'WSW': 247.5, 'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5}
 
+# ---------------- the fixed list of places ("always ask everyone") ----------------
+# Every run asks every source below. A place that does not answer stays on the map, grey, with "ne javlja se od …",
+# and comes back by itself when its source answers again. One place can have several sources (DHMZ 10-min graph,
+# hourly DHMZ XML, METAR, ARSO): they are merged – the freshest wind wins, the rest fills in what it lacks.
+# feeds: ('buoy', id) DHMZ buoy graph · ('amp', code) DHMZ automatic station graph · ('xml', name) hourly DHMZ XML ·
+#        ('metar', ICAO) airport · ('arso', id) Slovenian coastal station
+# coordinates of amp-only places are approximate (from the station's location); XML places use DHMZ's own
+REGISTRY = [
+    # id, name, kind, lat, lon, feeds
+    *[('b:' + b, n, 'buoy', round(la, 4), round(lo, 4), [('buoy', b)]) for b, n, la, lo in BUOYS],
+    ('r:koper', 'Koper', 'station', 45.548, 13.725, [('arso', 'koper')]),
+    ('r:portoroz', 'Portorož-aerodrom', 'station', 45.474, 13.616, [('arso', 'portoroz'), ('metar', 'LJPZ')]),
+    ('s:Sv. Ivan na pučini - svjetionik', 'Sv. Ivan na pučini - svjetionik', 'lighthouse', 45.043, 13.614, [('amp', 'svivanpu'), ('xml', 'Sv. Ivan na pučini - svjetionik')]),
+    ('s:Rovinj', 'Rovinj', 'station', 45.081, 13.640, [('xml', 'Rovinj')]),
+    ('s:Pula-aerodrom', 'Pula-aerodrom', 'station', 44.896, 13.932, [('xml', 'Pula-aerodrom'), ('metar', 'LDPL')]),
+    ('s:Monte Kope', 'Monte Kope', 'station', 44.812, 13.873, [('amp', 'montekop'), ('xml', 'Monte Kope')]),
+    ('a:kamenjak', 'Kamenjak', 'station', 44.770, 13.910, [('amp', 'kamenjak')]),
+    ('s:Porer - svjetionik', 'Porer - svjetionik', 'lighthouse', 44.758, 13.890, [('amp', 'porer'), ('xml', 'Porer - svjetionik')]),
+    ('s:Opatija', 'Opatija', 'station', 45.337, 14.307, [('amp', 'opatija1'), ('xml', 'Opatija')]),
+    ('s:Rijeka', 'Rijeka', 'station', 45.337, 14.443, [('amp', 'rijeka'), ('xml', 'Rijeka')]),
+    ('a:bakarac', 'Bakarac', 'station', 45.283, 14.611, [('amp', 'bakarac')]),
+    ('a:hreljin', 'Hreljin vijadukt', 'station', 45.290, 14.585, [('amp', 'hreljin')]),
+    ('a:mostkrk', 'Most Krk', 'station', 45.252, 14.567, [('amp', 'mostkrk'), ('amp', 'mostkrk2')]),
+    ('s:Rijeka-aerodrom', 'Rijeka-aerodrom', 'station', 45.224, 14.582, [('xml', 'Rijeka-aerodrom'), ('metar', 'LDRI')]),
+    ('s:Crikvenica', 'Crikvenica', 'station', 45.173, 14.689, [('amp', 'crikveni'), ('xml', 'Crikvenica')]),
+    ('s:Malinska', 'Malinska', 'station', 45.126, 14.527, [('amp', 'malinska'), ('xml', 'Malinska')]),
+    ('a:povile', 'Povile', 'station', 45.112, 14.818, [('amp', 'povile')]),
+    ('s:Senj', 'Senj', 'station', 44.993, 14.903, [('amp', 'senj'), ('xml', 'Senj')]),
+    ('a:zavizan', 'Zavižan (Velebit)', 'station', 44.815, 14.976, [('amp', 'zavizan'), ('xml', 'Zavižan')]),
+    ('s:Rab', 'Rab', 'station', 44.756, 14.769, [('amp', 'rab'), ('xml', 'Rab')]),
+    ('a:prizna', 'Prizna', 'station', 44.618, 14.973, [('amp', 'prizna')]),
+    ('s:Mali Lošinj', 'Mali Lošinj', 'station', 44.533, 14.472, [('amp', 'mlosinj'), ('xml', 'Mali Lošinj')]),
+    ('s:Mali Lošinj - Ćunski', 'Mali Lošinj - Ćunski', 'station', 44.565, 14.437, [('xml', 'Mali Lošinj - Ćunski'), ('metar', 'LDLO')]),
+    ('a:velirat', 'Veli Rat - svjetionik', 'lighthouse', 44.152, 14.823, [('amp', 'velirat')]),
+    ('a:jasenice', 'Jasenice (Maslenica)', 'station', 44.225, 15.530, [('amp', 'jasenice')]),
+    ('s:Zadar', 'Zadar', 'station', 44.130, 15.206, [('amp', 'zadar'), ('xml', 'Zadar')]),
+    ('s:Zadar-aerodrom', 'Zadar-aerodrom', 'station', 44.097, 15.363, [('xml', 'Zadar-aerodrom'), ('metar', 'LDZD')]),
+    ('s:Šibenik', 'Šibenik', 'station', 43.728, 15.906, [('amp', 'sibenik'), ('xml', 'Šibenik')]),
+    ('a:mostciov', 'Most Čiovo', 'station', 43.516, 16.252, [('amp', 'mostciov')]),
+    ('s:Split-aerodrom', 'Split-aerodrom', 'station', 43.539, 16.301, [('xml', 'Split-aerodrom'), ('metar', 'LDSP')]),
+    ('s:Split-Marjan', 'Split-Marjan', 'station', 43.508, 16.426, [('amp', 'split'), ('xml', 'Split-Marjan')]),
+    ('m:LDSB', 'Brač-aerodrom', 'station', 43.286, 16.680, [('metar', 'LDSB')]),
+    ('s:Hvar', 'Hvar', 'station', 43.171, 16.437, [('amp', 'hvar'), ('xml', 'Hvar')]),
+    ('s:Komiža', 'Komiža', 'station', 43.048, 16.085, [('xml', 'Komiža')]),
+    ('s:Makarska', 'Makarska', 'station', 43.288, 17.020, [('amp', 'makarska'), ('xml', 'Makarska')]),
+    ('a:svjure', 'Sv. Jure (Biokovo)', 'station', 43.343, 17.054, [('amp', 'svjure')]),
+    ('s:Živogošće', 'Živogošće', 'station', 43.170, 17.179, [('xml', 'Živogošće')]),
+    ('s:Ploče', 'Ploče', 'station', 43.048, 17.443, [('amp', 'ploce'), ('xml', 'Ploče')]),
+    ('a:deltaner', 'Delta Neretve', 'station', 43.030, 17.470, [('amp', 'deltaner')]),
+    ('a:komarna', 'Komarna', 'station', 42.928, 17.535, [('amp', 'komarna')]),
+    ('a:palagruz', 'Palagruža - svjetionik', 'lighthouse', 42.393, 16.255, [('amp', 'palagruz')]),
+    ('s:Lastovo', 'Lastovo', 'station', 42.768, 16.900, [('amp', 'lastovo'), ('xml', 'Lastovo')]),
+    ('a:mostdub', 'Most Dubrovnik', 'station', 42.664, 18.070, [('amp', 'mostdub1'), ('amp', 'mostdub2')]),
+    ('s:Dubrovnik', 'Dubrovnik', 'station', 42.645, 18.085, [('amp', 'dubrovni'), ('xml', 'Dubrovnik')]),
+    ('s:Dubrovnik-aerodrom', 'Dubrovnik-aerodrom', 'station', 42.563, 18.270, [('xml', 'Dubrovnik-aerodrom'), ('metar', 'LDDU')]),
+    ('a:gruda', 'Gruda (Konavle)', 'station', 42.517, 18.376, [('amp', 'gruda')]),
+    ('s:Prevlaka', 'Prevlaka', 'station', 42.393, 18.531, [('amp', 'prevlaka'), ('xml', 'Prevlaka')]),
+]
+AMP_CODES = sorted({k for r in REGISTRY for s, k in r[5] if s == 'amp'})
+METARS = sorted({k for r in REGISTRY for s, k in r[5] if s == 'metar'})
+ARSO = {'koper': 'observationAms_KOPER_KAPET-IJA', 'portoroz': 'observationAms_PORTOROZ_SECOVLJE'}
+# how often each source measures and after how long without news a place turns grey
+STEP = {'buoy': 600, 'amp': 600, 'xml': 3600, 'metar': 1800, 'arso': 1800}
+LIVE = {'buoy': 3 * H, 'amp': 2 * H, 'xml': 3 * H, 'metar': 2 * H, 'arso': 2 * H}
+STORE = {'buoy': 'buoys', 'amp': 'amp', 'xml': 'stations', 'metar': 'metar', 'arso': 'arso'}
+
+LOCAL = os.environ.get('CTW_OBS_LOCAL')    # tests only: answer from saved files instead of the network
 def get(url, timeout=40):
+    if LOCAL:
+        f = os.path.join(LOCAL, url.split('?')[0].rstrip('/').rsplit('/', 1)[-1])
+        if not os.path.exists(f): raise IOError('lokalno nema ' + f)
+        return open(f, 'rb').read(), os.path.getmtime(f)
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         lm = r.headers.get('Last-Modified')
@@ -144,11 +215,111 @@ try:
     print(f'Stanice: {n}, termin {d} {hh} h')
 except Exception as e: errors.append(f'stanice: {e}'); print('!! stanice', e)
 
+# ---------------- DHMZ automatic stations (10-min graphs vrijeme.hr/amp/<code>.png: wind + gusts, T, RH, station pressure) ----------------
+def amp_series(png_path, lm):
+    r = BR.read_amp(png_path)
+    top, bot, left, right = r['frames']['wind']
+    n = max(len(v) for v in r['series'].values()) if r['series'] else 0
+    if not n: raise ValueError('prazan graf')
+    xs = [i for i in range(n) if any(i < len(v) and v[i] is not None for v in r['series'].values())]
+    if not xs: raise ValueError('prazan graf')
+    ref = lm or now
+    best = None
+    for back in (1, 2):   # the graph shows yesterday and today (local), 00:00 at the left spine, 00:00 at the right one
+        d0 = dt.datetime.fromtimestamp(ref, ZG).replace(hour=0, minute=0, second=0, microsecond=0) - dt.timedelta(days=back)
+        t0 = d0.timestamp(); span = (d0 + dt.timedelta(days=2)).timestamp() - t0
+        tl = t0 + (xs[-1] + 1) / (right - left) * span
+        if tl <= ref + 900: best = (t0, span, tl); break
+    if not best: raise ValueError('vremenska os nije prepoznata')
+    t0, span, tlast = best
+    slots = {}
+    for i in xs:
+        t = t0 + (i + 1) / (right - left) * span
+        rec = slots.setdefault(int(round(t / 600) * 600), {})
+        for k, arr in r['series'].items():
+            if i < len(arr) and arr[i] is not None: rec.setdefault(k, []).append(float(arr[i]))
+    clean = {}
+    for slot, rec in slots.items():
+        v = {}
+        for k, vals in rec.items():
+            if k == 'wdir':
+                s = sum(math.sin(math.radians(a)) for a in vals); c = sum(math.cos(math.radians(a)) for a in vals)
+                v[k] = round((math.degrees(math.atan2(s, c)) + 360) % 360)
+            else: v[k] = sum(vals) / len(vals)
+        if 'wspd' in v: v['wspd'] = round(max(0, v['wspd']) * KN, 1)
+        if 'wgust' in v: v['wgust'] = round(max(0, v['wgust']) * KN, 1)
+        if 'pres' in v: v['pst'] = round(v.pop('pres'), 1)      # pressure AT the station (not reduced to sea level)
+        for k in ('tair', 'rh'):
+            if k in v: v[k] = round(v[k], 1)
+        for k, (lo, hi) in {'wspd': (0, 120), 'wgust': (0, 160), 'tair': (-30, 45), 'pst': (750, 1060), 'rh': (0, 101)}.items():
+            if k in v and not (lo <= v[k] <= hi): del v[k]
+        if 'wgust' in v and 'wspd' in v and v['wgust'] < v['wspd'] - 1: del v['wgust']
+        if 'wdir' in v and 'wspd' not in v and 'wgust' not in v: del v['wdir']
+        if v: clean[str(slot)] = v
+    return clean, tlast
+
+hist.setdefault('amp', {})
+for code in AMP_CODES:
+    try:
+        raw, lm = get(f'https://vrijeme.hr/amp/{code}.png')
+        p = os.path.join('/tmp', f'amp-{code}.png'); open(p, 'wb').write(raw)
+        series, tlast = amp_series(p, lm)
+        hist['amp'].setdefault(code, {}).update(series)
+        print(f'amp {code}: {len(series)} mjerenja, zadnje {dt.datetime.fromtimestamp(tlast, ZG):%d.%m. %H:%M}')
+    except SystemExit as e: errors.append(f'amp {code}: {e}'); print('!! amp', code, e)
+    except Exception as e: errors.append(f'amp {code}: {e}'); print('!! amp', code, e)
+
+def magnus_rh(t, td):
+    if t is None or td is None: return None
+    a, b = 17.625, 243.04
+    return round(100 * math.exp(a * td / (b + td) - a * t / (b + t)))
+
+# ---------------- METAR (airports, every 30 min: wind, gusts, QNH, T/Td) ----------------
+hist.setdefault('metar', {})
+try:
+    raw, _ = get('https://aviationweather.gov/api/data/metar?ids=' + ','.join(METARS) + '&format=json&hours=6')
+    n = 0
+    for m in json.loads(raw):
+        icao, t = m.get('icaoId'), m.get('obsTime')
+        if icao not in METARS or not t: continue
+        rec = {}
+        if m.get('wspd') is not None: rec['wspd'] = round(float(m['wspd']), 1)
+        if isinstance(m.get('wdir'), (int, float)): rec['wdir'] = int(m['wdir'])
+        if m.get('wgst'): rec['wgust'] = round(float(m['wgst']), 1)
+        if m.get('altim'): rec['pres'] = round(float(m['altim']), 1)
+        if m.get('temp') is not None: rec['tair'] = float(m['temp'])
+        rh = magnus_rh(m.get('temp'), m.get('dewp'))
+        if rh is not None: rec['rh'] = rh
+        hist['metar'].setdefault(icao, {})[str(int(t))] = rec; n += 1
+    print(f'METAR: {n} izvješća')
+except Exception as e: errors.append(f'METAR: {e}'); print('!! METAR', e)
+
+# ---------------- ARSO (Slovenian coast, every 30 min) ----------------
+hist.setdefault('arso', {})
+for aid, fname in ARSO.items():
+    try:
+        raw, _ = get(f'https://meteo.arso.gov.si/uploads/probase/www/observ/surface/text/sl/{fname}_latest.xml')
+        md = ET.fromstring(raw).find('metData')
+        tx = md.findtext('tsValid_issued_RFC822')
+        t = int(email.utils.parsedate_to_datetime(tx).timestamp())
+        rec = {}
+        sp, gu, dr = num(md.findtext('ffavg_val')), num(md.findtext('ffmax_val')), num(md.findtext('ddavg_val'))
+        if sp is not None: rec['wspd'] = round(sp * KN, 1)
+        if gu is not None: rec['wgust'] = round(gu * KN, 1)
+        if dr is not None: rec['wdir'] = int(dr)
+        for k, tag in (('pres', 'msl'), ('tair', 't'), ('rh', 'rh')):
+            v = num(md.findtext(tag))
+            if v is not None: rec[k] = v
+        hist['arso'].setdefault(aid, {})[str(t)] = rec
+        print(f'ARSO {aid}: {dt.datetime.fromtimestamp(t, ZG):%d.%m. %H:%M}', rec)
+    except Exception as e: errors.append(f'ARSO {aid}: {e}'); print('!! ARSO', aid, e)
+
 # keep 7 days
 cut = now - 7 * 24 * H
-for grp in ('buoys', 'stations'):
-    for k in list(hist[grp]):
-        hist[grp][k] = {t: v for t, v in hist[grp][k].items() if int(t) >= cut}
+for grp in ('buoys', 'stations', 'amp', 'metar', 'arso'):
+    for k in list(hist.get(grp, {})):
+        # 10-minute values: all of the last 24 h, older ones every 30 min (enough for scoring and the 72 h graphs)
+        hist[grp][k] = {t: v for t, v in hist[grp][k].items() if int(t) >= cut and (grp != 'amp' or int(t) >= now - 24 * H or int(t) % 1800 == 0)}
 
 # ---------------- now + signals ----------------
 def last(series, maxage=3 * H):
@@ -173,29 +344,65 @@ def latest_each(series, t, back=90 * 60):
             if x is not None and k not in v: v[k] = x
     return v
 
-places = []
-for bid, name, lat, lon in BUOYS:
-    s = hist['buoys'].get(bid, {})
-    t, v = last(s, 12 * H)
-    if not t: continue
-    v = latest_each(s, t)
-    old3 = at(s, t - 3 * H, key='pres'); old1 = at(s, t - H, key='tair'); old3h = at(s, t - 3 * H, key='rh')
-    places.append({'id': 'b:' + bid, 'name': name, 'kind': 'buoy', 'lat': round(lat, 4), 'lon': round(lon, 4), 't': t, 'h': 3, 'stale': now - t > 2 * H, **v,
-                   **({'dp3': round(v['pres'] - old3['pres'], 1)} if old3 and 'pres' in v else {}),
-                   **({'dT1': round(v['tair'] - old1['tair'], 1)} if old1 and 'tair' in v else {}),
-                   **({'drh3': round(v['rh'] - old3h['rh'])} if old3h and 'rh' in v else {})})
-for nm, s in hist['stations'].items():
-    if nm not in COAST: continue
-    t, v = last(s, 3 * H)
-    if not t: continue
-    old1 = at(s, t - H, key='tair'); old3 = at(s, t - 3 * H, key='rh')
-    places.append({'id': 's:' + nm, 'name': nm, 'kind': 'lighthouse' if 'svjetionik' in nm else 'station', 'lat': v['lat'], 'lon': v['lon'], 't': t, 'h': 10,
-                   **{k: v[k] for k in ('wspd', 'wdir', 'pres', 'tair', 'rh') if v.get(k) is not None},
-                   **({'dp3': v['ptend']} if 'ptend' in v else {}),
-                   **({'dT1': round(v['tair'] - old1['tair'], 1)} if old1 and 'tair' in v else {}),
-                   **({'drh3': round(v['rh'] - old3['rh'])} if old3 and v.get('rh') is not None and old3.get('rh') is not None else {})})
+def feed_series(src, key):
+    return hist.get(STORE[src], {}).get(key, {})
 
-P = {p['name']: p for p in places}
+def newest(s, need=None):
+    for t in sorted((int(x) for x in s), reverse=True):
+        r = s[str(t)]
+        if need is None or any(r.get(k) is not None for k in need): return t, r
+    return None, None
+
+seen = hist.setdefault('seen', {})          # place → last time anything was measured there (kept beyond the 7 days)
+places = []
+for pid, name, kind, lat, lon, feeds in REGISTRY:
+    cand = []                                # (t, src, key, record) – newest record with wind of every source
+    for src, key in feeds:
+        t, r = newest(feed_series(src, key), ('wspd', 'wgust', 'wdir'))
+        if t: cand.append((t, src, key, r))
+    anyt = [newest(feed_series(s, k))[0] for s, k in feeds]
+    anyt = [t for t in anyt if t]
+    if anyt: seen[pid] = max(seen.get(pid, 0), max(anyt))
+    pl = {'id': pid, 'name': name, 'kind': kind, 'lat': lat, 'lon': lon, 'h': 3 if kind == 'buoy' else 10,
+          'src': [s + ':' + k for s, k in feeds]}
+    live = [c for c in cand if now - c[0] <= LIVE[c[1]]]
+    if not live:
+        # nobody answers: the place stays on the map, grey, with the last time it was heard from
+        pl['off'] = True; pl['seen'] = seen.get(pid)
+        if cand:
+            t, src, key, r = max(cand, key=lambda c: c[0])
+            pl['t'] = t; pl.update({k: r[k] for k in ('wspd', 'wgust', 'wdir') if r.get(k) is not None})
+        places.append(pl); continue
+    # the freshest wind wins; at equal age the 10-minute graph (it has gusts) before the hourly XML
+    order = {'amp': 0, 'buoy': 1, 'arso': 2, 'metar': 3, 'xml': 4}
+    t, src, key, _ = max(live, key=lambda c: (c[0] // 600, -order[c[1]]))
+    s = feed_series(src, key)
+    v = latest_each(s, t) if src in ('buoy', 'amp') else dict(s[str(t)])
+    pl.update({'t': t, 'by': src, 'stale': now - t > 2 * STEP[src] + 1800})
+    for k, x in v.items():
+        if x is not None and k not in ('lat', 'lon', 'ptend'): pl[k] = x
+    # what the winning source lacks, the others fill in (sea-level pressure from XML/METAR/ARSO, humidity, …)
+    for src2, key2 in feeds:
+        if (src2, key2) == (src, key): continue
+        t2, r2 = newest(feed_series(src2, key2))
+        if not t2 or now - t2 > LIVE[src2]: continue
+        for k in ('pres', 'tair', 'rh', 'wgust', 'sst'):
+            if pl.get(k) is None and r2.get(k) is not None and (k != 'wgust' or abs(t2 - t) <= 1800): pl[k] = r2[k]
+        if 'ptend' in r2 and 'dp3' not in pl: pl['dp3'] = r2['ptend']
+    # tendencies from the winning source's own history (10-minute graphs: pressure at the station is fine for a change)
+    pk = 'pres' if any(r.get('pres') is not None for r in s.values()) else 'pst'
+    old3 = at(s, t - 3 * H, key=pk); old1 = at(s, t - H, key='tair'); old3h = at(s, t - 3 * H, key='rh')
+    if old3 and v.get(pk) is not None and src != 'xml': pl['dp3'] = round(v[pk] - old3[pk], 1)
+    if src == 'xml' and v.get('ptend') is not None: pl['dp3'] = v['ptend']
+    if old1 and v.get('tair') is not None: pl['dT1'] = round(v['tair'] - old1['tair'], 1)
+    if old3h and v.get('rh') is not None: pl['drh3'] = round(v['rh'] - old3h['rh'])
+    pl.pop('pst', None)
+    places.append(pl)
+live_places = [p for p in places if not p.get('off')]
+print(f'Mjesta: {len(live_places)} javlja se, {len(places) - len(live_places)} ne javlja se:',
+      ', '.join(f"{p['name']} (od {dt.datetime.fromtimestamp(p['seen'], ZG):%d.%m. %H:%M})" if p.get('seen') else p['name'] for p in places if p.get('off')))
+
+P = {p['name']: p for p in live_places}
 def pres(names):
     vals = [P[n]['pres'] for n in names if n in P and P[n].get('pres')]
     return sum(vals) / len(vals) if vals else None
@@ -216,7 +423,7 @@ pn, ps = pres(['Kvarner', 'Rijeka', 'Senj', 'Pula-aerodrom']), pres(['Molunat', 
 if pn and ps:
     dj = ps - pn
     if dj >= 4: sig('jako' if dj >= 8 else 'umjereno', 'Gradijent za jugo', f'Tlak na jugu {dj:.1f} hPa viši nego na sjeveru Jadrana: uvjeti za jugo ({"jako" if dj >= 8 else "umjereno"}).')
-for p in places:
+for p in live_places:
     if p.get('dp3') is not None and p['dp3'] <= -3: sig('jako' if p['dp3'] <= -5 else 'umjereno', f'Pad tlaka – {p["name"]}', f'{p["dp3"]:+.1f} hPa u 3 h: vjetar jača ili dolazi fronta.', p['name'])
     if p.get('dp3') is not None and p['dp3'] >= 3: sig('umjereno', f'Skok tlaka – {p["name"]}', f'{p["dp3"]:+.1f} hPa u 3 h: moguć okret i bura iza fronte.', p['name'])
     if p.get('dT1') is not None and p['dT1'] <= -3: sig('jako', f'Nagli pad temperature – {p["name"]}', f'{p["dT1"]:+.1f} °C u 1 h' + (' uz sjeverni vjetar: prodor bure.' if p.get('wdir') is not None and (p['wdir'] >= 315 or p['wdir'] <= 70) else ': prolaz fronte ili hladni prodor.'), p['name'])
@@ -245,17 +452,21 @@ for k in list(fc):
     if int(k) / 1000 < now - 3 * 24 * H: del fc[k]
 agg = hist.setdefault('score', {})        # hour → model → lead bin → [sum |e|, sum e, n]
 done = set(hist.setdefault('scored', []))
+FEEDS = {r[0]: r[5] for r in REGISTRY}
 BINS = (('0-12', 0, 12), ('12-24', 12, 24), ('24-48', 24, 49))
 def measured(pid, t):
-    """measured wind as a vector (u, v toward which it blows, kn) + speed; buoys brought from 3 m to 10 m"""
-    if pid.startswith('b:'): v = hist['buoys'].get(pid[2:], {}).get(str(t)); k = U3_10
-    else: v = hist['stations'].get(pid[2:], {}).get(str(t)); k = 1
-    if not v or v.get('wspd') is None: return None
-    sp = v['wspd'] * k
-    if sp < 0.5: return (0.0, 0.0, 0.0)
-    if v.get('wdir') is None: return None
-    a = math.radians(v['wdir'])          # direction the wind comes FROM
-    return (-sp * math.sin(a), -sp * math.cos(a), sp)
+    """measured wind at the full hour t as a vector (u, v toward which it blows, kn) + speed; buoys brought from 3 m to 10 m.
+    Every source of the place is tried: 10-minute value at the hour first, then hourly XML, then the nearest METAR/ARSO."""
+    for src, key in sorted(FEEDS.get(pid, []), key=lambda f: {'amp': 0, 'buoy': 1, 'xml': 2, 'arso': 3, 'metar': 4}[f[0]]):
+        s = feed_series(src, key)
+        v = s.get(str(t)) if src != 'metar' and src != 'arso' else at(s, t, tol=20 * 60, key='wspd')
+        if not v or v.get('wspd') is None: continue
+        sp = v['wspd'] * (U3_10 if src == 'buoy' else 1)
+        if sp < 0.5: return (0.0, 0.0, 0.0)
+        if v.get('wdir') is None: continue
+        a = math.radians(v['wdir'])          # direction the wind comes FROM
+        return (-sp * math.sin(a), -sp * math.cos(a), sp)
+    return None
 def ang(a, b): d = abs(a - b) % 360; return 360 - d if d > 180 else d
 def frm(u, v): return (math.degrees(math.atan2(-u, -v)) + 360) % 360
 # score2: hour → model → lead bin → [Σ vector error, Σ speed error, Σ |speed error|, n, Σ direction error, n dir]
@@ -325,16 +536,23 @@ print('Gradijenti:', ', '.join(f"{g['id']} {g['obs']:+.1f} hPa" for g in GRADS))
 
 # 72 h series for the app (buoys every 30 min, stations hourly)
 series = {}
-for bid, name, lat, lon in BUOYS:
-    s = hist['buoys'].get(bid, {})
-    series['b:' + bid] = {t: v for t, v in sorted(s.items()) if int(t) >= now - 72 * H and int(t) % 1800 == 0}
-for nm in COAST:
-    s = hist['stations'].get(nm, {})
-    series['s:' + nm] = {t: {k: v[k] for k in ('wspd', 'wdir', 'pres', 'tair', 'rh') if v.get(k) is not None} for t, v in sorted(s.items()) if int(t) >= now - 72 * H}
+KEEP = ('wspd', 'wgust', 'wdir', 'pres', 'tair', 'rh', 'hs', 'hmax', 'tp', 'vdir', 'sst')
+for pid, name, kind, lat, lon, feeds in REGISTRY:
+    out = {}
+    for src, key in sorted(feeds, key=lambda f: {'buoy': 0, 'amp': 1, 'xml': 2, 'arso': 3, 'metar': 4}[f[0]]):
+        have = sorted(int(x) for x in out)
+        for t_, v in sorted(feed_series(src, key).items()):
+            ti = int(t_)
+            if ti < now - 72 * H: continue
+            if src in ('buoy', 'amp') and ti % 1800: continue            # every 30 min is enough for the graphs
+            if src not in ('buoy', 'amp') and any(abs(ti - h) < 25 * 60 for h in have): continue   # already covered
+            r = {k: v[k] for k in KEEP if v.get(k) is not None}
+            if r: out.setdefault(t_, {}).update({k: x for k, x in r.items() if k not in out.get(t_, {})})
+    if out: series[pid] = dict(sorted(out.items(), key=lambda kv: int(kv[0])))
 
 json.dump(hist, open(os.path.join(OUT, 'history.json'), 'w'), separators=(',', ':'))
 json.dump({'created': int(now), 'places': places, 'signals': signals, 'series': series, 'errors': errors, 'skill': SKILL, 'grads': GRADS,
-           'note': 'DHMZ izvorni nekontrolirani podaci; plutače očitane s grafova (vjetar na 3 m).'},
+           'note': 'DHMZ izvorni nekontrolirani podaci (plutače i automatske postaje očitane s grafova, plutače vjetar na 3 m); METAR (aerodromi); ARSO (Koper, Portorož).'},
           open(os.path.join(OUT, 'obs.json'), 'w'), separators=(',', ':'), ensure_ascii=False)
-print(f'Mjesta: {len(places)}, signali: {len(signals)}', '|', ' · '.join(s['title'] for s in signals))
-for p in places[:8]: print('  ', p['name'], {k: p.get(k) for k in ('wspd', 'wgust', 'wdir', 'pres', 'dp3', 'hs', 'tair', 'rh')})
+print(f'Mjesta: {len(places)} ({len(live_places)} javlja se), signali: {len(signals)}', '|', ' · '.join(s['title'] for s in signals))
+for p in live_places[:60]: print('  ', p['name'], p.get('by'), {k: p.get(k) for k in ('wspd', 'wgust', 'wdir', 'pres', 'dp3', 'hs', 'tair', 'rh')})

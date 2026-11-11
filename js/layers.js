@@ -129,6 +129,7 @@ export class WeatherLayer {
     const layer = LAYERS[state.layer];
     const f = layer.src === 'marine' ? state.marine : state.wind;
     if (!f) return;
+    this.drawnAt = state.time;   // the moment the picture on screen shows (checked by the replay test)
     if (state.colors !== false) {
       // CSS px per sample; the image is smoothed when scaled up. During the race replay a coarser grid (4× fewer samples):
       // the picture must keep up with the boats on an iPad, and the smoothing hides the difference

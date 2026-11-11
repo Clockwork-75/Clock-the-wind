@@ -2170,7 +2170,7 @@ function routeAt(r, t) {
   const twd = (a.twd === a.twd && b.twd === b.twd) ? (a.twd + ((((b.twd - a.twd) % 360) + 540) % 360 - 180) * f + 360) % 360 : a.twd;
   return { ...a, lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f, tws: lin('tws'), gust: lin('gust'), bsp: lin('bsp'), twd };
 }
-function updateBoats() {
+function updateBoats(popup = true) {
   const n = Object.keys(boatMarkers).length;
   for (const [id, mk] of Object.entries(boatMarkers)) {
     const r = state.routes[id]; const p = routeAt(r, state.time);
@@ -2182,8 +2182,8 @@ function updateBoats() {
     lbl.textContent = done ? `${modelById(id).name} 🏁 ${fmtTime(r.eta, false)}` : `${modelById(id).name} ${p.bsp ? p.bsp.toFixed(1) + ' kn' : ''}`;
     lbl.style.display = id === state.selected || (n <= 4 && innerWidth > 700) ? '' : 'none';   // phone: only the selected boat is labelled
   }
-  if (boatPopup && boatPopup.isOpen()) showBoatInfo(boatPopup._ctwId, true);
-  updateReplayRank();
+  if (popup && boatPopup && boatPopup.isOpen()) showBoatInfo(boatPopup._ctwId, true);
+  if (popup) updateReplayRank();
 }
 // small, unobtrusive info box for a boat
 let boatPopup = null;
@@ -2218,7 +2218,7 @@ function replayRange() {
   const o = okRoutes(); if (!o.length) return null;
   return { t0: Math.min(...o.map(r => r.startTime || r.track[0].t)), t1: Math.max(...o.map(r => r.eta)) };
 }
-function replayPause() { if (!rp.on) return; rp.on = false; clearInterval(rp.raf); setTime(state.time); renderReplayBar(); }
+function replayPause() { if (!rp.on) return; rp.on = false; state.replaying = false; cancelAnimationFrame(rp.raf); clearTimeout(rp.bg); setTime(state.time); renderReplayBar(); }
 // the wind on the map must be valid at race time: if the model on screen has no data then (e.g. ICON-2I ending before a
 // regatta days ahead – its last state would stay frozen), show the model of the route being followed instead
 const coversTime = (id, t) => { const f = state.set && state.set.fields[id]; return !!f && f.times && t >= f.times[0] - 1800000 && t <= lastTime(f) + 1800000; };
@@ -2233,7 +2233,7 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 4.5 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 4.6 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2270,15 +2270,15 @@ function replayPlay() {
   if (playing) { clearInterval(playing); playing = null; }
   if (boatPopup) map.closePopup(boatPopup);
   if (state.time >= R.t1 || state.time < R.t0) setTime(R.t0);
-  rp.on = true; rp.last = performance.now(); rp.lastFull = 0; rp.pend = false; rp.same = 0; rp.dh = rp.ph = null; rp.heal = 0;
-  clearInterval(rp.raf);
-  // full redraw (wind colours, arrows, timeline). Made inside the browser's own drawing turn (requestAnimationFrame) so the
-  // screen takes it over; then checked: if the wind DATA under the view changed but the canvas pixels did not, the canvas
-  // has stopped accepting drawing (real Safari, long replays) – it is replaced by a fresh one and drawn again
-  const full = () => {
-    if (!rp.pend) return; rp.pend = false;
-    if (!rp.on && state.time < R.t1) return;
-    const a = performance.now(); rp.lastFull = a;
+  rp.on = true; rp.last = performance.now(); rp.lastFull = 0; rp.same = 0; rp.dh = rp.ph = null; rp.heal = 0; rp.lastBoats = 0; rp.lastPop = 0;
+  state.replaying = true;                       // lighter drawing while the race plays (coarser colour grid, fewer particles)
+  cancelAnimationFrame(rp.raf); clearTimeout(rp.bg);
+  // ONE piece of work per screen frame, driven by the browser's own frame clock (requestAnimationFrame): the browser always
+  // gets to put the new picture on the screen between two pieces of work. Before, a 33 ms timer did boats + popup + the
+  // whole wind field back to back; on the iPad the main thread was busy all the time and Safari stopped presenting frames –
+  // the data moved on, the screen kept the start picture until pause.
+  const full = now => {
+    rp.lastFull = now;
     try { followRouteWind(state.time); } catch (e) { noteErr(e); }
     try { setTime(state.time); rp.full++; } catch (e) { noteErr(e); }
     try {
@@ -2288,24 +2288,24 @@ function replayPlay() {
         rp.dh = dh; rp.ph = ph;
         if (rp.same >= 2 && rp.heal < 5) { rp.heal++; rp.same = 0; noteErr(new Error('slika vjetra se nije mijenjala – platno obnovljeno')); wxLayer.renew(); wxLayer.draw(); rp.ph = wxLayer.pixelHash(); }
       }
-      wxLayer.present();
     } catch (e) { noteErr(e); }
-    const cost = performance.now() - a; rp.every = Math.max(250, Math.min(1500, cost * 2.5));   // leave time for the boats
+    const cost = performance.now() - now;
+    rp.cost = cost; rp.every = Math.max(350, Math.min(2000, cost * 4));   // the wind field takes at most ~25 % of the time
   };
-  const tick = () => {
-    const now = performance.now();
-    if (!rp.on) return clearInterval(rp.raf);
-    // race time follows the real clock at the chosen speed, also when a redraw of the wind field takes long (iPad, big
-    // screen): earlier each step was capped at 0.1 s, so slow redraws made the whole race crawl
+  const step = now => {
+    if (!rp.on) return;
     const dt = Math.min(1000, now - rp.last); rp.last = now;
     const t = Math.min(R.t1, state.time + dt * replaySpeed());
     state.time = t;
-    if (t >= R.t1) { rp.on = false; clearInterval(rp.raf); rp.pend = true; full(); renderReplayBar(); return; }
-    if (rp.pend) { if (now - rp.pendAt > 400) full(); else updateBoats(); }      // no drawing turn came (background window): draw now
-    else if (now - rp.lastFull > rp.every) { rp.pend = true; rp.pendAt = now; requestAnimationFrame(full); updateBoats(); }
-    else updateBoats();                                                           // boats every frame
+    if (t >= R.t1) { rp.on = false; state.replaying = false; full(now); renderReplayBar(); return; }
+    if (now - rp.lastFull > rp.every) full(now);                                 // this frame: the wind picture (and boats with it)
+    else if (now - rp.lastBoats > 60) { rp.lastBoats = now;                      // other frames: only the boats, ~15×/s
+      try { updateBoats(now - rp.lastPop > 250 ? (rp.lastPop = now, true) : false); } catch (e) { noteErr(e); } }
+    schedule();
   };
-  rp.raf = setInterval(tick, 33);   // timer (not rAF) so the race keeps running in a background window too
+  // a hidden window gets no frames: then a slow timer keeps the race going
+  const schedule = () => { if (!rp.on) return; if (document.hidden) rp.bg = setTimeout(() => step(performance.now()), 250); else rp.raf = requestAnimationFrame(step); };
+  schedule();
   renderReplayBar();
 }
 function renderReplayBar() {
@@ -2503,7 +2503,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 4.5 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 4.6 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

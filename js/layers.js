@@ -130,7 +130,9 @@ export class WeatherLayer {
     const f = layer.src === 'marine' ? state.marine : state.wind;
     if (!f) return;
     if (state.colors !== false) {
-      const step = state.hiRes ? 1.5 : 2;   // CSS px per sample; the image is smoothed when scaled up
+      // CSS px per sample; the image is smoothed when scaled up. During the race replay a coarser grid (4× fewer samples):
+      // the picture must keep up with the boats on an iPad, and the smoothing hides the difference
+      const step = state.replaying ? 4 : state.hiRes ? 1.5 : 2;
       const g = viewGeometry(map, step);
       sizeTo(this.off, g.W, g.H);
       const octx = this.off.getContext('2d');
@@ -382,6 +384,7 @@ export class ParticleLayer {
       const st = this.state;
       const { ctx } = this.p, size = this.map.getSize();
       if (this.pause || !st.particles) { ctx.clearRect(0, 0, size.x, size.y); return; }
+      if (st.replaying && (this._skip = !this._skip)) return;   // replay: particles every second frame, the frame is shared with the boats
       const src = st.layer === 'current' ? st.marine : st.wind;
       if (!src) return;
       const vars = st.layer === 'current' ? ['cu', 'cv'] : ['u', 'v'];

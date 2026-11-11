@@ -37,20 +37,19 @@ const md5 = b => crypto.createHash('md5').update(b).digest('hex').slice(0, 8);
     }, layer);
     console.log(`\n===== sloj ${layer}:`, JSON.stringify(info));
     await p.evaluate(() => window.ctw.fn.replayPlay());
-    await p.addStyleTag({ content: '.leaflet-particles-pane{visibility:hidden!important}' });
     const clip = { x: 150, y: 250, width: 500, height: 350 };
     let prev = null;
     for (let k = 0; k < 6; k++) {
       await p.waitForTimeout(k ? 4000 : 2500);
       // DURING the replay
-      const a = await p.screenshot({ clip });
+      let a; try { a = await p.screenshot({ clip, timeout: 8000 }); } catch (e) { a = Buffer.from('NEMA SLIKE ' + k); console.log('  !! u replayu preglednik 8 s nije iscrtao nijednu sliku'); }
       const sa = await p.evaluate(() => { const c = window.ctw, st = c.state, wx = c.fn.wx(); return { t: st.time, m: st.modelId, sel: st.selected, layer: st.layer, data: wx.dataHash(), px: wx.pixelHash(), lite: c.fn.viewCheckLite() }; });
       // pause + the same time set by hand
       await p.evaluate(t => { const c = window.ctw; c.fn.replayPause(); c.fn.setTime(t); }, sa.t);
       await p.waitForTimeout(700);
       const bb = await p.screenshot({ clip });
       const sb = await p.evaluate(() => { const c = window.ctw, st = c.state, wx = c.fn.wx(); return { t: st.time, m: st.modelId, data: wx.dataHash(), px: wx.pixelHash() }; });
-      fs.writeFileSync(`shots/ru/${layer}-${k}-replay.png`, a); fs.writeFileSync(`shots/ru/${layer}-${k}-pauza.png`, bb);
+      if (a.length > 100) fs.writeFileSync(`shots/ru/${layer}-${k}-replay.png`, a); fs.writeFileSync(`shots/ru/${layer}-${k}-pauza.png`, bb);
       console.log(`${new Date(sa.t + 3600000).toISOString().slice(5, 16)} karta=${sa.m} sloj=${sa.layer} | replay ${md5(a)} pauza ${md5(bb)} ${md5(a) === md5(bb) ? 'ISTO' : 'RAZLIČITO'} | podaci replay=pauza ${sa.data === sb.data} | platno replay=pauza ${sa.px === sb.px} | promjena od prošlog ${prev ? (prev !== md5(a)) : '-'} | ${JSON.stringify(sa.lite)}`);
       prev = md5(a);
       await p.evaluate(() => window.ctw.fn.replayPlay());

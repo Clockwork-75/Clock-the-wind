@@ -517,3 +517,55 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
 .obsm.off i.calm{border-color:#8a96a8;border-style:dashed}
 .obsm.off:before{background:#6b7686 !important}
 .obspop p.warn{margin:6px 0;color:#ffb36b}
+
+/* ---------- v5.0: live GPS ---------- */
+.fab.gpsfab { padding: 11px 12px; }
+.fab.gpsfab svg { width: 20px; height: 20px; }
+.fab.gpsfab.on { border-color: #00e5ff; color: #00e5ff; }
+.fab.gpsfab.on.good { background: rgba(0, 229, 255, .22); color: #fff; }
+.fab.gpsfab.on.ok { background: rgba(255, 213, 79, .22); border-color: #ffd54f; color: #ffd54f; }
+.fab.gpsfab.on.bad { background: rgba(255, 82, 82, .2); border-color: #ff5252; color: #ff8a80; }
+.fab.gpsfab.on.wait svg { animation: gpspulse 1.2s ease-in-out infinite; }
+@keyframes gpspulse { 50% { opacity: .35; } }
+.gpsmk { width: 0; height: 0; }
+.gpsboat { position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; pointer-events: none; }
+.gpsboat svg { width: 32px; height: 32px; overflow: visible; transform-origin: 50% 50%; filter: drop-shadow(0 1px 3px rgba(0,0,0,.8)); }
+.gpsboat .arrow { fill: #00e5ff; stroke: #fff; stroke-width: 2; stroke-linejoin: round; }
+.gpsboat .dotc { fill: #00e5ff; stroke: #fff; stroke-width: 2.5; display: none; }
+.gpsboat.still .arrow { display: none; } .gpsboat.still .dotc { display: block; }
+.gpsboat.dim .arrow, .gpsboat.dim .dotc { fill: #9aa4b2; }
+#gpsCard { position: fixed; z-index: 999; left: calc(8px + var(--sal)); top: calc(66px + var(--sat)); width: min(300px, calc(100vw - 100px)); padding: 7px 10px 8px; border-radius: 14px; font-size: 12.5px; line-height: 1.35; }
+#gpsCard.hidden { display: none; }
+/* wide screens: bottom-left above the legend (the top is taken by the replay bar and the end-of-model note) */
+@media (min-width: 701px) { #gpsCard { top: auto; bottom: calc(178px + var(--sab)); } }
+#gpsCard .gh { display: flex; align-items: center; gap: 6px; min-height: 26px; }
+#gpsCard .gdot { width: 10px; height: 10px; border-radius: 50%; background: #9aa4b2; flex: none; }
+#gpsCard .gdot.good { background: #00e676; box-shadow: 0 0 0 3px rgba(0,230,118,.22); }
+#gpsCard .gdot.ok { background: #ffd54f; } #gpsCard .gdot.bad { background: #ff5252; }
+#gpsCard .gdot.wait { background: #9aa4b2; animation: gpspulse 1.2s ease-in-out infinite; }
+#gpsCard .gacc { font-variant-numeric: tabular-nums; font-weight: 650; }
+#gpsCard .gst { color: var(--muted); font-size: 11.5px; min-width: 0; }
+#gpsCard .gbtns { margin-left: auto; display: flex; gap: 2px; flex: none; }
+#gpsCard .gbtns button { width: 32px; height: 28px; border-radius: 8px; color: #fff; background: rgba(255,255,255,.1); font-size: 17px; line-height: 1; }
+#gpsCard .gbtns button:hover { color: #fff; background: rgba(255,255,255,.08); }
+#gpsCard .gbig { display: flex; align-items: baseline; gap: 14px; margin: 2px 0 4px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+#gpsCard .gbig small { color: var(--muted); font-size: 10.5px; font-weight: 650; margin-right: 5px; }
+#gpsCard .gbig b { font-size: 22px; font-weight: 750; } #gpsCard .gbig i { font-style: normal; color: var(--muted); margin-left: 3px; font-size: 11px; }
+#gpsCard .gpos { color: var(--muted); font-size: 11px; width: 100%; }
+#gpsCard .gr { margin: 3px 0; } #gpsCard .gr.muted, #gpsCard .muted { color: var(--muted); }
+#gpsCard .gr.warn { color: var(--accent-2); }
+#gpsCard .late { color: #ff8a80; } #gpsCard .early { color: #69f0ae; }
+#gpsCard .gr .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+#gpsCard .btn.block { margin-top: 6px; padding: 8px 10px; font-size: 13px; }
+#nextMark.ask { outline: 2px solid var(--accent-2); }
+@media (max-width: 700px) {
+  .fab.gpsfab { padding: 9px 10px; }
+  #gpsCard { top: calc(112px + var(--sat)); width: min(270px, calc(100vw - 62px)); font-size: 12px; padding: 5px 8px 6px; }
+  body.wx-ended #gpsCard { top: calc(146px + var(--sat)); }
+  #gpsCard .gbig b { font-size: 19px; }
+}
+@media (max-width: 700px) {
+  #fabs { gap: 6px; }
+  .fab.gpsfab { padding: 9px 9px; }
+  .modepill { max-width: min(150px, calc(100vw - 272px)); }   /* room for the GPS button in the same row */
+}

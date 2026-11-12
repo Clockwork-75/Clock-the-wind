@@ -62,7 +62,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
 <div class="cover">
   <h1>Clock the Wind</h1>
   <p class="sub">Prognoza vjetra i weather routing za jadranske regate</p>
-  <p class="sub">Priručnik za korisnika · verzija 3.5 · Clockwork (Melges 40) · LeeLoo (Mat 11.80)</p>
+  <p class="sub">Priručnik za korisnika · verzija 5.0 · Clockwork (Melges 40) · LeeLoo (Mat 11.80)</p>
 </div>
 
 <nav class="toc">
@@ -367,12 +367,29 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
 </section>
 
 <section id="s15">
-  <h2><span class="n">15</span>Tijekom regate</h2>
+  <h2><span class="n">15</span>Tijekom regate – GPS pozicija broda (od verzije 5.0)</h2>
+  <p>Aplikacija može pokazati gdje je brod prema GPS-u uređaja i usporediti to s izračunatom rutom, bez prepisivanja koordinata.</p>
   <ol>
-    <li><b class="ui">Routing</b> → <b>Sljedeća oznaka</b>: odaberi koju oznaku sljedeću obilaziš.</li>
-    <li>Stisni <b class="ui">📍 Ruta od moje pozicije, sada</b>. Aplikacija uzme GPS poziciju i izračuna rutu do cilja od tog trenutka.</li>
+    <li>Dodirni okrugli gumb <b class="ui">GPS</b> (nišan) pokraj gumba <b class="ui">Staza</b>. Prvi put uređaj pita smije li aplikacija koristiti lokaciju: odaberi <b>Dopusti</b> i ostavi uključeno <b>Točna lokacija</b>.</li>
+    <li>Na karti se pojavi <b>tirkizna strelica</b> (brod) s krugom točnosti, a iza nje ostaje <b>trag</b>. Kartica <b>GPS</b> pokazuje brzinu preko dna (SOG) i kurs preko dna (COG).</li>
+    <li>Ako je izračunata ruta, kartica pokazuje i: koliko si <b>lijevo ili desno od rute</b>, koliko si <b>ispred ili iza plana</b>, što plan kaže na tom mjestu (kurs, brzina, jedro), <b>sljedeći manevar</b>, udaljenost i smjer do <b>sljedeće oznake</b> te brzinu kao <b>postotak polare</b>.</li>
+    <li><b class="ui">Ruta odavde, sada</b> izračuna novu rutu od stvarne pozicije do cilja. Sljedeću oznaku aplikacija predloži sama; provjeri je u kartici <b class="ui">Routing</b> → <b>Sljedeća oznaka</b>. Rute izračunate od starta ostaju sačuvane: vraća ih <b class="ui">↩ Vrati rute izračunate od starta</b>.</li>
   </ol>
-  <p>Treba spremljenu prognozu koja pokriva trenutno vrijeme. Internet nije potreban.</p>
+  <table>
+    <tr><th>Boja točke</th><th>Značenje</th></tr>
+    <tr><td>Zelena</td><td>Točnost ±25 m ili bolja. Pozicija se koristi za sve.</td></tr>
+    <tr><td>Žuta</td><td>Točnost do ±100 m. Dovoljno za routing.</td></tr>
+    <tr><td>Crvena / siva</td><td>Slab, star ili izgubljen signal. Pozicija se <b>ne koristi</b>; ruta se od nje ne računa.</td></tr>
+  </table>
+  <ul>
+    <li>GPS radi dok je aplikacija na ekranu. Kad je zatvoriš ili zaključaš telefon, ne troši bateriju, a trag dobije prekid. Kad je ponovno otvoriš, sama se locira (ako si GPS ostavio uključen).</li>
+    <li><b>iPhone</b> i <b>iPad s mobilnom mrežom</b> imaju pravi GPS, koji radi i bez signala mreže. <b>Mac</b> i <b>iPad samo s Wi-Fi-jem</b> na moru nemaju točnu poziciju; aplikacija to prepozna i radi kao i prije, s ručnim unosom.</li>
+    <li>Telefon ne mjeri vjetar. „% polare“ uspoređuje brzinu preko dna s polarom za <b>prognozirani</b> vjetar, pa nizak postotak može značiti i da je vjetar slabiji od prognoze ili da te koči struja.</li>
+    <li>Aplikacija ništa ne mijenja sama: pokaže odstupanje, a ti odlučuješ kad preračunati rutu.</li>
+    <li><b class="ui">Postavke</b> → <b>GPS</b>: držanje ekrana upaljenim, izvoz traga (GPX) i brisanje traga. Pozicija ostaje na uređaju.</li>
+  </ul>
+  <p>Za rutu od pozicije treba spremljena prognoza koja pokriva trenutno vrijeme. Internet nije potreban.</p>
+  <div class="warn">GPS pozicija u aplikaciji je pomoć za taktiku, a ne navigacijski uređaj. Za sigurnu plovidbu koristi brodski ploter i službenu kartu.</div>
 </section>
 
 <section id="s16">
@@ -453,7 +470,7 @@ footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 2
   </table>
 </section>
 
-<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 3.5</footer>
+<footer>Clock the Wind · prognoza i weather routing za Jadran · priručnik za verziju 5.0</footer>
 </main>
 </body>
 </html>

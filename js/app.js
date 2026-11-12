@@ -13,6 +13,7 @@ import { speedDirFromUV, distNm, bearing, fmtLatLon, angDiff } from './geo.js';
 import { kv } from './db.js';
 import { playIntro } from './intro.js';
 import { buildClockW, clockwWindow, isClockW, clockwMeta, isDerived } from './ensemble.js';
+import { Gps, GPS } from './gps.js';
 playIntro();
 
 const $ = s => document.querySelector(s);
@@ -64,7 +65,7 @@ async function showSavedRoutes() {
 }
 async function clearRoutes(keepSaved = false) {
   replayPause && replayPause();
-  state.routes = {}; state.selected = null;
+  state.routes = {}; state.selected = null; state.planRoutes = null;
   if (!keepSaved) {   // "Obriši": this course's routes are gone for good (other regattas keep theirs)
     const m = await savedMap(); delete m[courseKey(course)]; await kv.set('routes:savedByCourse', m).catch(() => {});
   }
@@ -1603,6 +1604,8 @@ function renderRoutingTab() {
   const routable = s ? s.models.filter(id => s.fields[id].validUntil > start && s.fields[id].times[0] <= start) : [];
   if (!state.routeModels) state.routeModels = routable.filter(id => !isClockW(id));   // ClockW: only when you tick it
   const stale = Object.values(state.routes).some(r => r.stale);
+  const autoNext = gps.routable() ? gpsNextIdx(gps.best) : null;
+  const liveNext = Math.max(1, Math.min(course.marks.length - 1, autoNext || state.liveNext || 1));
   el.innerHTML = `
     <h3>Brod</h3>
     ${boatPickerHtml()}
@@ -1625,8 +1628,11 @@ function renderRoutingTab() {
     <div class="row"><label>Gubitak brzine u valovima</label><input type="checkbox" id="wavP" ${settings.wavePenalty ? 'checked' : ''}></div>
     <button id="btnRun" class="btn primary block" ${s ? '' : 'disabled'}>Izračunaj rute od starta (${state.routeModels.filter(x => routable.includes(x)).length} modela)</button>
     <h3>Tijekom regate</h3>
-    <div class="row"><label>Sljedeća oznaka</label><select id="nextMark">${course.marks.slice(1).map((m, i) => `<option value="${i + 1}">${m.name}</option>`).join('')}</select></div>
+    <div class="row"><label>Sljedeća oznaka</label><select id="nextMark">${course.marks.slice(1).map((m, i) => `<option value="${i + 1}" ${i + 1 === liveNext ? 'selected' : ''}>${escH(m.name)}</option>`).join('')}</select></div>
+    ${autoNext ? '<div class="note">Sljedeća oznaka je predložena prema GPS poziciji na ruti – provjeri je.</div>' : ''}
     <button id="btnGps" class="btn block" ${s ? '' : 'disabled'}>📍 Ruta od moje pozicije, sada</button>
+    <div class="note">Koristi GPS uređaja samo ako je pozicija svježa i točna (±${GPS.usable} m ili bolje); inače se ruta ne računa. ${gps.on ? '' : 'GPS se uključuje okruglim gumbom s nišanom na karti.'}</div>
+    ${state.planRoutes ? '<button id="btnPlanBack" class="btn block">↩ Vrati rute izračunate od starta</button>' : ''}
     <div id="runStatus"></div>
     ${Object.keys(state.routes).length ? '<button id="btnClearRoutes" class="btn block danger">🗑 Obriši rute (zauvijek)</button>' : ''}
     <p class="note">Ruta izbjegava kopno, otoke i plićine (EMODnet batimetrija ~135 m). Uvijek provjeri hridi, zabranjene zone i upute za jedrenje na službenoj karti.</p>`;
@@ -1641,16 +1647,11 @@ function renderRoutingTab() {
   el.querySelectorAll('.check input').forEach(i => i.onchange = () => { state.routeModels = [...el.querySelectorAll('.check input:checked')].map(x => x.value); renderRoutingTab(); });
   el.querySelector('#btnRun').onclick = () => runRouting(state.routeModels.filter(x => routable.includes(x)));
   const cr1 = el.querySelector('#btnClearRoutes'); if (cr1) armDelete(cr1, 'Rute su obrisane (staza je ostala)', async () => { await clearRoutes(); renderRoutingTab(); });
-  el.querySelector('#btnGps').onclick = () => {
-    if (!navigator.geolocation) return toast('GPS nije dostupan');
-    toast('Tražim GPS poziciju…');
-    navigator.geolocation.getCurrentPosition(pos => {
-      const now = Math.floor(Date.now() / 60000) * 60000;
-      const from = { name: 'Moja pozicija', lat: pos.coords.latitude, lon: pos.coords.longitude };
-      const marks = [from, ...course.marks.slice(+$('#nextMark').value)];
-      const ids = state.set.models.filter(id => state.set.fields[id].validUntil > now && state.set.fields[id].times[0] <= now);
-      runRouting(ids, { marks, startTime: now });
-    }, err => toast('GPS greška: ' + err.message, 4000), { enableHighAccuracy: true, timeout: 15000 });
+  el.querySelector('#nextMark').onchange = e => { state.liveNext = +e.target.value; e.target.classList.remove('ask'); };
+  el.querySelector('#btnGps').onclick = () => routeFromGps(+el.querySelector('#nextMark').value);
+  const pb = el.querySelector('#btnPlanBack'); if (pb) pb.onclick = () => {
+    const p = state.planRoutes; state.planRoutes = null; state.routes = p.routes; state.selected = p.selected; state.routesSaved = p.saved;
+    drawRoutes(); renderRoutingTab(); toast('Vraćene su rute izračunate od starta');
   };
 }
 async function runRouting(ids, override = {}) {
@@ -1677,6 +1678,9 @@ async function runRouting(ids, override = {}) {
   const key = id => id.replace(/[^\w-]/g, '_');
   const ws = getWorkers();
   const opts = { efficiency: settings.efficiency / 100, tackPenaltySec: settings.tackPenaltySec, gybePenaltySec: settings.gybePenaltySec, dtMin: settings.dtMin, useCurrents: settings.useCurrents, wavePenalty: settings.wavePenalty, sails: sailSetOf(state.boat) || false };
+  // a live route (from the GPS position) replaces what is on the map: the routes from the start are kept aside once
+  if (override.marks) { if (!state.planRoutes && Object.values(state.routes).some(r => r && r.ok && !r.live)) state.planRoutes = { routes: state.routes, selected: state.selected, saved: state.routesSaved }; }
+  else state.planRoutes = null;
   state.routes = {};
   let next = 0;
   const t0 = performance.now();
@@ -1695,7 +1699,7 @@ async function runRouting(ids, override = {}) {
         w.addEventListener('message', onMsg);
         w.postMessage({ cmd: 'route', id: msgId, wind: rs.fields[id], marine: rs.fields.marine, polar: state.polar.serialize(), marks, startTime, opts });
       });
-      res.model = id; res.boat = state.boat.name; res.sailSet = sailSetOf(state.boat); res.live = !!override.marks;
+      res.model = id; res.boat = state.boat.name; res.sailSet = sailSetOf(state.boat); res.live = !!override.marks; if (res.live) res.liveFrom = override.from || null;
       state.routes[id] = res;
       const b = $('#rp-' + key(id)); if (b) b.style.width = '100%';
       if (rsEl()) rsEl().textContent = res.ok ? `ETA ${fmtTime(res.eta)} (${fmtDur(res.stats.hours)})${res.overPolar ? ` · ⚠ vjetar do ${Math.round(res.overPolar.maxTws)} kn, polar do ${res.overPolar.top} kn` : ''}` : '✕ ' + res.error;
@@ -2233,7 +2237,8 @@ function windOfRoute() {
 // Postavke → Provjera prikaza: on the device itself – is the wind on the map changing with time? (data AND pixels)
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
-  L.push(`Verzija 4.6 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`GPS: ${gps.status()}${gps.fix ? ` ±${Math.round(gps.fix.acc)} m` : ''} · primljeno ${gps.count}, odbačeno ${gps.rejected} · trag ${gps.track.length}`);
+  L.push(`Verzija 5.0 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2492,6 +2497,7 @@ function renderSettingsTab() {
     ${sailSetOf(state.boat) ? `<h3>Crossover jedara – ${state.boat.group === 'leeloo' ? 'LeeLoo' : 'Clockwork'}</h3>
     <div class="note">${sailSetOf(state.boat) === 'mat1180' ? 'Iz North Sails MAT1180 crossover charta V1d (J1–J4, A0/MH, A1.5, A2, A4, A5, 1. kratež) – jedro za svaku ćeliju TWA × TWS.' : 'Digitalizirano iz North Sails charta (J1–J4, FRO, A1.5/A2/A4/A5, jib strut, 1. kratež).'} Za uvezene brodove ruta prikazuje kurs (kroz/bočni/krma).</div>
     <canvas class="chart" id="xoverChart" style="height:240px"></canvas>` : ''}
+    ${gpsSettingsHtml()}
     <h3>Izvori podataka</h3>
     <div class="row"><label>Open-Meteo komercijalni API ključ</label></div>
     <div class="row"><input type="password" id="apikey" class="field" style="flex:1" placeholder="prazno = besplatni limit" value="${settings.apiKey}" autocomplete="off"></div>
@@ -2503,7 +2509,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 4.6 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 5.0 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>
@@ -2534,7 +2540,7 @@ function renderSettingsTab() {
   };
   el.querySelector('#introT').onchange = e => { try { localStorage.setItem('ctw.intro', e.target.checked ? 'on' : 'off'); } catch { /* ignore */ } };
   el.querySelector('#introPlay').onclick = () => playIntro({ force: true });
-  bindCwDelete(el);
+  bindCwDelete(el); bindGpsSettings(el);
   el.querySelector('#clearData').onclick = async () => { if (!confirm('Obrisati spremljene prognoze i rute?')) return; await kv.del('forecast:latest'); await kv.del('routes:savedByCourse'); await kv.del('routes:saved'); await kv.del('routes:latest'); state.routes = {}; state.routesSaved = false; drawRoutes(); useSet(null); toast('Obrisano'); };
   drawPolarChart($('#polarChart'));
   if ($('#xoverChart')) drawXover($('#xoverChart'));
@@ -2571,6 +2577,219 @@ function drawXover(cv) {
   Object.entries(labels).forEach(([n, [sa, sv, k]]) => c.fillText(n, X(sa / k) - 8, Y(sv / k)));   // label at the centre of each sail's area
 }
 
+// ---------------- live GPS (v5.0): own boat on the map, compared with the route ----------------
+// Rules: the position is used only when it is fresh and accurate (see gps.js); nothing is ever changed automatically –
+// the app shows how far you are from the plan and you decide when to recalculate. Manual entry keeps working as before.
+map.createPane('gps'); map.getPane('gps').style.zIndex = 470;
+const gpsLayer = L.layerGroup().addTo(map);
+let gpsMk = null, gpsAccC = null, gpsLines = [], gpsDrawn = 0, gpsWantCenter = false, gpsDeniedTold = false, gpsSaveT = 0, wakeLock = null, gpsHintT = 0;
+const gps = new Gps({ onUpdate: () => { try { gpsRender(); } catch (e) { noteErr(e); } } });
+const escH = t => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const GPS_ERR = {
+  denied: 'Lokacija nije dopuštena. iPhone/iPad: Postavke → Privatnost i sigurnost → Lokacijske usluge → Safari web-stranice → „Dok se koristi aplikacija“ i „Točna lokacija“. Mac: Postavke sustava → Privatnost i sigurnost → Lokacijske usluge.',
+  insecure: 'GPS radi samo kad je aplikacija otvorena preko https adrese.',
+  unsupported: 'Ovaj uređaj ili preglednik ne daje lokaciju – radi dalje s ručnim unosom.',
+  nofix: 'Nema GPS signala. Pokušaj na otvorenom; do tada vrijedi ručni unos.',
+};
+const gpsErrText = m => /^poor:/.test(m) ? `Pozicija je preneprecizna za routing (±${m.slice(5)} m, treba ±${GPS.usable} m ili bolje). Ruta NIJE izračunata.` : GPS_ERR[m] || 'GPS greška: ' + m;
+const GPS_ST = {
+  searching: ['Tražim signal…', 'wait'], good: ['', 'good'], ok: ['', 'ok'], poor: ['slab signal – ne koristi se', 'bad'],
+  stale: ['stara pozicija', 'wait'], lost: ['signal izgubljen', 'bad'], denied: ['nije dopušteno', 'bad'], unsupported: ['nije dostupno', 'bad'], insecure: ['treba https', 'bad'], off: ['', 'off'],
+};
+const gpsBoatHtml = () => `<div class="gpsboat"><svg viewBox="-16 -16 32 32"><path class="arrow" d="M0-13 7.5 9 0 4.5-7.5 9z"/><circle class="dotc" r="6"/></svg></div>`;
+
+// where the boat is relative to the selected route: cross-track distance, side, time ahead/behind, what the plan says here
+function gpsVsRoute(f) {
+  const r = state.routes[state.selected]; if (!r || !r.ok || !r.track || r.track.length < 2) return null;
+  const tr = r.track, k = Math.cos(f.lat * Math.PI / 180), px = f.lon * 60 * k, py = f.lat * 60;
+  const cand = []; let dmin = Infinity;
+  for (let i = 1; i < tr.length; i++) {
+    const ax = tr[i - 1].lon * 60 * k, ay = tr[i - 1].lat * 60, dx = tr[i].lon * 60 * k - ax, dy = tr[i].lat * 60 - ay, L2 = dx * dx + dy * dy || 1e-12;
+    const fr = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2));
+    const ox = px - ax - fr * dx, oy = py - ay - fr * dy, d = Math.hypot(ox, oy);
+    cand.push({ d, t: tr[i - 1].t + fr * (tr[i].t - tr[i - 1].t), left: dx * (py - ay) - dy * (px - ax) > 0 });
+    if (d < dmin) dmin = d;
+  }
+  // a course that sails the same water twice (out and back): of the equally near places take the one closest in time to now
+  const tol = dmin + Math.max(0.15, f.acc / 1852);
+  const best = cand.filter(c => c.d <= tol).sort((a, b) => Math.abs(a.t - f.t) - Math.abs(b.t - f.t))[0];
+  const tP = best.t, plan = routeAt(r, tP);
+  const inTime = f.t >= r.startTime - 60000 && f.t <= r.eta + 6 * 3600000;
+  const onRoute = best.d <= 2;
+  const man = manoeuvres(r).find(m => m.t > tP + 30000);
+  const mark = tr.find(p => p.mark && p.t > tP);
+  const passed = tr.filter(p => p.mark && p.t <= tP).length;
+  const base = r.live ? r.liveFrom : 1;
+  const nextIdx = base >= 1 ? Math.min(course.marks.length - 1, base + passed) : null;
+  return { r, xte: best.d, left: best.left, tP, plan, delta: inTime && onRoute ? f.t - tP : null, before: f.t < r.startTime - 60000, onRoute, man, mark, nextIdx };
+}
+// speed made good against the polar for the FORECAST wind at the boat (the phone cannot measure wind)
+function gpsPerf(f) {
+  const st = gps.steady(120000); if (!st || st.cog !== st.cog || !state.polar) return null;
+  const r = state.routes[state.selected], fld = (r && r.ok && state.set && state.set.fields[r.model]) || state.wind; if (!fld) return null;
+  const o = sample(fld, ['u', 'v'], f.lat, f.lon, f.t, []); if (o[0] !== o[0]) return null;
+  const [tws, twd] = speedDirFromUV(o[0], o[1]), twa = Math.abs(angDiff(st.cog, twd)), target = state.polar.speed(twa, tws);
+  if (!(tws >= 4) || !(target >= 2)) return null;
+  return { pct: st.sog / target * 100, tws, twa, sog: st.sog, target };
+}
+const gpsNextIdx = f => { const v = f && gpsVsRoute(f); return v && v.onRoute && v.nextIdx >= 1 ? v.nextIdx : null; };
+
+function gpsToggle(on, byUser = true) {
+  settings.gps = !!on; saveSettings();
+  if (on) {
+    gpsWantCenter = byUser; gpsDeniedTold = false;
+    if (!gps.start()) toast(GPS_ERR[gps.err] || 'GPS nije dostupan', 6000);
+    else if (byUser) toast('GPS uključen – tražim poziciju…');
+  } else { gps.stop(); if (byUser) toast('GPS isključen'); }
+  gpsWake(); gpsRender();
+  if ($('.tabs [data-tab=settings].on')) renderSettingsTab();
+}
+async function gpsWake() {
+  try {
+    const want = settings.gpsWake && gps.on && !document.hidden && 'wakeLock' in navigator;
+    if (want && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    else if (!want && wakeLock) { const w = wakeLock; wakeLock = null; await w.release(); }
+  } catch { wakeLock = null; }
+}
+function gpsCenter() {
+  const f = gps.fix; if (!f) return toast('Još nema pozicije');
+  map.setView([f.lat, f.lon], Math.max(map.getZoom(), f.grade === 'poor' ? 10 : 12));
+}
+function gpsSaveTrack(force = false) {
+  if (!gps.trackDirty || (!force && Date.now() - gpsSaveT < 60000)) return;
+  gpsSaveT = Date.now(); gps.trackDirty = false; kv.set('gps:track', gps.track).catch(() => {});
+}
+function gpsDrawTrack() {
+  if (gpsDrawn === gps.track.length && gpsLines.length) return;
+  const segs = gps.segments();
+  // the usual case – one more point on the last segment – only extends the line
+  if (gpsLines.length && gpsLines.length === segs.length && gps.track.length === gpsDrawn + 1) { const s = segs[segs.length - 1]; gpsLines[gpsLines.length - 1].forEach(l => l.addLatLng(s[s.length - 1])); }
+  else {
+    gpsLines.flat().forEach(l => gpsLayer.removeLayer(l));
+    gpsLines = segs.map(s => [L.polyline(s, { pane: 'gps', color: '#000', weight: 4.5, opacity: 0.55, interactive: false }).addTo(gpsLayer), L.polyline(s, { pane: 'gps', color: '#fff', weight: 2, opacity: 0.95, dashArray: '1 5', interactive: false }).addTo(gpsLayer)]);
+  }
+  gpsDrawn = gps.track.length;
+}
+function gpsRender() {
+  const st = gps.status(), f = gps.fix, card = $('#gpsCard'), fab = $('#fabGps');
+  const [stTxt, cls] = GPS_ST[st] || ['', 'off'];
+  if (fab) { fab.className = 'fab gpsfab ' + (gps.on || settings.gps ? 'on ' : '') + cls; fab.title = gps.on ? 'GPS je uključen – dodirni za isključenje' : 'Uključi GPS poziciju broda'; }
+  if (st === 'denied' && !gpsDeniedTold) { gpsDeniedTold = true; settings.gps = false; saveSettings(); toast(GPS_ERR.denied, 9000); }
+  gpsDrawTrack(); gpsSaveTrack();
+  // marker + accuracy circle
+  if (!gps.on || !f) { if (gpsMk) { gpsLayer.removeLayer(gpsMk); gpsLayer.removeLayer(gpsAccC); gpsMk = gpsAccC = null; } }
+  else {
+    if (!gpsMk) {
+      gpsAccC = L.circle([f.lat, f.lon], { pane: 'gps', radius: f.acc, color: '#00e5ff', weight: 1, opacity: 0.7, fillColor: '#00e5ff', fillOpacity: 0.12, interactive: false }).addTo(gpsLayer);
+      gpsMk = L.marker([f.lat, f.lon], { pane: 'gps', zIndexOffset: 2000, interactive: false, icon: L.divIcon({ className: 'gpsmk', html: gpsBoatHtml(), iconSize: [0, 0] }) }).addTo(gpsLayer);
+    }
+    gpsMk.setLatLng([f.lat, f.lon]); gpsAccC.setLatLng([f.lat, f.lon]); gpsAccC.setRadius(f.acc);
+    const dim = st !== 'good' && st !== 'ok';
+    gpsAccC.setStyle({ color: dim ? '#9aa4b2' : '#00e5ff', fillColor: dim ? '#9aa4b2' : '#00e5ff' });
+    const el = gpsMk.getElement();
+    if (el) { const b = el.querySelector('.gpsboat'); b.classList.toggle('dim', dim); b.classList.toggle('still', !(f.cog === f.cog)); b.querySelector('svg').style.transform = `rotate(${f.cog === f.cog ? f.cog : 0}deg)`; }
+    if (gps.routable()) {
+      if (gpsWantCenter) { gpsWantCenter = false; gpsCenter(); }
+      else if (!gpsHintT && !map.getBounds().contains([f.lat, f.lon])) { gpsHintT = 1; toast('GPS: brod je izvan prikaza karte – dodirni ⌖ za centriranje', 5000); }
+    }
+  }
+  if (!card) return;
+  if (!gps.on) { card.classList.add('hidden'); card._html = ''; return; }
+  card.classList.remove('hidden');
+  const age = f ? Math.max(0, Math.round((Date.now() - f.t) / 1000)) : 0;
+  const accTxt = f ? `±${f.acc < 10 ? f.acc.toFixed(0) : Math.round(f.acc)} m` : '';
+  let status = stTxt;
+  if (st === 'searching' && gps.coarse) status = `uređaj daje samo približnu lokaciju (±${(gps.coarse / 1000).toFixed(0)} km) – uključi „Točna lokacija“`;
+  if (st === 'stale' || st === 'lost') status = `${stTxt} · prije ${age < 90 ? age + ' s' : Math.round(age / 60) + ' min'}`;
+  const live = st === 'good' || st === 'ok';
+  const b = gps.best, fresh = live && b && b === f;
+  let rows = '';
+  if (fresh && !settings.gpsMin) {
+    const v = settings.mode === 'race' ? gpsVsRoute(f) : null, pf = gpsPerf(f);
+    if (v) {
+      const name = escH(modelById(v.r.model).name);
+      if (!v.onRoute) rows += `<div class="gr warn">${v.xte.toFixed(1)} NM od rute (${name}) – ruta više ne vrijedi za ovu poziciju.</div>`;
+      else {
+        const xt = v.xte < 0.03 ? 'na ruti' : `${v.xte < 1 ? v.xte.toFixed(2) : v.xte.toFixed(1)} NM ${v.left ? 'lijevo' : 'desno'} od rute`;
+        const dm = v.delta == null ? null : Math.round(v.delta / 60000);
+        const dt = v.before ? 'prije starta' : dm == null ? '' : Math.abs(dm) < 1 ? 'točno po planu' : `<b class="${dm > 0 ? 'late' : 'early'}">${Math.abs(dm) >= 90 ? fmtDur(Math.abs(dm) / 60) : Math.abs(dm) + ' min'} ${dm > 0 ? 'iza plana' : 'ispred plana'}</b>`;
+        rows += `<div class="gr"><span class="dot" style="background:${mcol(v.r.model)}"></span>${xt}${dt ? ' · ' + dt : ''}</div>`;
+        rows += `<div class="gr muted">Plan ovdje: kurs <b>${Math.round(v.plan.hdg)}°</b> · ${v.plan.bsp.toFixed(1)} kn · ${escH(v.plan.sail || '')}</div>`;
+        if (v.man) { const d = distNm(f.lat, f.lon, v.man.lat, v.man.lon), mins = Math.round((v.man.t - v.tP) / 60000); rows += `<div class="gr">Sljedeće: <b>${v.man.kind === 'tack' ? 'okret' : 'kroz krmu'}</b> za ${d.toFixed(1)} NM (~${mins >= 90 ? fmtDur(mins / 60) : mins + ' min'})</div>`; }
+        if (v.mark) { const d = distNm(f.lat, f.lon, v.mark.lat, v.mark.lon), brg = bearing(f.lat, f.lon, v.mark.lat, v.mark.lon); rows += `<div class="gr">Do <b>${escH(v.mark.mark)}</b>: ${d.toFixed(1)} NM · ${Math.round(brg)}°${v.delta != null ? ` · oko ${fmtTime(v.mark.t + v.delta, false)}` : ''}</div>`; }
+        if ((v.xte > 0.5 || (v.delta != null && Math.abs(v.delta) > 10 * 60000)) && !v.before) rows += `<div class="gr warn">Odstupanje od plana je veliko – preračunaj rutu odavde.</div>`;
+      }
+      if (v.r.stale) rows += `<div class="gr warn">Ruta je izračunata za drugu stazu/start/brod.</div>`;
+    } else if (settings.mode === 'race' && course.marks.length >= 2) rows += `<div class="gr muted">Nema rute za usporedbu – izračunaj je.</div>`;
+    if (pf) rows += `<div class="gr">Brzina = <b class="${pf.pct < 85 ? 'late' : pf.pct > 108 ? 'early' : ''}">${Math.round(pf.pct)} % polare</b> <span class="muted">(prognoza ${pf.tws.toFixed(0)} kn, TWA ${Math.round(pf.twa)}°)</span></div>`;
+    if (settings.mode === 'race' && state.set && course.marks.length >= 2) rows += `<button id="gpsRoute" class="btn primary block">Ruta odavde, sada</button>`;
+  }
+  const html = `<div class="gh"><span class="gdot ${cls}"></span><b>GPS</b><span class="gacc">${live || st === 'poor' ? accTxt : ''}</span><span class="gst">${status}</span>
+      <span class="gbtns"><button id="gpsCtr" title="Centriraj kartu na brod" aria-label="Centriraj">⌖</button><button id="gpsMinB" title="Sažmi / proširi" aria-label="Sažmi">${settings.gpsMin ? '▸' : '▾'}</button></span></div>
+    ${fresh ? `<div class="gbig"><span><small>SOG</small><b>${f.sog === f.sog ? f.sog.toFixed(1) : '–'}</b><i>kn</i></span><span><small>COG</small><b>${f.cog === f.cog ? Math.round(f.cog) % 360 + '°' : '–'}</b></span>${settings.gpsMin ? '' : `<span class="gpos">${fmtLatLon(f.lat, f.lon)}</span>`}</div>` : ''}
+    ${rows}`;
+  if (card._html !== html) {
+    card._html = html; card.innerHTML = html;
+    card.querySelector('#gpsCtr').onclick = gpsCenter;
+    card.querySelector('#gpsMinB').onclick = () => { settings.gpsMin = !settings.gpsMin; saveSettings(); gpsRender(); };
+    const rb = card.querySelector('#gpsRoute'); if (rb) rb.onclick = () => routeFromGps();
+  }
+}
+// route from where the boat really is, now. idx = the next mark to round (null → worked out from the route, else asked)
+let gpsRouting = false;
+async function routeFromGps(idx = null) {
+  if (gpsRouting) return;
+  if (!state.set) return toast('Prvo preuzmi prognozu (kartica Prognoza)', 4000);
+  if (course.marks.length < 2) return toast('Staza nema start i cilj', 4000);
+  gpsRouting = true;
+  try {
+    if (settings.mode !== 'race') setMode('race');
+    if (!gps.routable()) toast('Tražim točnu GPS poziciju…', 5000);
+    let f;
+    try { f = await gps.waitRoutable(); } catch (e) { gpsRender(); return toast(gpsErrText(e.message), 8000); }
+    if (!settings.gps) { settings.gps = true; saveSettings(); }
+    if (idx == null) idx = gpsNextIdx(f);
+    if (idx == null) {
+      if (course.marks.length === 2) idx = 1;
+      else { openSheet('routing'); const s = $('#nextMark'); if (s) s.classList.add('ask'); return toast('Odaberi sljedeću oznaku pa dodirni „Ruta od moje pozicije“', 5000); }
+    }
+    idx = Math.max(1, Math.min(course.marks.length - 1, idx | 0));
+    const now = Math.floor(Date.now() / 60000) * 60000;
+    const last = course.marks[course.marks.length - 1];
+    if (idx === course.marks.length - 1 && distNm(f.lat, f.lon, last.lat, last.lon) < 0.05) return toast('Već si na cilju 🏁');
+    const cover = id => { const fl = state.set.fields[id]; return fl && fl.validUntil > now && fl.times[0] <= now; };
+    let ids = (state.routeModels || []).filter(cover);
+    if (!ids.length) ids = state.set.models.filter(cover);
+    if (!ids.length) return toast('Prognoza ne pokriva sadašnje vrijeme – preuzmi novu (kartica Prognoza)', 6000);
+    if (state.landAt && state.landAt(f.lat, f.lon)) toast('Pozicija je po karti na kopnu (vez/marina?) – ruta kreće s najbližeg mora', 5000);
+    const from = { name: 'Moja pozicija', lat: +f.lat.toFixed(6), lon: +f.lon.toFixed(6) };
+    await runRouting(ids, { marks: [from, ...course.marks.slice(idx)], startTime: now, from: idx });
+  } finally { gpsRouting = false; }
+}
+function gpsExportGpx() {
+  if (!gps.track.length) return toast('Trag je prazan');
+  const segs = []; for (const p of gps.track) { if (p.g || !segs.length) segs.push([]); segs[segs.length - 1].push(p); }
+  const x = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Clock the Wind" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Clock the Wind – GPS trag</name>${segs.map(s => `<trkseg>${s.map(p => `<trkpt lat="${p.lat}" lon="${p.lon}"><time>${new Date(p.t).toISOString()}</time></trkpt>`).join('')}</trkseg>`).join('')}</trk></gpx>`;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([x], { type: 'application/gpx+xml' })); a.download = `ctw-trag-${new Date().toISOString().slice(0, 10)}.gpx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function gpsSettingsHtml() {
+  const n = gps.track.length, t0 = n ? gps.track[0].t : 0;
+  return `<h3>GPS – pozicija broda</h3>
+    <div class="row"><label>Prikaži brod po GPS-u uređaja</label><input type="checkbox" id="gpsOn" ${settings.gps ? 'checked' : ''}></div>
+    <div class="row"><label>Drži ekran upaljenim dok je GPS uključen (troši bateriju)</label><input type="checkbox" id="gpsWakeT" ${settings.gpsWake ? 'checked' : ''} ${'wakeLock' in navigator ? '' : 'disabled'}></div>
+    <div class="row"><label>Trag: ${n ? `${n} točaka od ${fmtTime(t0)}` : 'prazan'}</label>${n ? '<button class="mini" id="gpsGpx">GPX</button><button class="mini" id="gpsClr">obriši</button>' : ''}</div>
+    <div class="note">Pozicija se koristi samo kad je svježa i točna: <b>zeleno</b> ±${GPS.good} m ili bolje, <b>žuto</b> do ±${GPS.usable} m (dovoljno za routing), <b>crveno/sivo</b> = slab ili star signal – tada se ne koristi i vrijedi ručni unos. GPS radi dok je aplikacija na ekranu; kad je zatvoriš, ne troši bateriju, a trag dobije prekid. iPhone i iPad s mobilnom mrežom imaju pravi GPS (radi i bez signala mreže); Mac i Wi-Fi iPad na moru ga nemaju. Telefon ne mjeri vjetar: „% polare“ uspoređuje brzinu preko dna s polarom za <b>prognozirani</b> vjetar. Pozicija ostaje na uređaju.</div>`;
+}
+function bindGpsSettings(el) {
+  el.querySelector('#gpsOn').onchange = e => gpsToggle(e.target.checked);
+  el.querySelector('#gpsWakeT').onchange = e => { settings.gpsWake = e.target.checked; saveSettings(); gpsWake(); };
+  const g = el.querySelector('#gpsGpx'); if (g) g.onclick = gpsExportGpx;
+  const c = el.querySelector('#gpsClr'); if (c) armDelete(c, 'GPS trag je obrisan', async () => { gps.clearTrack(); gpsDrawn = -1; gpsDrawTrack(); await kv.del('gps:track').catch(() => {}); renderSettingsTab(); });
+}
+$('#fabGps').onclick = () => gpsToggle(!gps.on);
+document.addEventListener('visibilitychange', () => { if (document.hidden) gpsSaveTrack(true); else gpsHintT = 0; gpsWake(); });
+addEventListener('pagehide', () => gpsSaveTrack(true));
+
 // ---------------- network status ----------------
 function netStatus() { const on = navigator.onLine; $('#netPill').textContent = on ? 'online' : 'offline'; $('#netPill').classList.toggle('off', !on); }
 addEventListener('online', netStatus); addEventListener('offline', netStatus); netStatus();
@@ -2604,6 +2823,9 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   if (set) useSet(set); else renderChips();
   if (set) await showSavedRoutes();   // routes come back only if you saved them for this regatta
   particleLayer.start();
+  // GPS: the saved track comes back; the position is switched on by itself only if you left it on
+  gps.loadTrack(await kv.get('gps:track').catch(() => null)); gpsDrawTrack();
+  if (settings.gps) gpsToggle(true, false); else gpsRender();
   map.invalidateSize();
   // the map must always fill the screen: after turning the iPad, Split View or a toolbar change iOS sometimes reports the
   // new size late – the map then kept the old width and the right part of the screen stayed white
@@ -2633,7 +2855,7 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
   watch(); setInterval(watch, 20 * 60000);
   setInterval(() => { if (!state.set) return; if (pruneClockW(state.set)) { saveForecast(state.set); useSet(state.set); } setTime(state.time); }, 60000); // keep countdown fresh · expired ClockW go
 })();
-window.ctw = { state, settings, course, map,
+window.ctw = { state, settings, course, map, gps, gpsFn: { gpsVsRoute, gpsPerf, routeFromGps, gpsToggle, gpsRender },
   fn: { viewCheck, courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
     replayFreeze: () => { rp.on = false; cancelAnimationFrame(rp.raf); clearTimeout(rp.bg); },   // test only: stop without redrawing
     showObs: p => showObs(p), viewCheckLite: () => ({ full: rp.full, every: Math.round(rp.every), on: rp.on, heal: rp.heal, err: errLog.slice(-2) }), wx: () => wxLayer, markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };

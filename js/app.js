@@ -1931,8 +1931,9 @@ function buildMoja() {
   const s = state.set, ms = mojaStats(); if (!ms) return null;
   const B = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 }, d = 0.05;
   const nx = Math.round((B.e - B.w) / d) + 1, ny = Math.round((B.n - B.s) / d) + 1, N = nx * ny;
-  const H1 = 3600000, t0 = Math.floor(Date.now() / H1) * H1 - H1, T = 121;   // 5 days: a regatta days ahead must be covered (after the first hours MOJA is the skill-weighted blend of the models)
-  const times = Array.from({ length: T }, (_, i) => t0 + i * H1);
+  const H1 = 3600000, t0 = Math.floor(Date.now() / H1) * H1 - H1;
+  // 5 days, so a regatta days ahead is covered: hourly for 48 h, then every 3 h (between steps the app interpolates, like the models)
+  const times = [...Array.from({ length: 49 }, (_, i) => t0 + i * H1), ...Array.from({ length: 24 }, (_, i) => t0 + (51 + i * 3) * H1)], T = times.length;
   const u = new Float32Array(T * N).fill(NaN), v = new Float32Array(T * N).fill(NaN), g = new Float32Array(T * N).fill(NaN);
   const q = [];
   ms.st.forEach(r => { r.end = lastTime(r.f) + H1; });
@@ -1986,7 +1987,7 @@ function buildMoja() {
   return f;
 }
 // built by itself whenever fresh measurements arrive (and after a new forecast), so MOJA is always current
-function autoMoja() { if (!state.obs || !state.set) return; try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
+function autoMoja() { if (!state.obs || !state.set || rp.on) return;   // not during a replay: it would stall the picture try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
 function pressureHtml() {
   const o = state.obs, s = state.set; if (!o || !s) return '';
   const pc = pressureCheck(), ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && s.fields[id].vars.mslp);

@@ -1671,6 +1671,11 @@ async function runRouting(ids, override = {}) {
   const marks = marksForRouting(override.marks || course.marks);
   const rs = state.set;   // the forecast as it is now – a refill during routing must not pull fields from under it
   if (!rs) return toast('Prvo preuzmi prognozu', 4000);
+  // MOJA is calculated in the app (models + measurements): a top-up download just before routing gives a new forecast set
+  // without it – it was silently left out of the routing. Calculate it again on the new set before routing.
+  if (ids.includes('moja') && !rs.fields.moja) { try { if (!state.obs) await loadObs(); buildMoja(); } catch (e) { noteErr(e); } }
+  const lost = ids.filter(id => !rs.fields[id]);
+  if (lost.length) toast(`Nije računato (nema ga u prognozi): ${lost.map(id => modelById(id).name).join(', ')}`, 5000);
   ids = ids.filter(id => rs.fields[id]); if (!ids.length) return toast('Odabrani modeli nisu u prognozi – preuzmi je ponovno', 4000);
   if (!$('#runStatus')) openSheet('routing');   // progress lives in the routing tab – make sure it exists
   const st = $('#runStatus');
@@ -1926,10 +1931,11 @@ function buildMoja() {
   const s = state.set, ms = mojaStats(); if (!ms) return null;
   const B = { s: 41.8, n: 45.9, w: 12.2, e: 19.8 }, d = 0.05;
   const nx = Math.round((B.e - B.w) / d) + 1, ny = Math.round((B.n - B.s) / d) + 1, N = nx * ny;
-  const H1 = 3600000, t0 = Math.floor(Date.now() / H1) * H1 - H1, T = 49;
+  const H1 = 3600000, t0 = Math.floor(Date.now() / H1) * H1 - H1, T = 121;   // 5 days: a regatta days ahead must be covered (after the first hours MOJA is the skill-weighted blend of the models)
   const times = Array.from({ length: T }, (_, i) => t0 + i * H1);
   const u = new Float32Array(T * N).fill(NaN), v = new Float32Array(T * N).fill(NaN), g = new Float32Array(T * N).fill(NaN);
   const q = [];
+  ms.st.forEach(r => { r.end = lastTime(r.f) + H1; });
   const pg = mojaPressure(ms);   // the measured pressure pattern against the models' (bura / jugo strength)
   // weights by lead time: the next 12 h trust the models that are best in the short range, beyond 24 h those best 1–2 days ahead
   const wAt = lead => { const ws = ms.st.map(r => { const m = lead < 12 ? r.maeShort : lead < 24 ? 0.5 * (r.maeShort + r.maeLong) : r.maeLong; return 1 / Math.max(1, m) ** 2; }); const sum = ws.reduce((a, x) => a + x, 0); return ws.map(x => x / sum); };
@@ -1937,6 +1943,7 @@ function buildMoja() {
   const blend = (lat, lon, t, out) => {
     let su = 0, sv = 0, ss = 0, sg = 0, w = 0, wg = 0;
     ms.st.forEach((r, ri) => {
+      if (t > r.end) return;   // past its own end a model would only repeat its last hour – it drops out of MOJA there
       sample(r.f, ['u', 'v', 'gust'], lat, lon, t, q); if (q[0] !== q[0]) return;
       const k = r.ratio * (pg[r.id] || 1), sp = Math.hypot(q[0], q[1]), wr = W[ri];
       // turn the model's wind back by its measured systematic turn (fully now, half of it a day ahead)
@@ -1970,7 +1977,8 @@ function buildMoja() {
       g[o] = b[2] === b[2] ? Math.max(sp, b[2] + dg) : NaN;
     }
   }
-  const f = { lat0: B.s, lon0: B.w, dlat: d, dlon: d, nx, ny, times, vars: { u, v, gust: g }, validUntil: times[T - 1], model: 'moja', meta: MOJA_META, run: { runInit: Date.now() },
+  const lastData = Math.min(times[T - 1], Math.max(...ms.st.map(r => r.end - H1)));   // MOJA lasts as long as its longest model
+  const f = { lat0: B.s, lon0: B.w, dlat: d, dlon: d, nx, ny, times, vars: { u, v, gust: g }, validUntil: lastData, model: 'moja', meta: MOJA_META, run: { runInit: Date.now() },
     weights: ms.st.map(r => ({ id: r.id, w: r.w, mae: r.mae, ratio: r.ratio * (pg[r.id] || 1), dirBias: r.dirBias })) };
   fillTimeGaps(f);
   s.fields.moja = f; if (!s.models.includes('moja')) s.models.push('moja');   // ALADIN stays first; MOJA at the end of the bar
@@ -2857,5 +2865,6 @@ addEventListener('online', netStatus); addEventListener('offline', netStatus); n
 })();
 window.ctw = { state, settings, course, map, gps, gpsFn: { gpsVsRoute, gpsPerf, routeFromGps, gpsToggle, gpsRender },
   fn: { viewCheck, courseKey, savedMap, showSavedRoutes, saveRoutes, clearCourse, clearRoutes, busy: () => dlBusy || longBusy, uncovered: () => uncoveredShare(), setExtent, dlArea, replayPlay, replayPause, showBoatInfo, setRouteView, deviation, manoeuvres, okRoutes, runRouting, loadCloud, drawCourse, setTime, openSheet, selectModel, renderDataTab, startAreaPick, exportPackage, importPackage, routeAt, longCovered: () => longCovered(state.set), fcDays, doDownload, useSet, dbg: () => { const s = state.set; return { dl: dlBusy, long: longBusy, pend: !!pendingLong, fill: !!fillTimer, unc: +(uncoveredShare() * 100).toFixed(1), t: new Date(state.time).toISOString().slice(5, 16), mode: settings.mode, area: areaSel(), src: settings.source, z: map.getZoom(), lt: s && s.longTried ? Math.round((Date.now() - s.longTried) / 1000) : null, models: s ? s.models.map(id => id.replace('dir_', '') + ':' + (s.fields[id].times ? new Date(ownEnd(s.fields[id])).toISOString().slice(5, 13) : '?')).join(' ') : '', txt: (($('#dlText') || {}).textContent || '').slice(0, 60), toast: (($('#toast') || {}).textContent || '').slice(0, 50) }; },
+    buildMoja: () => { const a = performance.now(); const f = buildMoja(); return { ms: Math.round(performance.now() - a), ok: !!f }; },
     replayFreeze: () => { rp.on = false; cancelAnimationFrame(rp.raf); clearTimeout(rp.bg); },   // test only: stop without redrawing
     showObs: p => showObs(p), viewCheckLite: () => ({ full: rp.full, every: Math.round(rp.every), on: rp.on, heal: rp.heal, err: errLog.slice(-2) }), wx: () => wxLayer, markLayer: () => markLayer, routeLayer: () => routeLayer, wx: () => wxLayer, particles: () => particleLayer, chart: () => chartLayer } };

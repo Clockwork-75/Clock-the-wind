@@ -17,8 +17,9 @@ const base = process.argv[2] || 'http://localhost:8080/';
     const c = window.ctw, st = c.state, H = 3600000, f = d => new Date(d + 3600000).toISOString().slice(5, 16).replace('T', ' ');
     const d = new Date(); d.setUTCDate(d.getUTCDate() + ((6 - d.getUTCDay() + 7) % 7 || 7)); d.setUTCHours(6, 0, 0, 0);
     c.course.start = d.getTime();
+    const bm = c.fn.buildMoja ? c.fn.buildMoja() : null;
     const m = st.set.fields.moja;
-    const info = { start: f(c.course.start), now: f(Date.now()), moja: m ? `${f(m.times[0])} → ${f(m.validUntil)} (${m.times.length} h)` : 'NEMA', models: st.set.models.join(',') };
+    const info = { start: f(c.course.start), now: f(Date.now()), moja: m ? `${f(m.times[0])} → ${f(m.validUntil)} (${m.times.length} h)` : 'NEMA', models: st.set.models.join(','), buildMoja: bm };
     const want = ['dir_aladin', 'dir_icon_eu', 'dir_arpege', 'moja'].filter(id => st.set.fields[id]);
     // the routing tab's own filter (which models are offered at all)
     c.fn.openSheet('routing');

@@ -1987,7 +1987,8 @@ function buildMoja() {
   return f;
 }
 // built by itself whenever fresh measurements arrive (and after a new forecast), so MOJA is always current
-function autoMoja() { if (!state.obs || !state.set || rp.on) return;   // not during a replay: it would stall the picture try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
+// not during a replay: rebuilding MOJA would stall the picture
+function autoMoja() { if (!state.obs || !state.set || rp.on) return; try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
 function pressureHtml() {
   const o = state.obs, s = state.set; if (!o || !s) return '';
   const pc = pressureCheck(), ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && s.fields[id].vars.mslp);

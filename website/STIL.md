@@ -8,10 +8,20 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Žene: frizure ranih 60-ih, uske haljine, biseri. Pin-up glamur samo gdje scena to traži (naslovnica, bazen), nikad pretjerano.
 - Inspiracija serijom samo za razdoblje; bez likova, glumaca, kadrova ili špice serije.
 
+## Poruka (ključno)
+- U tekstu stranice NIGDJE se ne spominje AI. Govorimo samo o „najnovijim tehnologijama“.
+- AI sugeriraju isključivo slike: crno-bijelo (chiaroscuro) = tradicija, sakupljeno znanje i iskustvo, pretežiti dio prakse; jedan detalj u boji i kiborg = alat kojim to znanje činimo najboljim.
+- Bez oznaka i natpisa tipa „MS-AI“ na slikama ili u sučelju.
+
+## Tehnički zahtjevi
+- Sve slike i video u najmanje Full HD.
+- M&S logo na naslovnici bijel i proziran (bez podloge oko njega), preko slike, kao u kolegin maketi.
+
 ## Kiborzi
 - Uglavnom ljudi, pravilne i lijepe fizionomije; robotski su samo detalji (krom iza uha / na sljepoočnici, kromirane podlaktice i ruke).
 - Mogu biti žene i muškarci.
 - U svakoj sceni mali, ali s jasnim poslom (zapisnik, nacrt, šalter, laboratorij…).
+- Mora se jasno vidjeti da je kiborg (npr. potpuno kromirana glava bez kose ili veći kromirani dio lica), ali pokret i držanje savršeno ljudski, fluidni i lijepi.
 - Referenca izgleda: `../higgsfield/hero_v7.png`.
 
 ## Boja
@@ -26,3 +36,8 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 
 ## Scene po sektorima (radni izbor)
 01 banke – trezor, zlatne poluge · 02 nekretnine – gradilište, plavi nacrt · 03 HTL – betonski hotel, plava voda · 04 energija – platforma i LNG, plamen · 05 industrija – tvornička hala, iskre · 06 hrana – pšenica · 07 javni sektor – most, crvena vrpca · 08 zdravstvo – laboratorij, kobaltne tikvice · 09 potrošačka dobra – robna kuća, bordo-smeđe torbe · 10 sport – stadion, tamnozeleni teren · 11 kazneno – cigara i dim · 12 reference – aerodromska ploča (kodna imena?) · 13 boardroom – dijaprojektor, jantarno svjetlo
+
+## Dodatne scene i stranice
+- Obavezna scena: arhaična američka sudnica iz južnih država (porota, sudac na povišenom, stenografkinja kiborg — dio nje ili ona cijela u boji).
+- Svako područje prakse ima vlastitu sliku (jednu ili više) kad se otvori.
+- Naslovnica: kompozicija B (on dolazi iz dubine lijevo, ona ide prema njemu desno); video – hodaju jedno prema drugome, nakon nekoliko sekundi kadar se zamrzne.

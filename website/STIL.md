@@ -49,3 +49,8 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Dok video traje: samo bijeli prozirni M&S logo gore lijevo (`brand/ms_logo_white.png`).
 - Kad se zamrzne: izoštre se svi glavni tabovi (Društvo · Sektori · Područja prakse · Tim · Reference · Uvidi · Kontakt · HR/EN), zatim tanka linija, zatim „Zakažite razgovor“. Svaki pokret miša / skrol odmah prikazuje sve; uz isključene animacije odmah statični kadar s izbornikom.
 - Sektori i Područja prakse: padajući panel sa sličicama scena. Na mobitelu izbornik iza gumba.
+
+## Tekst i slika (pravilo za sve buduće slike)
+- Svaka slika se komponira unaprijed za tekst koji će stajati uz nju ili preko nje (naslovi, odlomci iz profila, reference, testimonials).
+- Svaka slika ima mirnu zonu bez važnih detalja (nebo, zid, strop, pod ili tamna površina) gdje tekst stoji čitljivo, a da ne prekriva ljude, kiborga ili detalj u boji.
+- Kiborg i detalj u boji nikad u zoni teksta.

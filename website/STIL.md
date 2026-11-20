@@ -59,3 +59,4 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - 01 vrata (zlatna slova), 02 boardroom (fix_e02b, bez svjetla na glavi), 03 tehnologija (fix_e03), 04 međunarodno (fix_e04), 05 knjižnica C s lusterom + kiborgica sa srebrnim licem.
 - Za buduće slike: detalj u boji neka bude malo naglašeniji (i dalje fino, ne jarko).
 - Na popisu: sudnica iz južnih država SAD-a (porota, sudac na povišenom, stenografkinja kiborg).
+- Žene u sljedećim slikama (kiborgice ili ne): ženstvenije, malo više pin-up, dotjeranije i stilizirane (frizura, šminka, kroj ranih 60-ih), uvijek s ukusom.

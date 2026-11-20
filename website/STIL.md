@@ -65,3 +65,6 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - NIKAD „stari zanat“ / „najstariji zanat“ (konotacija prostitucije). Izbjegavati riječ „zanat“ u sloganima.
 - Bez superlativa i usporedbi s drugim društvima (HOK).
 - Slogan naslovnice (odobren): „Nasljeđe znanja i iskustva. Tempo sadašnjosti.“
+
+## Sektori — paleta i redoslijed
+1 Financijske institucije – zlato · 2 Nekretnine – indigo nacrt · 3 Energetika – narančasti plamen · 4 Hoteli i turizam – safirna voda · 5 Logistika i industrija – petrolej-zeleni stroj · 6 Javni sektor – crvena vrpca · 7 Hrana i šumarstvo – pšenica · 8 Zdravstvo – ljubičasta · 9 Potrošačka dobra – bordo-smeđe · 10 Sport – tamnozelena trava. Slične boje nikad jedna do druge.

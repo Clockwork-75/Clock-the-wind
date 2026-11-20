@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MS Partners — naslovnica (maketa)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#2F3134; --paper:#F1F0EC; --red:#E3192C;
+    --white:rgba(255,255,255,.96); --line:rgba(255,255,255,.55);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#1d1e20}
+  body{font-family:Jost,system-ui,sans-serif;color:var(--white);overflow:hidden}
+  .hero{position:relative;height:100vh;width:100vw;background:url(img/hero.jpg) center/cover no-repeat}
+  /* soft legibility veil only top + left */
+  .hero::before{content:"";position:absolute;inset:0;
+    background:linear-gradient(180deg,rgba(20,20,22,.38) 0%,rgba(20,20,22,0) 22%),
+               linear-gradient(90deg,rgba(20,20,22,.30) 0%,rgba(20,20,22,0) 45%);}
+  header{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;
+    padding:3.2vh 3.8vw 2.4vh;gap:3vw}
+  header::after{content:"";position:absolute;left:3.8vw;right:3.8vw;bottom:0;height:1px;background:var(--line)}
+  .logo img{height:58px;display:block}
+  nav{display:flex;gap:2.1vw;margin-left:auto;align-items:center}
+  nav a{color:var(--white);text-decoration:none;font-size:13px;letter-spacing:.22em;text-transform:uppercase;font-weight:400;position:relative;padding:6px 0}
+  nav a.has::after{content:"";display:inline-block;width:5px;height:5px;border-right:1px solid;border-bottom:1px solid;transform:rotate(45deg);margin:0 0 3px 8px}
+  nav a.on{border-bottom:1px solid var(--white)}
+  .lang{font-size:12px;letter-spacing:.2em;opacity:.85;margin-left:1.2vw}
+  .cta{margin-left:1.6vw;border:1px solid var(--white);padding:11px 20px;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--white);text-decoration:none}
+  .copy{position:absolute;left:3.8vw;top:24vh;max-width:36vw}
+  .eyebrow{font-size:12px;letter-spacing:.32em;text-transform:uppercase;opacity:.9}
+  h1{font-family:"Bodoni Moda",Didot,serif;font-weight:400;font-size:clamp(44px,5.4vw,96px);line-height:1.02;margin:2.2vh 0 2.6vh;letter-spacing:-.01em}
+  h1 em{font-style:italic}
+  .lead{font-size:clamp(15px,1.15vw,19px);line-height:1.6;font-weight:300;max-width:30vw;opacity:.95}
+  .facts{position:absolute;left:3.8vw;bottom:5vh;display:flex;gap:3.4vw}
+  .facts div{border-top:1px solid var(--line);padding-top:12px;min-width:120px}
+  .facts b{display:block;font-family:"Bodoni Moda",serif;font-weight:400;font-size:34px}
+  .facts span{font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.9}
+  /* mega menu */
+  .mega{position:absolute;top:calc(3.2vh + 58px + 2.4vh + 1px);left:0;right:0;
+    background:rgba(241,240,236,.97);color:var(--ink);padding:4vh 3.8vw 5vh;display:none}
+  .mega.show{display:block}
+  .mega h4{font-family:"Bodoni Moda",serif;font-weight:400;font-size:28px;margin-bottom:3vh}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:2.4vw 1.6vw}
+  .item img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;filter:contrast(1.02)}
+  .item p{font-size:12px;letter-spacing:.18em;text-transform:uppercase;margin-top:10px}
+</style>
+</head>
+<body>
+<section class="hero">
+  <header>
+    <a class="logo" href="#"><img src="img/logo.png" alt="M&S — Šooš Maceljski, Mandić, Stanić & Partners"></a>
+    <nav>
+      <a href="#">Društvo</a>
+      <a href="#" class="has" id="sek">Sektori</a>
+      <a href="#" class="has">Područja prakse</a>
+      <a href="#">Tim</a>
+      <a href="#">Reference</a>
+      <a href="#">Uvidi</a>
+      <a href="#">Kontakt</a>
+      <span class="lang">HR&nbsp;/&nbsp;EN</span>
+      <a class="cta" href="#">Zakažite razgovor</a>
+    </nav>
+  </header>
+
+  <div class="copy">
+    <div class="eyebrow">Odvjetničko društvo · Zagreb · od 2005.</div>
+    <h1>Stari zanat.<br><em>Novi alati.</em></h1>
+    <p class="lead">Pravo radimo pažljivo, riječ po riječ — uz najnovije tehnologije koje nam omogućuju da budemo brži, dosljedniji i precizniji.</p>
+  </div>
+
+  <div class="facts">
+    <div><b>2005</b><span>Osnovano</span></div>
+    <div><b>Tier 1</b><span>Legal 500 · Nekretnine</span></div>
+    <div><b>3 od 5</b><span>Najvećih banaka</span></div>
+    <div><b>140</b><span>Društava ALFA mreže</span></div>
+  </div>
+
+  <div class="mega" id="mega">
+    <h4>Sektori</h4>
+    <div class="grid">
+      <div class="item"><img src="img/s_banke.jpg"><p>Financijske institucije</p></div>
+      <div class="item"><img src="img/s_nekretnine.jpg"><p>Nekretnine i graditeljstvo</p></div>
+      <div class="item"><img src="img/s_htl.jpg"><p>Hoteli i turizam</p></div>
+      <div class="item"><img src="img/s_energija.jpg"><p>Energetika</p></div>
+      <div class="item"><img src="img/s_industrija.jpg"><p>Logistika i industrija</p></div>
+      <div class="item"><img src="img/s_hrana.jpg"><p>Hrana i šumarstvo</p></div>
+      <div class="item"><img src="img/s_javni.jpg"><p>Javni sektor</p></div>
+      <div class="item"><img src="img/s_zdravstvo.jpg"><p>Zdravstvo</p></div>
+      <div class="item"><img src="img/s_potrosacka.jpg"><p>Potrošačka dobra</p></div>
+      <div class="item"><img src="img/s_sport.jpg"><p>Sport</p></div>
+    </div>
+  </div>
+</section>
+<script>
+  if (location.hash === '#sektori') { document.getElementById('mega').classList.add('show'); document.getElementById('sek').classList.add('on'); }
+</script>
+</body>
+</html>

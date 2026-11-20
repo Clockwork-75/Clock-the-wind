@@ -74,3 +74,4 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Lica prirodna i stvarna; ne izmišljamo stilizirana lica. Spajamo prošlost i budućnost, tradiciju i ono što dolazi.
 - Završne slike: 4K (3840×2160) povećanjem preko Topaza, koji ne mijenja sadržaj.
 - Povećanje na 4K: koristiti ByteDance Image Upscale (~1,5 min); Topaz na Higgsfieldu zna zapeti u redu čekanja.
+- Ako Higgsfield upscale zapne (>2 min), odmah lokalni 4K (Lanczos + blago izoštravanje); Higgsfield upscale samo u pozadini kao zamjena.

@@ -64,3 +64,4 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 ## Tekst — zabrane
 - NIKAD „stari zanat“ / „najstariji zanat“ (konotacija prostitucije). Izbjegavati riječ „zanat“ u sloganima.
 - Bez superlativa i usporedbi s drugim društvima (HOK).
+- Slogan naslovnice (odobren): „Nasljeđe znanja i iskustva. Tempo sadašnjosti.“

@@ -1,0 +1,28 @@
+# MS Partners web — vizualna pravila (radna verzija)
+
+Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice čuvaju se u `drafts/` (r1–r6) jer se na detalje možemo vraćati.
+
+## Razdoblje i stil
+- Amerika rane 1960-ih (Madison Avenue), crno-bijela fotografija, srebrni tonovi bez čiste crne.
+- Muškarci: uska odijela, tanki reveri, uske kravate, rupčić u džepu; bez trench kaputa i fedora iz 1940-ih.
+- Žene: frizure ranih 60-ih, uske haljine, biseri. Pin-up glamur samo gdje scena to traži (naslovnica, bazen), nikad pretjerano.
+- Inspiracija serijom samo za razdoblje; bez likova, glumaca, kadrova ili špice serije.
+
+## Kiborzi
+- Uglavnom ljudi, pravilne i lijepe fizionomije; robotski su samo detalji (krom iza uha / na sljepoočnici, kromirane podlaktice i ruke).
+- Mogu biti žene i muškarci.
+- U svakoj sceni mali, ali s jasnim poslom (zapisnik, nacrt, šalter, laboratorij…).
+- Referenca izgleda: `../higgsfield/hero_v7.png`.
+
+## Boja
+- Jedan detalj u boji po sceni; boja mora nešto značiti.
+- FINOĆA: boje nježne i prigušene, kao ručno kolorirana fotografija, nikad jarke.
+- Crvena: brand, robotica na naslovnici, vrpca na mostu, ONGOING na ploči referenci. Voda nikad crvena.
+- Zelena: LANDED na ploči referenci.
+
+## Kompozicija
+- Vanjske scene grandiozne: projekt dominira, ljudi sitni.
+- Bez teksta, natpisa, imena tvrtki i zastava u slikama.
+
+## Scene po sektorima (radni izbor)
+01 banke – trezor, zlatne poluge · 02 nekretnine – gradilište, plavi nacrt · 03 HTL – betonski hotel, plava voda · 04 energija – platforma i LNG, plamen · 05 industrija – tvornička hala, iskre · 06 hrana – pšenica · 07 javni sektor – most, crvena vrpca · 08 zdravstvo – laboratorij, kobaltne tikvice · 09 potrošačka dobra – robna kuća, bordo-smeđe torbe · 10 sport – stadion, tamnozeleni teren · 11 kazneno – cigara i dim · 12 reference – aerodromska ploča (kodna imena?) · 13 boardroom – dijaprojektor, jantarno svjetlo

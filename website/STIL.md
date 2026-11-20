@@ -68,3 +68,8 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 
 ## Sektori — paleta i redoslijed
 1 Financijske institucije – zlato · 2 Nekretnine – indigo nacrt · 3 Energetika – narančasti plamen · 4 Hoteli i turizam – safirna voda · 5 Logistika i industrija – petrolej-zeleni stroj · 6 Javni sektor – crvena vrpca · 7 Hrana i šumarstvo – pšenica · 8 Zdravstvo – ljubičasta · 9 Potrošačka dobra – bordo-smeđe · 10 Sport – tamnozelena trava. Slične boje nikad jedna do druge.
+
+## Fotorealizam (ključno)
+- Sve slike moraju biti fotorealistične, kao prave fotografije iz ranih 1960-ih. Ništa crtano, ilustrirano ili „cartoon“.
+- Lica prirodna i stvarna; ne izmišljamo stilizirana lica. Spajamo prošlost i budućnost, tradiciju i ono što dolazi.
+- Završne slike: 4K (3840×2160) povećanjem preko Topaza, koji ne mijenja sadržaj.

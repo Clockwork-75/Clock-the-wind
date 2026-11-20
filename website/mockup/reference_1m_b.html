@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MS Partners — Reference (maketa)</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@500&family=Oswald:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{--white:rgba(255,255,255,.96);--line:rgba(255,255,255,.55);--green:#3fd27a;--red:#ff4b4b;--flap:#1b1c1e;--flap2:#232427}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#1d1e20;overflow:hidden}
+  body{font-family:Jost,sans-serif;color:var(--white)}
+  .hero{position:relative;width:100vw;height:100vh;background:url(img/aerodrom_ploca_1m_b.jpg) center top/cover no-repeat}
+  .hero::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,20,22,.45) 0%,rgba(20,20,22,0) 18%)}
+  header{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;padding:3.2vh 3.8vw 2.4vh;gap:3vw;z-index:3}
+  header::after{content:"";position:absolute;left:3.8vw;right:3.8vw;bottom:0;height:1px;background:var(--line)}
+  .logo img{height:58px;display:block}
+  nav{display:flex;gap:2.1vw;margin-left:auto;align-items:center}
+  nav a{color:var(--white);text-decoration:none;font-size:13px;letter-spacing:.22em;text-transform:uppercase;padding:6px 0}
+  nav a.on{border-bottom:1px solid var(--white)}
+  .lang{font-size:12px;letter-spacing:.2em;opacity:.85;margin-left:1.2vw}
+  .cta{margin-left:1.6vw;border:1px solid var(--white);padding:11px 20px;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--white);text-decoration:none}
+  .title{position:absolute;left:3.8vw;top:15vh;z-index:3;max-width:34vw;padding:22px 26px 24px;background:linear-gradient(90deg,rgba(18,18,20,.55),rgba(18,18,20,.0));text-shadow:0 1px 8px rgba(0,0,0,.5)}
+  .title .eyebrow{font-size:12px;letter-spacing:.32em;text-transform:uppercase}
+  .title h1{font-family:"Playfair Display",serif;font-weight:400;font-size:clamp(38px,3.6vw,68px);line-height:1.05;margin:1.6vh 0}
+  .title h1 em{font-style:italic}
+  .title p{font-weight:300;font-size:16px;line-height:1.6;max-width:24vw}
+  .legend{display:flex;gap:22px;margin-top:2.4vh;font-family:"IBM Plex Mono",monospace;font-size:13px;letter-spacing:.12em}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:8px;vertical-align:middle}
+  .legend .l::before{background:var(--green)} .legend .o::before{background:var(--red)}
+  /* board placed over the painted board in the photo */
+  .board{position:absolute;left:45%;top:7.2%;width:36.6%;height:51.6%;background:#161718;padding:2.2% 1.4% 1.2%;z-index:2;display:flex;flex-direction:column;filter:blur(.35px) contrast(.92) brightness(.92);box-shadow:inset 0 0 40px rgba(0,0,0,.8)}
+  .board::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%27160%27 height=%27160%27><filter id=%27n%27><feTurbulence type=%27fractalNoise%27 baseFrequency=%27.9%27 numOctaves=%272%27/></filter><rect width=%27100%25%27 height=%27100%25%27 filter=%27url(%23n)%27/></svg>")}
+  .row{display:grid;grid-template-columns:auto auto auto auto;justify-content:space-between;gap:.5vw;align-items:center;flex:1}
+  .row.head{flex:0 0 auto;margin-bottom:.6vh;font-family:Oswald,sans-serif;font-size:.95vw;letter-spacing:.12em;color:#e8e8e2;text-transform:uppercase}
+  .cells{display:flex;gap:2px}
+  .c{width:.66vw;height:1.1vw;background:linear-gradient(180deg,#2a2b2d 0 49%,#0a0a0b 49% 52%,#232426 52%);color:#f2f2ec;font-family:Oswald,sans-serif;font-weight:500;font-size:.82vw;line-height:1.1vw;text-align:center;border-radius:1px;text-shadow:0 0 3px rgba(255,255,255,.35)}
+  .c.g{color:#55d98a;text-shadow:0 0 6px rgba(85,217,138,.7)} .c.r{color:#ff5a5a;text-shadow:0 0 6px rgba(255,90,90,.7)}
+  .row.data{cursor:pointer} .row.data:hover .c{width:.66vw;height:1.1vw;background:linear-gradient(180deg,#2a2b2d 0 49%,#0a0a0b 49% 52%,#232426 52%);color:#f2f2ec;font-family:Oswald,sans-serif;font-weight:500;font-size:.82vw;line-height:1.1vw;text-align:center;border-radius:1px;text-shadow:0 0 3px rgba(255,255,255,.35)}
+  .card{position:absolute;right:3.8vw;bottom:6vh;width:30vw;background:rgba(241,240,236,.97);color:#2F3134;padding:24px 28px;z-index:4;display:flex;gap:18px}
+  .card img{width:42%;aspect-ratio:16/10;object-fit:cover}
+  .card h3{font-family:"IBM Plex Mono",monospace;font-size:13px;letter-spacing:.12em;margin-bottom:6px}
+  .card .st{font-family:"IBM Plex Mono",monospace;font-size:12px;color:#1e8e4e;letter-spacing:.12em}
+  .card p{font-size:14px;line-height:1.5;margin-top:8px}
+  .card small{display:block;margin-top:10px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#6b6c70}
+</style>
+</head>
+<body>
+<section class="hero">
+  <header>
+    <a class="logo" href="#"><img src="img/logo.png" alt="M&S"></a>
+    <nav>
+      <a href="#">Društvo</a><a href="#">Područja prakse</a><a href="#">Tim</a><a href="#" class="on">Reference</a><a href="#">Uvidi</a><a href="#">Kontakt</a>
+      <span class="lang">HR&nbsp;/&nbsp;EN</span><a class="cta" href="#">Zakažite razgovor</a>
+    </nav>
+  </header>
+  <div class="title">
+    <div class="eyebrow">Reference · 2013.–2026.</div>
+    <h1>Polasci<br>i <em>dolasci.</em></h1>
+    <p>Odabrani mandati, bez imena klijenata. Kliknite na let za opis.</p>
+    <div class="legend"><span class="l">LANDED · završeno</span><span class="o">ONGOING · u tijeku</span></div>
+  </div>
+  
+  <div class="card">
+    <img src="img/s_banke.jpg" alt="">
+    <div>
+      <h3>AML 01 · OBRANA BANKE</h3>
+      <div class="st">LANDED</div>
+      <p>Obrana banke i svih članova uprave u AML prekršajnom postupku — oslobađanje po svim točkama.</p>
+      <small>Financijske institucije · Sporovi i regulatorno</small>
+    </div>
+  </div>
+</section>
+<script>
+const rows=[
+ ['AML 01','OBRANA BANKE','FINANCIJE','LANDED'],
+ ['NPL 01','PRVA PRODAJA NPL','FINANCIJE','LANDED'],
+ ['JPP 01','PRVI JPP PROJEKT','JAVNI SEKTOR','LANDED'],
+ ['OFF 01','BID RUNDE JADRAN','ENERGETIKA','LANDED'],
+ ['LNG 01','LNG TERMINAL','ENERGETIKA','LANDED'],
+ ['M&A 24','PREUZIMANJE','HRANA','LANDED'],
+ ['HTL 200','RESORT NA OTOKU','HOTELI','ONGOING'],
+ ['LMA 25','LMA FINANCIRANJE','LOGISTIKA','ONGOING'],
+ ['GAS 147','PLINOVOD','ENERGETIKA','ONGOING'],
+ ['BRF 3B','REGENERACIJA','NEKRETNINE','ONGOING'],
+ ['MICA 26','KRIPTO LICENCE','FINANCIJE','ONGOING'],
+ ['FDI 25','NOVO TRŽIŠTE','INDUSTRIJA','ONGOING']];
+const W=[7,16,12,7];
+const b=document.createElement('div');
+const head=document.createElement('div');head.className='row head';
+['Let','Projekt','Sektor','Status'].forEach(t=>{const d=document.createElement('div');d.textContent=t;head.appendChild(d)});b.appendChild(head);
+const CH=' ABCDEFGHIJKLMNOPRSTUVZČŠŽĆ0123456789&';
+rows.forEach(r=>{const row=document.createElement('div');row.className='row data';
+  r.forEach((txt,i)=>{const cells=document.createElement('div');cells.className='cells';
+    const s=txt.padEnd(W[i],' ').slice(0,W[i]);
+    [...s].forEach(ch=>{const c=document.createElement('div');c.className='c'+(i==3?(txt=='LANDED'?' g':' r'):'');
+      c.dataset.t=ch;c.textContent=CH[Math.floor(Math.random()*CH.length)];cells.appendChild(c)});
+    row.appendChild(cells)});b.appendChild(row)});
+// split-flap settle animation
+const all=[...document.querySelectorAll('.c')];let tick=0;
+const iv=setInterval(()=>{tick++;all.forEach((c,i)=>{if(tick>8+(i%23)){c.textContent=c.dataset.t}else c.textContent=CH[Math.floor(Math.random()*CH.length)]});if(tick>40)clearInterval(iv)},60);
+</script>
+</body>
+</html>

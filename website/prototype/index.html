@@ -230,6 +230,10 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 .cp{font-size:11px;letter-spacing:.2em;text-transform:uppercase;border:1px solid var(--rule);padding:8px 12px;min-height:36px}
 .cp:hover{border-color:var(--ink)}
 
+.frm label{display:block;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink2);margin-bottom:18px}
+.frm input,.frm textarea{display:block;width:100%;margin-top:6px;background:transparent;border:0;border-bottom:1px solid var(--ink2);font:400 17px/1.5 var(--sans);color:var(--ink);padding:8px 0;letter-spacing:0;text-transform:none;border-radius:0}
+.frm textarea{border:1px solid var(--ink2);padding:10px;resize:vertical}
+.frm input:focus,.frm textarea:focus{outline:2px solid var(--red);outline-offset:2px}
 /* footer */
 .ft{background:var(--dark);color:var(--soft);padding:56px var(--gr) 34px var(--gl);font-size:14.5px}
 .ft .wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:36px}
@@ -421,10 +425,14 @@ function insights(){
 }
 function contact(){
   const c=L(D.contact), t=T();
+  const F=lang==='hr'?{h:'Pišite nam',p:'Ostavite poruku i javit će vam se partner koji vodi to područje.',n:'Ime i prezime',e:'E-pošta',t:'Telefon (neobavezno)',m:'Poruka',s:'Pošalji poruku'}:{h:'Write to us',p:'Leave a message and the partner who leads that area will get back to you.',n:'Full name',e:'Email',t:'Telephone (optional)',m:'Message',s:'Send message'};
   const row=v=>`<div class="copyrow"><span class="big">${v}</span><button class="cp" data-c="${v}">${t.copy}</button></div>`;
   return phero('kontakt',c.eyebrow,c.h1,c.lead,lang==='hr'?'Trg žrtava fašizma u Zagrebu':'Trg žrtava fašizma, Zagreb')+`<section class="sec"><div class="wrap cgrid">
    <div><div class="cblock"><h4 class="h4">${c.tel}</h4>${row('+385 1 3707 030')}</div><div class="cblock"><h4 class="h4">${c.mail}</h4>${row('info@mspartners.hr')}</div></div>
-   <div><div class="cblock"><h4 class="h4">${c.hq}</h4><p class="big">Trg žrtava fašizma 6<br>10000 Zagreb</p></div><div class="cblock"><h4 class="h4">${c.offices}</h4><p class="big">Knin · Šibenik</p></div><p class="note" style="margin-top:0">${c.firm}</p></div></div></section>`;
+   <div><div class="cblock"><h4 class="h4">${c.hq}</h4><p class="big">Trg žrtava fašizma 6<br>10000 Zagreb</p></div><div class="cblock"><h4 class="h4">${c.offices}</h4><p class="big">Knin · Šibenik</p></div><p class="note" style="margin-top:0">${c.firm}</p></div></div></section>
+  <section class="sec alt"><div class="wrap two"><div><h2>${F.h}</h2><p class="sub">${F.p}</p></div>
+   <div class="frm" id="frm"><label>${F.n}<input type="text" id="fn" autocomplete="name"></label><label>${F.e}<input type="email" id="fe" autocomplete="email"></label><label>${F.t}<input type="tel" id="ft" autocomplete="tel"></label><label>${F.m}<textarea id="fm" rows="5"></textarea></label>
+   <button class="btn" id="fsend">${F.s}</button><p class="note" id="fmsg" style="margin-top:14px" aria-live="polite"></p></div></div></section>`;
 }
 
 /* ---------- search ---------- */
@@ -456,6 +464,8 @@ function render(keep){
   else { location.hash='#home'; return }
   app.innerHTML=`<div class="page">${html}</div>`+footer();
   if(h==='reference') refsBind();
+  if(h==='kontakt') $('#fsend').onclick=()=>{const ok=$('#fn').value.trim()&&/\S+@\S+\.\S+/.test($('#fe').value)&&$('#fm').value.trim();
+    $('#fmsg').textContent=ok?(lang==='hr'?'Hvala. Ovo je prototip, pa se poruka još ne šalje; na pravoj stranici stizat će na info@mspartners.hr.':'Thank you. This is a prototype, so the message is not sent yet; on the live site it will go to info@mspartners.hr.'):(lang==='hr'?'Molimo upišite ime, e-poštu i poruku.':'Please enter your name, email and message.')};
   $$('.cp').forEach(b=>b.onclick=()=>{const v=b.dataset.c, ok=()=>{b.textContent=T().copied;setTimeout(()=>b.textContent=T().copy,1600)};
     try{navigator.clipboard.writeText(v).then(ok,ok)}catch(e){ok()}});
   if(!keep) window.scrollTo(0,0); onScroll();

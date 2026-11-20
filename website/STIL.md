@@ -73,3 +73,4 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Sve slike moraju biti fotorealistične, kao prave fotografije iz ranih 1960-ih. Ništa crtano, ilustrirano ili „cartoon“.
 - Lica prirodna i stvarna; ne izmišljamo stilizirana lica. Spajamo prošlost i budućnost, tradiciju i ono što dolazi.
 - Završne slike: 4K (3840×2160) povećanjem preko Topaza, koji ne mijenja sadržaj.
+- Povećanje na 4K: koristiti ByteDance Image Upscale (~1,5 min); Topaz na Higgsfieldu zna zapeti u redu čekanja.

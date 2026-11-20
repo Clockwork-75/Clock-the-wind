@@ -1,0 +1,15 @@
+Edit this photograph. Keep the entire airport terminal, the crowd, the architecture, the light, the grain and the black-and-white look exactly identical. Replace ONLY the text on the large split-flap departures board so it is a real early-1960s Solari split-flap board, photographed as part of the scene: individual dark flaps with a thin horizontal split line, white condensed letters, same perspective, lighting, softness and film grain as the rest of the photograph.
+The board has four columns with headers LET, PROJEKT, SEKTOR, STATUS and exactly these twelve rows, letter for letter:
+AML 01 | OBRANA BANKE | FINANCIJE | LANDED
+NPL 01 | PRVA PRODAJA NPL | FINANCIJE | LANDED
+JPP 01 | PRVI JPP PROJEKT | JAVNI SEKTOR | LANDED
+OFF 01 | BID RUNDE JADRAN | ENERGETIKA | LANDED
+LNG 01 | LNG TERMINAL | ENERGETIKA | LANDED
+M&A 24 | PREUZIMANJE | HRANA | LANDED
+HTL 200 | RESORT NA OTOKU | HOTELI | ONGOING
+LMA 25 | LMA FINANCIRANJE | LOGISTIKA | ONGOING
+GAS 147 | PLINOVOD | ENERGETIKA | ONGOING
+BRF 3B | REGENERACIJA | NEKRETNINE | ONGOING
+MICA 26 | KRIPTO LICENCE | FINANCIJE | ONGOING
+FDI 25 | NOVO TRZISTE | INDUSTRIJA | ONGOING
+Color: the whole image stays black and white; ONLY the word LANDED glows a soft green and ONLY the word ONGOING glows a soft red, like lit lamps on a real board.

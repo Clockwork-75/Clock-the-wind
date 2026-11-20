@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MS Partners — Reference (maketa)</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@500&family=Oswald:wght@500&display=swap" rel="stylesheet">
 <style>
   :root{--white:rgba(255,255,255,.96);--line:rgba(255,255,255,.55);--green:#3fd27a;--red:#ff4b4b;--flap:#1b1c1e;--flap2:#232427}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -29,15 +29,14 @@
   .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:8px;vertical-align:middle}
   .legend .l::before{background:var(--green)} .legend .o::before{background:var(--red)}
   /* board placed over the painted board in the photo */
-  .board{position:absolute;left:43.6%;top:8.4%;width:41.6%;height:53.8%;background:#121314;
-    box-shadow:0 0 0 6px #0c0c0d, 0 20px 60px rgba(0,0,0,.6);padding:3.2% 1.6% 1.4%;z-index:2;display:flex;flex-direction:column}
-  .row{display:grid;grid-template-columns:auto auto auto auto;justify-content:space-between;gap:.8vw;align-items:center;flex:1}
-  .row.head{flex:0 0 auto;margin-bottom:.8vh;font-family:Jost;font-size:.78vw;letter-spacing:.22em;color:#d9d9d4;text-transform:uppercase}
+  .board{position:absolute;left:45%;top:7.2%;width:36.6%;height:51.6%;background:#161718;padding:2.2% 1.4% 1.2%;z-index:2;display:flex;flex-direction:column;filter:blur(.35px) contrast(.92) brightness(.92);box-shadow:inset 0 0 40px rgba(0,0,0,.8)}
+  .board::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%27160%27 height=%27160%27><filter id=%27n%27><feTurbulence type=%27fractalNoise%27 baseFrequency=%27.9%27 numOctaves=%272%27/></filter><rect width=%27100%25%27 height=%27100%25%27 filter=%27url(%23n)%27/></svg>")}
+  .row{display:grid;grid-template-columns:auto auto auto auto;justify-content:space-between;gap:.5vw;align-items:center;flex:1}
+  .row.head{flex:0 0 auto;margin-bottom:.6vh;font-family:Oswald,sans-serif;font-size:.95vw;letter-spacing:.12em;color:#e8e8e2;text-transform:uppercase}
   .cells{display:flex;gap:2px}
-  .c{width:.92vw;height:1.4vw;background:linear-gradient(180deg,var(--flap2) 0 49%,#0e0f10 49% 51%,var(--flap) 51%);color:#efefe9;
-     font-family:"IBM Plex Mono",monospace;font-size:.95vw;line-height:1.4vw;text-align:center;border-radius:2px;position:relative}
-  .c.g{color:var(--green)} .c.r{color:var(--red)}
-  .row.data{cursor:pointer} .row.data:hover .c{background:linear-gradient(180deg,#2c2d31 0 49%,#0e0f10 49% 51%,#26272b 51%)}
+  .c{width:.66vw;height:1.1vw;background:linear-gradient(180deg,#2a2b2d 0 49%,#0a0a0b 49% 52%,#232426 52%);color:#f2f2ec;font-family:Oswald,sans-serif;font-weight:500;font-size:.82vw;line-height:1.1vw;text-align:center;border-radius:1px;text-shadow:0 0 3px rgba(255,255,255,.35)}
+  .c.g{color:#55d98a;text-shadow:0 0 6px rgba(85,217,138,.7)} .c.r{color:#ff5a5a;text-shadow:0 0 6px rgba(255,90,90,.7)}
+  .row.data{cursor:pointer} .row.data:hover .c{width:.66vw;height:1.1vw;background:linear-gradient(180deg,#2a2b2d 0 49%,#0a0a0b 49% 52%,#232426 52%);color:#f2f2ec;font-family:Oswald,sans-serif;font-weight:500;font-size:.82vw;line-height:1.1vw;text-align:center;border-radius:1px;text-shadow:0 0 3px rgba(255,255,255,.35)}
   .card{position:absolute;right:3.8vw;bottom:6vh;width:30vw;background:rgba(241,240,236,.97);color:#2F3134;padding:24px 28px;z-index:4;display:flex;gap:18px}
   .card img{width:42%;aspect-ratio:16/10;object-fit:cover}
   .card h3{font-family:"IBM Plex Mono",monospace;font-size:13px;letter-spacing:.12em;margin-bottom:6px}
@@ -65,7 +64,7 @@
   <div class="card">
     <img src="img/s_banke.jpg" alt="">
     <div>
-      <h3>MS 101 · ORION</h3>
+      <h3>AML 01 · OBRANA BANKE</h3>
       <div class="st">LANDED</div>
       <p>Obrana banke i svih članova uprave u AML prekršajnom postupku — oslobađanje po svim točkama.</p>
       <small>Financijske institucije · Sporovi i regulatorno</small>
@@ -74,15 +73,23 @@
 </section>
 <script>
 const rows=[
- ['MS101','ORION','FINANCIJE','LANDED'],['MS102','PIONEER','FINANCIJE','LANDED'],['MS103','MERIDIAN','JAVNI SEKTOR','LANDED'],
- ['MS104','NEPTUNE','ENERGETIKA','LANDED'],['MS105','VULCAN','ENERGETIKA','LANDED'],['MS106','ARGO','POLJOPRIVREDA','LANDED'],
- ['MS107','ATLAS','HOTELI','ONGOING'],['MS108','HERMES','INDUSTRIJA','ONGOING'],['MS109','TITAN','ENERGETIKA','ONGOING'],
- ['MS110','AURORA','NEKRETNINE','ONGOING'],['MS111','LYRA','FINANCIJE','ONGOING'],['MS112','STERLING','INDUSTRIJA','ONGOING']];
-const W=[5,8,13,7];
+ ['AML 01','OBRANA BANKE','FINANCIJE','LANDED'],
+ ['NPL 01','PRVA PRODAJA NPL','FINANCIJE','LANDED'],
+ ['JPP 01','PRVI JPP PROJEKT','JAVNI SEKTOR','LANDED'],
+ ['OFF 01','BID RUNDE JADRAN','ENERGETIKA','LANDED'],
+ ['LNG 01','LNG TERMINAL','ENERGETIKA','LANDED'],
+ ['M&A 24','PREUZIMANJE','HRANA','LANDED'],
+ ['HTL 200','RESORT NA OTOKU','HOTELI','ONGOING'],
+ ['LMA 25','LMA FINANCIRANJE','LOGISTIKA','ONGOING'],
+ ['GAS 147','PLINOVOD','ENERGETIKA','ONGOING'],
+ ['BRF 3B','REGENERACIJA','NEKRETNINE','ONGOING'],
+ ['MICA 26','KRIPTO LICENCE','FINANCIJE','ONGOING'],
+ ['FDI 25','NOVO TRŽIŠTE','INDUSTRIJA','ONGOING']];
+const W=[7,16,12,7];
 const b=document.getElementById('board');
 const head=document.createElement('div');head.className='row head';
 ['Let','Projekt','Sektor','Status'].forEach(t=>{const d=document.createElement('div');d.textContent=t;head.appendChild(d)});b.appendChild(head);
-const CH=' ABCDEFGHIJKLMNOPRSTUVZ0123456789';
+const CH=' ABCDEFGHIJKLMNOPRSTUVZČŠŽĆ0123456789&';
 rows.forEach(r=>{const row=document.createElement('div');row.className='row data';
   r.forEach((txt,i)=>{const cells=document.createElement('div');cells.className='cells';
     const s=txt.padEnd(W[i],' ').slice(0,W[i]);

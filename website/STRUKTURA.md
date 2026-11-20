@@ -17,11 +17,11 @@ Jedna podjela: **Područja prakse po logici Legal 500**. Sektori nemaju vlastitu
 | Energetika i projekti | Platforma i LNG tanker | Kontrolna soba hidroelektrane |
 | Javna nabava i JPP | Otvaranje mosta | Javno otvaranje ponuda (crveni pečati) |
 | Sporovi i arbitraža | Sudnica s hrvatskim zastavama | — |
-| Kazneno pravo i odgovornost uprave | Ispitivanje (u izradi) | — |
+| Kazneno pravo i odgovornost uprave | Povjerljivi sastanak, kiborg tjelohranitelj (odobreno, verzija 3) | — |
 | Radno pravo i mobilnost | Ured za zapošljavanje u brodogradilištu (verzija 3) | — |
-| Restrukturiranje, stečaj i ovrha | Ročište vjerovnika | — |
-| Intelektualno vlasništvo, podaci i digitalno | Telefonska centrala | Računalna dvorana (iz O nama) |
-| Porezno savjetovanje | Računovodstvo | — |
+| Restrukturiranje, stečaj i ovrha | Ročište vjerovnika s grafom pada (odobreno) | — |
+| Intelektualno vlasništvo, podaci i digitalno | Patentni ured gore + centrala dolje (odobreno) | — |
+| Porezno savjetovanje | bez slike — tekst unutar Korporativnog i Nekretnina (porezne posljedice strukture, ovlašteni porezni savjetnik) | — |
 
 ## Sličice sektora uz reference
 Financije – trezor · Nekretnine – gradilište · HTL – hotel · Energetika – platforma · Industrija – hala · Javni sektor – most · Poljoprivreda – međa · Zdravstvo – laboratorij · Potrošačka dobra – robna kuća · Sport – nogomet/košarka.

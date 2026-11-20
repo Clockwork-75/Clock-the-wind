@@ -41,3 +41,11 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Obavezna scena: arhaična američka sudnica iz južnih država (porota, sudac na povišenom, stenografkinja kiborg — dio nje ili ona cijela u boji).
 - Svako područje prakse ima vlastitu sliku (jednu ili više) kad se otvori.
 - Naslovnica: kompozicija B (on dolazi iz dubine lijevo, ona ide prema njemu desno); video – hodaju jedno prema drugome, nakon nekoliko sekundi kadar se zamrzne.
+
+## Naslovnica — odobreno
+- Slika: `final/naslovnica/naslovnica_4k_FINAL.png` (kompozicija B, lice iz varijante A, laktovi iz varijante B; GPT Image 2.6 + Nano Banana Pro dorada).
+- Kiborgica: srebrno lice, tamna bouffant kosa, kromirane ruke i noge; laktovi jasno mehanički, ali tanki.
+- Video: hodaju jedno prema drugome ~8 s i zamrzne se točno na odobrenom kadru.
+- Dok video traje: samo bijeli prozirni M&S logo gore lijevo (`brand/ms_logo_white.png`).
+- Kad se zamrzne: izoštre se svi glavni tabovi (Društvo · Sektori · Područja prakse · Tim · Reference · Uvidi · Kontakt · HR/EN), zatim tanka linija, zatim „Zakažite razgovor“. Svaki pokret miša / skrol odmah prikazuje sve; uz isključene animacije odmah statični kadar s izbornikom.
+- Sektori i Područja prakse: padajući panel sa sličicama scena. Na mobitelu izbornik iza gumba.

@@ -12,13 +12,13 @@ Jedna podjela: **Područja prakse po logici Legal 500**. Sektori nemaju vlastitu
 | Područje prakse | Glavna slika | Druga slika |
 |---|---|---|
 | Bankarstvo, financije i tržište kapitala | Bankovna dvorana s trezorom | Burza (tržište kapitala) |
-| Korporativno pravo i M&A | Zatvaranje transakcije u zoru | — |
+| Korporativno pravo i M&A | Zatvaranje transakcije u zoru | Tvornička hala (akvizicije industrijskih društava) |
 | Nekretnine i graditeljstvo | Gradilište s indigo nacrtom | Hotel u duhu Haludova (HTL projekti) |
 | Energetika i projekti | Platforma i LNG tanker | Kontrolna soba hidroelektrane |
 | Javna nabava i JPP | Otvaranje mosta | Javno otvaranje ponuda (crveni pečati) |
 | Sporovi i arbitraža | Sudnica s hrvatskim zastavama | — |
 | Kazneno pravo i odgovornost uprave | Ispitivanje (u izradi) | — |
-| Radno pravo i mobilnost | Ured za zapošljavanje u brodogradilištu | Tvornička hala |
+| Radno pravo i mobilnost | Ured za zapošljavanje u brodogradilištu (verzija 3) | — |
 | Restrukturiranje, stečaj i ovrha | Ročište vjerovnika | — |
 | Intelektualno vlasništvo, podaci i digitalno | Telefonska centrala | Računalna dvorana (iz O nama) |
 | Porezno savjetovanje | Računovodstvo | — |

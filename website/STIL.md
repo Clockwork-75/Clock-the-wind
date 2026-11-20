@@ -54,3 +54,8 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Svaka slika se komponira unaprijed za tekst koji će stajati uz nju ili preko nje (naslovi, odlomci iz profila, reference, testimonials).
 - Svaka slika ima mirnu zonu bez važnih detalja (nebo, zid, strop, pod ili tamna površina) gdje tekst stoji čitljivo, a da ne prekriva ljude, kiborga ili detalj u boji.
 - Kiborg i detalj u boji nikad u zoni teksta.
+
+## O nama — odobreno
+- 01 vrata (zlatna slova), 02 boardroom (fix_e02b, bez svjetla na glavi), 03 tehnologija (fix_e03), 04 međunarodno (fix_e04), 05 knjižnica C s lusterom + kiborgica sa srebrnim licem.
+- Za buduće slike: detalj u boji neka bude malo naglašeniji (i dalje fino, ne jarko).
+- Na popisu: sudnica iz južnih država SAD-a (porota, sudac na povišenom, stenografkinja kiborg).

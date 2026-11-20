@@ -60,3 +60,7 @@ Ažurirano kroz razgovor s Andrejem Šoošem Maceljskim. Sve dosadašnje skice �
 - Za buduće slike: detalj u boji neka bude malo naglašeniji (i dalje fino, ne jarko).
 - Na popisu: sudnica iz južnih država SAD-a (porota, sudac na povišenom, stenografkinja kiborg).
 - Žene u sljedećim slikama (kiborgice ili ne): ženstvenije, malo više pin-up, dotjeranije i stilizirane (frizura, šminka, kroj ranih 60-ih), uvijek s ukusom.
+
+## Tekst — zabrane
+- NIKAD „stari zanat“ / „najstariji zanat“ (konotacija prostitucije). Izbjegavati riječ „zanat“ u sloganima.
+- Bez superlativa i usporedbi s drugim društvima (HOK).

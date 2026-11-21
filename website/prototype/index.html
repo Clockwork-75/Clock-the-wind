@@ -58,6 +58,8 @@ body.intro .hdr::after{opacity:0}
 .home{position:fixed;inset:0;background:var(--dark);color:var(--white);overflow:hidden}
 .home-still,.home-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:62% center}
 .home-video{transition:opacity .7s}
+body.intro .home-still{visibility:hidden}
+.home-video{background:#1b1c1e}
 .home-video.off{opacity:0;pointer-events:none}
 .home .veil{position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,20,22,.42) 0%,rgba(20,20,22,0) 24%),linear-gradient(90deg,rgba(20,20,22,.42) 0%,rgba(20,20,22,0) 48%);transition:opacity 1.2s}
 body.intro .home .veil{opacity:0}
@@ -353,7 +355,7 @@ function home(){
   body.classList.toggle('intro',play);
   app.innerHTML=`<section class="home">
    <img class="home-still" src="img/hero.jpg" alt="${lang==='hr'?'Predvorje iz 1960-ih: odvjetnik s aktovkom i žena u crvenoj haljini':'A 1960s lobby: a lawyer with a briefcase and a woman in a red dress'}">
-   <video class="home-video${play?'':' off'}" muted playsinline preload="auto" poster="img/hero_t.jpg" ${play?'src="img/intro.mp4"':''}></video>
+   <video class="home-video${play?'':' off'}" muted playsinline preload="auto" ${play?'poster="img/intro_first.jpg" src="img/intro.mp4"':''}></video>
    <div class="veil"></div>
    <div class="home-copy rv"><div class="eyebrow">${c.eyebrow}</div><h1>${c.h1a}<br><em>${c.h1b}</em></h1><p>${c.lead}</p></div>
    <div class="facts rv">${c.facts.map(f=>`<div><b>${f[0]}</b><span>${f[1]}</span></div>`).join('')}</div>
@@ -366,7 +368,6 @@ function home(){
   $('#replay').onclick=()=>{introDone=false; home()};
   if(play){
     v.addEventListener('ended',finish); v.addEventListener('error',finish);
-    v.removeAttribute('poster');
     const pr=v.play(); if(pr&&pr.catch) pr.catch(finish);
     setTimeout(()=>{ if(v.currentTime===0) finish() },4500);
     const any=e=>{ if(e.type==='keydown'&&e.key==='Tab')return; finish(); off() };

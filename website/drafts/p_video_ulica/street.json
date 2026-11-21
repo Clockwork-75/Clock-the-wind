@@ -1,0 +1,44 @@
+[
+  {
+    "created_at": "2026-11-21T10:08:52.356818Z",
+    "display_name": "Seedance 2.5",
+    "id": "a20bb853-72e1-4a3d-89a9-a398cc11a587",
+    "job_type": "seedance_2_5",
+    "min_result_url": null,
+    "params": {
+      "aspect_ratio": "16:9",
+      "bitrate_mode": "standard",
+      "draft": false,
+      "draft_job_id": null,
+      "duration": 6,
+      "extension_mode": null,
+      "generate_audio": false,
+      "genre": "auto",
+      "height": 1080,
+      "medias": [
+        {
+          "data": {
+            "id": "48f102c3-a66e-41fe-a874-8452e7ccb1a3",
+            "type": "media_input",
+            "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/48f102c3-a66e-41fe-a874-8452e7ccb1a3.jpg"
+          },
+          "role": "start_image"
+        }
+      ],
+      "model": "default",
+      "multi_prompt": [],
+      "multi_shot_mode": "custom",
+      "multi_shots": false,
+      "prompt": "Locked-off static camera on a tripod, absolutely no camera movement, no zoom, no reframing. Black-and-white 1962 film look, silver gelatin tones, fine grain, crisp and sharp. The image is the exact first frame. The lobby interior stays completely EMPTY and perfectly still for the whole shot: nobody enters the lobby, the furniture, walls, floor, light and reflections do not change. All the motion is OUTSIDE, seen through the tall glass wall: the avenue is alive in real time - early-1960s cars drive steadily along the street from left to right and from right to left, crossing the whole width of the windows, and pedestrians in period clothes walk naturally along the pavement in both directions, some passing behind the window mullions. Leaves on the trees move slightly. Continuous, natural city traffic for the entire shot, real-time pace, no slow motion, no cuts.",
+      "prompt_language": "en",
+      "reference_elements": [],
+      "resolution": "1080p",
+      "seed": 242416088,
+      "speedramp": "auto",
+      "width": 1920
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_100852_a20bb853-72e1-4a3d-89a9-a398cc11a587.mp4",
+    "status": "completed",
+    "thumbnail_url": "https://cdn.higgsfield.ai/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_100852_a20bb853-72e1-4a3d-89a9-a398cc11a587_thumbnail.webp"
+  }
+]

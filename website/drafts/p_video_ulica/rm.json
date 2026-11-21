@@ -1,0 +1,34 @@
+[
+  {
+    "created_at": "2026-11-21T10:14:28.518888Z",
+    "display_name": "Nano Banana Pro",
+    "id": "f3f31b93-016e-442b-84eb-3fdbe4ae84ba",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_101428_f3f31b93-016e-442b-84eb-3fdbe4ae84ba_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "16:9",
+      "batch_size": 1,
+      "height": 3072,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "78b0329c-313a-45cf-a305-4b06ae08fe2e",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/78b0329c-313a-45cf-a305-4b06ae08fe2e.png"
+        },
+        {
+          "id": "710cbd9f-7ea3-4093-be5f-6d42f557f1e9",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/710cbd9f-7ea3-4093-be5f-6d42f557f1e9.jpg"
+        }
+      ],
+      "prompt": "Remaster the FIRST image into a flawless, ultra-sharp 4K photograph, keeping EXACTLY the same composition, camera, framing, positions, poses, body orientation and head direction of both people, and the same lobby, light and reflections. Do not move or re-pose anyone.\nRestore full detail: crisp travertine texture, sharp glass curtain wall and avenue with early-1960s cars and pedestrians, polished terrazzo reflections, fine film grain, silver gelatin black-and-white tones without pure black.\nThe man: slim charcoal early-1960s suit, briefcase, sharp natural face. The woman: use the SECOND image as the reference for her look and detail: refined silver face, dark bouffant hair, chrome arms with clearly mechanical elbow joints, chrome legs, red sheath dress, black heels.\nSelective color: the ONLY color is her red dress. No text, no logos. Keep the street outside exactly as in the FIRST image: the same cars and the same pedestrians in exactly the same positions.",
+      "resolution": "4k",
+      "surface": null,
+      "width": 5504
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_101428_f3f31b93-016e-442b-84eb-3fdbe4ae84ba.png",
+    "status": "completed"
+  }
+]

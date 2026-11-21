@@ -42,7 +42,29 @@ h1 em,h2 em{font-style:italic}
 .burger i{position:absolute;left:10px;right:10px;height:1px;background:var(--white)} .burger i:nth-child(1){top:16px}.burger i:nth-child(2){top:22px}.burger i:nth-child(3){top:28px}
 body.intro .nav,body.intro .tools,body.intro .burger{opacity:0;pointer-events:none}
 body.intro .hdr::after{opacity:0}
-@media (max-width:1420px){
+@media (min-width:1200px) and (max-width:1420px){
+  .hdr{gap:12px}
+  .nav{gap:clamp(9px,1vw,14px)}
+  .nav a,.tools button,.cta{font-size:11px;letter-spacing:.1em}
+  .tools{gap:9px}
+  .cta{padding:9px 10px}
+  .logo img{height:40px}
+}
+@media (min-width:700px) and (max-width:1199px){
+  .hdr{flex-wrap:wrap;row-gap:10px;padding-top:16px;padding-bottom:12px}
+  .tools{margin-left:auto}
+  .nav{order:3;flex:0 0 100%;margin:0;justify-content:space-between;gap:8px}
+  .nav a{font-size:11.5px;letter-spacing:.11em}
+  .logo img{height:40px}
+  .hdr.solid .logo img{height:34px}
+  .home-copy{top:clamp(150px,19vh,200px)}
+  .dhead{padding-top:170px}
+  .pstrip{height:122px!important}
+  .pban>img{margin-top:0}
+}
+@media (min-width:700px) and (max-width:900px){.rtitle{padding-top:138px}}
+@media (min-width:901px) and (max-width:1199px){.rtitle{top:27%}}
+@media (max-width:699px){
   .burger{display:block}
   .nav{position:fixed;inset:0;background:rgba(24,25,27,.98);flex-direction:column;justify-content:center;gap:22px;margin:0;display:none}
   .nav a{font-size:15px}
@@ -415,7 +437,7 @@ function team(){
 }
 function person(id){
   const p=H(id); if(!p) return team(); const c=L(p), t=T();
-  return `<div style="background:var(--dark);height:96px"></div><section class="sec" style="padding-top:clamp(40px,6vw,72px)"><div class="wrap person">${pic(p)}
+  return `<div class="pstrip" style="background:var(--dark);height:96px"></div><section class="sec" style="padding-top:clamp(40px,6vw,72px)"><div class="wrap person">${pic(p)}
    <div><a class="backl" href="#tim">← ${t.nav.tim}</a><div class="eyebrow" style="color:var(--red)">${c.role}</div><h1 style="margin-top:10px">${p.name}</h1>
    <dl class="meta">${p.office?`<dt>${t.office}</dt><dd>${p.office}</dd>`:''}${c.lang?`<dt>${t.languages}</dt><dd>${c.lang}</dd>`:''}<dt>${t.practices}</dt><dd>${p.pr.map(x=>`<a href="#praksa-${x}">${L(P(x)).name}</a>`).join('<br>')}</dd></dl>
    <div class="prose">${c.bio.map(b=>`<p>${b}</p>`).join('')}</div></div></div></section>`;

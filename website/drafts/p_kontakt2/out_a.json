@@ -1,0 +1,39 @@
+[
+  {
+    "created_at": "2026-11-21T08:46:10.363662Z",
+    "display_name": "Nano Banana Pro",
+    "id": "55c02f25-d1a2-480c-8ece-448f94c0b6b2",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_084610_55c02f25-d1a2-480c-8ece-448f94c0b6b2_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "16:9",
+      "batch_size": 1,
+      "height": 3072,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "f0b97ea9-f899-4e2b-91fb-04fa9b8c92b5",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/f0b97ea9-f899-4e2b-91fb-04fa9b8c92b5.jpg"
+        },
+        {
+          "id": "f8a66a48-477b-48ed-9fc1-bfe175352710",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/f8a66a48-477b-48ed-9fc1-bfe175352710.jpg"
+        },
+        {
+          "id": "c43bcbc2-a936-4396-b826-410faf987e7f",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/c43bcbc2-a936-4396-b826-410faf987e7f.jpg"
+        }
+      ],
+      "prompt": "Edit image 1 (a black-and-white 1960s photograph of a Zagreb square with one pale-blue tram as the only colour). Replace the round building in the centre with the REAL Mestrovic Pavilion in Zagreb exactly as shown in reference images 2 and 3: a large white-stone circular rotunda surrounded by a continuous ring of tall, slender, closely spaced rectangular stone pillars (about 36 of them) reaching from the stepped base up to a plain, smooth, wide cylindrical stone band at the top; a very low shallow dome barely visible above; no classical capitals, no pediment, no windows in the upper band; the building stands on a low circular stepped plinth with a broad staircase at the front, on a round open plaza. It must look monumental and elegant, wider than tall. Keep everything else from image 1: the surrounding Central European apartment blocks, the pale-blue 1960s tram (the only coloured element), period cars, pedestrians in 1960s coats and hats, overcast light, film grain, photorealistic documentary photograph. No text, no signs.",
+      "resolution": "4k",
+      "surface": null,
+      "width": 5504
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_084610_55c02f25-d1a2-480c-8ece-448f94c0b6b2.png",
+    "status": "completed"
+  }
+]

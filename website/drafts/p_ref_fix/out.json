@@ -1,0 +1,29 @@
+[
+  {
+    "created_at": "2026-11-21T08:40:39.460385Z",
+    "display_name": "Nano Banana Pro",
+    "id": "843db9d2-135e-43bc-9b54-2ab6a456f3cc",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_084039_843db9d2-135e-43bc-9b54-2ab6a456f3cc_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "1:1",
+      "batch_size": 1,
+      "height": 2048,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "efde1b0f-f717-4365-ba82-1b6b4f9af97d",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/efde1b0f-f717-4365-ba82-1b6b4f9af97d.png"
+        }
+      ],
+      "prompt": "Edit this black-and-white 1960s airport terminal photograph. The standing stewardess in the skirt suit next to the departure board is far too large compared to the crowd. Make her much smaller: exactly the same body scale as the nearest people in the crowd at the bottom (roughly half her current height), standing on the terminal floor at the same place by the wall, feet on the floor line. Fill the marble wall behind where she used to be so it looks continuous. Keep absolutely everything else identical: the departure board with its green LANDED and red ONGOING text, the balcony, the crowd, lighting, grain, photorealistic black-and-white style. No new text.",
+      "resolution": "2k",
+      "surface": null,
+      "width": 2048
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_084039_843db9d2-135e-43bc-9b54-2ab6a456f3cc.png",
+    "status": "completed"
+  }
+]

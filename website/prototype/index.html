@@ -1,7 +1,7 @@
 <title>MS Partners prototip</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@500&family=Dancing+Script:wght@500&family=Courier+Prime&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@500&family=Courier+Prime&family=Marck+Script&family=Kalam:wght@300&family=Shadows+Into+Light+Two&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#2F3134; --ink2:#5d5f64; --paper:#F1F0EC; --paper2:#E7E5DF; --dark:#1b1c1e; --dark2:#242528;
@@ -86,9 +86,11 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 /* inner pages */
 .page{background:var(--paper);min-height:100vh}
 .phero{position:relative;height:clamp(380px,74vh,820px);background:var(--dark);color:var(--white);overflow:hidden}
+.phero.full{height:auto;aspect-ratio:16/9;max-height:none}
 .phero>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .phero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,20,22,.55) 0%,rgba(20,20,22,0) 26%,rgba(20,20,22,0) 45%,rgba(20,20,22,.78) 100%)}
 .phero-in{position:absolute;left:var(--gl);right:var(--gr);bottom:clamp(28px,6vh,64px);z-index:2;max-width:980px}
+@media (min-width:901px){.phero.tr .phero-in{left:auto;text-align:right;max-width:46%}}
 .phero h1{font-size:clamp(34px,4.4vw,72px);margin-top:14px;text-shadow:0 1px 16px rgba(0,0,0,.4)}
 .phero p{margin-top:14px;max-width:38em;font-weight:300;font-size:clamp(16px,1.2vw,19px)}
 .dhead{background:var(--dark);color:var(--white);padding:clamp(130px,20vh,200px) var(--gr) clamp(40px,7vh,80px) var(--gl)}
@@ -126,18 +128,14 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 .btn{display:inline-block;border:1px solid currentColor;padding:12px 20px;font-size:12px;letter-spacing:.2em;text-transform:uppercase;text-decoration:none;transition:background .2s,color .2s}
 .btn:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)} .dark .btn:hover{background:var(--white);color:var(--dark);border-color:var(--white)}
 
-.mlogo{display:inline-flex;align-items:center;justify-content:center;padding:14px 18px;background:#fff;border:1px solid var(--rule);text-decoration:none}
-.mlogo.dk{background:var(--dark);border-color:var(--dark)}
-.mlogo img{height:34px;width:auto;max-width:none;display:block}
-.dl .mlogo{margin-top:12px} .dl .mlogo img{height:26px}
-.badges{display:flex;gap:18px;margin-top:30px;flex-wrap:wrap}
-.badges img{height:150px;width:auto;max-width:none}
+.mlogo{display:inline-block;text-decoration:none;background:none;border:0;padding:0}
+.mlogo img{height:40px;width:auto;max-width:none;display:block;filter:brightness(0);opacity:.82;transition:opacity .2s}
+.mlogo:hover img{opacity:1}
+.dl .mlogo{margin-top:12px} .dl .mlogo img{height:30px}
 /* practice grid */
-.pgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(14px,1.4vw,24px);max-width:none}
-.pgrid .pcard:nth-child(-n+2){grid-column:span 2}
-.pgrid .pcard:nth-child(-n+2) h3{font-size:clamp(24px,2.2vw,34px)}
-@media (max-width:1100px){.pgrid{grid-template-columns:1fr 1fr}.pgrid .pcard:nth-child(-n+2){grid-column:span 1}}
-@media (max-width:640px){.pgrid{grid-template-columns:1fr}}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.6vw,28px);max-width:none}
+.pgrid .pcard h3{font-size:clamp(22px,2.1vw,32px)}
+@media (max-width:700px){.pgrid{grid-template-columns:1fr}}
 .pcard{text-decoration:none;display:block;background:var(--dark2);color:var(--white);position:relative;overflow:hidden}
 .pcard img{width:100%;aspect-ratio:16/9;object-fit:cover;transition:transform .8s ease,opacity .4s;opacity:.92}
 .pcard:hover img{transform:scale(1.04);opacity:1}
@@ -203,6 +201,7 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:8px;vertical-align:middle}
 .legend .l::before{background:var(--greenlit)} .legend .o::before{background:var(--redlit)}
 .rcard{position:absolute;right:var(--gr);bottom:5%;width:min(470px,34vw);background:rgba(241,240,236,.97);color:var(--ink);padding:20px 22px;display:flex;gap:16px;z-index:3;text-shadow:none}
+.rcard[hidden]{display:none}
 .rcard img{width:38%;aspect-ratio:4/3;object-fit:cover;align-self:flex-start}
 .rcard h3{font-family:var(--mono);font-size:13px;letter-spacing:.1em;line-height:1.4;text-transform:uppercase}
 .st{font-family:var(--mono);font-size:12px;letter-spacing:.12em;font-weight:500} .st.l{color:var(--green)} .st.o{color:var(--red)}
@@ -233,7 +232,9 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 .q blockquote::before{content:"„";color:var(--red)} .q blockquote::after{content:"“"}
 .en .q blockquote::before{content:"“"} .en .q blockquote::after{content:"”"}
 .qv1 .q blockquote{font-family:Caveat,cursive;font-size:clamp(26px,2.3vw,34px);line-height:1.22}
-.qv2 .q blockquote{font-family:"Dancing Script",cursive;font-size:clamp(24px,2.1vw,31px);line-height:1.3}
+.qv4 .q blockquote{font-family:"Marck Script",cursive;font-size:clamp(24px,2.1vw,31px);line-height:1.32}
+.qv5 .q blockquote{font-family:Kalam,cursive;font-weight:300;font-size:clamp(20px,1.7vw,25px);line-height:1.42}
+.qv6 .q blockquote{font-family:"Shadows Into Light Two",cursive;font-size:clamp(21px,1.8vw,27px);line-height:1.4}
 .qv3 .q blockquote{font-family:"Courier Prime",monospace;font-size:clamp(17px,1.35vw,20px);line-height:1.55}
 .qpick{display:flex;align-items:center;gap:10px;margin-bottom:34px;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink2)}
 .qbadge{display:inline-block;border:1px solid var(--ink);padding:10px 16px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;margin-bottom:30px}
@@ -336,7 +337,7 @@ function footer(){
    <div><h4>MS Partners</h4>${NAV.map(k=>`<a href="#${k}">${t.nav[k]}</a>`).join('')}</div>
    <div class="legal">© 2026 MS Partners</div></div></footer>`;
 }
-const phero=(img,e,h,p,alt,pos)=>`<section class="phero"><img src="${im(img)}" alt="${alt||''}"${pos?` style="object-position:${pos}"`:''}><div class="phero-in">${e?`<div class="eyebrow">${e}</div>`:''}<h1>${h}</h1>${p?`<p>${p}</p>`:''}</div></section>`;
+const phero=(img,e,h,p,alt,pos,full,right)=>`<section class="phero${full?' full':''}${right?' tr':''}"><img src="${im(img)}" alt="${alt||''}"${pos?` style="object-position:${pos}"`:''}><div class="phero-in">${e?`<div class="eyebrow">${e}</div>`:''}<h1>${h}</h1>${p?`<p>${p}</p>`:''}</div></section>`;
 const dhead=(e,h,p)=>`<section class="dhead"><div class="wrap"><div class="eyebrow">${e}</div><h1>${h}</h1>${p?`<p>${p}</p>`:''}</div></section>`;
 const ini=p=>p.name.split(' ').map(w=>w[0]).join('');
 const pic=(p,cls)=>p.img?`<img ${cls?`class="${cls}"`:''} src="img/${p.img}.jpg" alt="${p.name}" loading="lazy">`:`<div class="noph ${cls||''}" role="img" aria-label="${p.name}"><span>${ini(p)}</span></div>`;
@@ -375,7 +376,7 @@ function firm(){
   const c=L(D.firm), t=T();
   return phero('vrata',c.eyebrow,c.h1,'',lang==='hr'?'Ulazna vrata društva':'The firm’s entrance')+
   `<section class="sec"><div class="wrap two"><div class="prose">${c.intro.map(p=>`<p>${p}</p>`).join('')}</div><p class="quote">${c.quote}</p></div></section>
-  <section class="sec dark"><div class="wrap"><div class="eyebrow">${c.rank.h}</div><div class="rank">${c.rank.items.map(r=>`<div><b>${r[0]}</b><span>${r[1]}</span></div>`).join('')}</div><div class="badges"><img src="img/l500_top.jpg" alt="Legal 500 EMEA 2026 — Top Tier Firm"><img src="img/l500_leading.jpg" alt="Legal 500 EMEA 2026 — Leading Firm"></div></div></section>
+  <section class="sec dark"><div class="wrap"><div class="eyebrow">${c.rank.h}</div><div class="rank">${c.rank.items.map(r=>`<div><b>${r[0]}</b><span>${r[1]}</span></div>`).join('')}</div></div></section>
   <div class="band"><img src="${im('boardroom')}" alt="" loading="lazy"></div>
   <section class="sec"><div class="wrap"><h2>${c.whyH}</h2><p class="sub">${c.whyLead}</p>
    <div class="cards">${c.why.map((w,i)=>`<article class="card"><div class="n">0${i+1}</div><h3>${w[0]}</h3><p>${w[1]}</p><p class="proof">${w[2]}</p></article>`).join('')}</div></div></section>
@@ -388,12 +389,12 @@ function firm(){
 }
 function practices(){
   const h=L(D.pageHeads.prakse);
-  return dhead(h[0],h[1],h[2])+`<section class="sec dark" style="padding-top:0"><div class="wrap pgrid">${D.practices.map((p,i)=>`<a class="pcard" href="#praksa-${p.id}"><img src="${im(p.img,i>1)}" alt="" loading="lazy"><div><small>${L(p).tag}</small><h3>${L(p).name}</h3></div></a>`).join('')}</div></section>`;
+  return dhead(h[0],h[1],h[2])+`<section class="sec dark" style="padding-top:0"><div class="wrap pgrid">${D.practices.map((p,i)=>`<a class="pcard" href="#praksa-${p.id}"><img src="${im(p.img)}" alt="" loading="lazy"><div><small>${L(p).tag}</small><h3>${L(p).name}</h3></div></a>`).join('')}</div></section>`;
 }
 function practice(id){
   const p=P(id); if(!p) return practices(); const c=L(p), t=T(), i=D.practices.indexOf(p), n=D.practices.length;
   const pv=D.practices[(i+n-1)%n], nx=D.practices[(i+1)%n];
-  return phero(p.img,c.tag,c.name,'','',p.pos)+
+  return phero(p.img,c.tag,c.name,'','','',1,p.tr)+
   `<section class="sec"><div class="wrap two"><div><a class="backl" href="#prakse">← ${t.back}</a><div class="prose"><p>${c.lead}</p></div>
     <h4 class="h4" style="margin-top:34px">${t.caps}</h4><ol class="caps">${c.caps.map(x=>`<li><span>${x}</span></li>`).join('')}</ol>
     ${p.tax?`<div class="taxbox"><h4 class="h4">${t.tax}</h4><p>${c.tax}</p></div>`:''}</div>
@@ -414,7 +415,7 @@ function person(id){
    <dl class="meta">${p.office?`<dt>${t.office}</dt><dd>${p.office}</dd>`:''}${c.lang?`<dt>${t.languages}</dt><dd>${c.lang}</dd>`:''}<dt>${t.practices}</dt><dd>${p.pr.map(x=>`<a href="#praksa-${x}">${L(P(x)).name}</a>`).join('<br>')}</dd></dl>
    <div class="prose">${c.bio.map(b=>`<p>${b}</p>`).join('')}</div></div></div></section>`;
 }
-let rf={s:'all',st:'all',sel:0};
+let rf={s:'all',st:'all',sel:null};
 function refCard(r){
   const t=T(), s=D.sectors[r.s];
   return `<img src="${im(s.img,1)}" alt=""><div><h3>${r.code} · ${L(r)[0]}</h3><div class="st ${r.st?'l':'o'}">${r.st?'LANDED':'ONGOING'}</div><p>${L(r)[1]}</p><small>${L(s)}</small></div>`;
@@ -427,7 +428,7 @@ function refs(){
   return `<section class="refhero"><div class="rtitle"><div class="eyebrow">${h[0]}</div><h1>${h[1]}</h1><p>${h[2]}</p>
     <div class="legend"><span class="l">${t.landed}</span><span class="o">${t.ongoing}</span></div></div>
    <div class="bw"><div class="bi"><img src="${im('ref')}" alt="${lang==='hr'?'Aerodromska ploča s popisom mandata':'Airport board listing the matters'}">${hots}</div></div>
-   <div class="rcard" id="rcard" aria-live="polite">${refCard(D.refs.find(r=>r.board===rf.sel))}</div></section>
+   <div class="rcard" id="rcard" aria-live="polite"${rf.sel==null?' hidden':''}>${rf.sel==null?'':refCard(D.refs.find(r=>r.board===rf.sel))}</div></section>
   <section class="sec"><div class="wrap">
    <div class="filters" id="fs"><span class="lab">${t.sector}</span><button class="fb t" data-s="all">${t.all}</button>${Object.keys(D.sectors).map(k=>`<button class="fb" data-s="${k}"><img src="${im(D.sectors[k].img,1)}" alt="">${L(D.sectors[k])}</button>`).join('')}</div>
    <div class="filters" id="fst"><span class="lab">${t.status}</span><button class="fb t" data-st="all">${t.all}</button><button class="fb t" data-st="1">${t.landed}</button><button class="fb t" data-st="0">${t.ongoing}</button></div>
@@ -444,14 +445,14 @@ function refsBind(){
   };
   $$('#fs .fb').forEach(b=>b.onclick=()=>{rf.s=b.dataset.s;draw()});
   $$('#fst .fb').forEach(b=>b.onclick=()=>{rf.st=b.dataset.st;draw()});
-  $$('.hot').forEach(b=>{const go=()=>{rf.sel=+b.dataset.b;$$('.hot').forEach(x=>x.classList.toggle('on',x===b));$('#rcard').innerHTML=refCard(D.refs.find(r=>r.board===rf.sel))};
+  $$('.hot').forEach(b=>{const go=()=>{rf.sel=+b.dataset.b;$$('.hot').forEach(x=>x.classList.toggle('on',x===b));const rc=$('#rcard');rc.hidden=false;rc.innerHTML=refCard(D.refs.find(r=>r.board===rf.sel))};
     b.onclick=go; b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}}});
   draw();
 }
-let qv=1;
+let qv=3;
 function testimonials(){
   const c=L(D.testimonials);
-  return phero('testi',c.eyebrow,c.h1,'',lang==='hr'?'Televizijski studio iz 1960-ih':'A 1960s television studio')+`<section class="sec"><div class="wrap qv${qv}" id="qwrap"><div class="qbadge">${c.badge}</div><div class="qpick"><span>${lang==='hr'?'Verzija pisma':'Lettering version'}</span>${[1,2,3].map(n=>`<button class="fb t" data-qv="${n}" aria-pressed="${qv===n}">${n}</button>`).join('')}</div><div class="qgrid">${c.q.map(q=>`<figure class="q"><blockquote>${q[0]}</blockquote><cite>${q[1]}</cite></figure>`).join('')}</div><p class="note">${c.note}</p></div></section>`;
+  return phero('testi',c.eyebrow,c.h1,'',lang==='hr'?'Televizijski studio iz 1960-ih':'A 1960s television studio')+`<section class="sec"><div class="wrap qv${qv}" id="qwrap"><div class="qbadge">${c.badge}</div><div class="qpick"><span>${lang==='hr'?'Verzija pisma':'Lettering version'}</span>${[1,3,4,5,6].map(n=>`<button class="fb t" data-qv="${n}" aria-pressed="${qv===n}">${n}</button>`).join('')}</div><div class="qgrid">${c.q.map(q=>`<figure class="q"><blockquote>${q[0]}</blockquote><cite>${q[1]}</cite></figure>`).join('')}</div><p class="note">${c.note}</p></div></section>`;
 }
 function insights(){
   const c=L(D.insights);

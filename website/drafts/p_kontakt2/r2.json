@@ -1,0 +1,29 @@
+[
+  {
+    "created_at": "2026-11-21T08:53:39.616364Z",
+    "display_name": "Nano Banana Pro",
+    "id": "044d11f8-6238-43d8-a9b6-5819434d51e6",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_085339_044d11f8-6238-43d8-a9b6-5819434d51e6_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "16:9",
+      "batch_size": 1,
+      "height": 3072,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "0e24915f-3844-49ba-b69f-ea3610b220be",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/0e24915f-3844-49ba-b69f-ea3610b220be.jpg"
+        }
+      ],
+      "prompt": "Use image 1 as the exact base photograph: a real historic elevated view of the Mestrovic Pavilion in Zagreb with the real surrounding apartment houses and streets. Keep the pavilion, every surrounding house, the streets and the camera position exactly as in the photo, do not redesign or replace any building. Restore it as a sharp, clean, high-resolution black-and-white photograph from the early 1960s: one unified tonal range, soft overcast daylight, the pavilion in the same grey tonality as the houses, natural film grain, no scratches or stains. Add life from the 1960s on the streets around the rotunda: one old Zagreb tram on the street, painted pale blue, the ONLY coloured element in the image; several 1960s cars driving and parked; many small pedestrians in 1960s coats and hats walking on the pavements and the plaza. Photorealistic, no text, no captions.",
+      "resolution": "4k",
+      "surface": null,
+      "width": 5504
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_085339_044d11f8-6238-43d8-a9b6-5819434d51e6.png",
+    "status": "completed"
+  }
+]

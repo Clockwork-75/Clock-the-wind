@@ -1,7 +1,7 @@
 <title>MS Partners prototip</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&family=Caveat:wght@500&family=Courier+Prime&family=Marck+Script&family=Kalam:wght@300&family=Shadows+Into+Light+Two&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&family=Courier+Prime&display=swap" rel="stylesheet">
 <style>
 :root{
   --ink:#2F3134; --ink2:#5d5f64; --paper:#F1F0EC; --paper2:#E7E5DF; --dark:#1b1c1e; --dark2:#242528;
@@ -86,11 +86,13 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 /* inner pages */
 .page{background:var(--paper);min-height:100vh}
 .phero{position:relative;height:clamp(380px,74vh,820px);background:var(--dark);color:var(--white);overflow:hidden}
-.phero.full{height:auto;aspect-ratio:16/9;max-height:none}
+.pshow{background:var(--dark);color:var(--white);padding:clamp(118px,17vh,160px) var(--gr) clamp(36px,5vw,64px) var(--gl)}
+.pshow .wrap{max-width:1040px}
+.pshow h1{font-size:clamp(32px,3.6vw,56px);margin:12px 0 clamp(22px,2.6vw,36px)}
+.pshow img{width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;display:block}
 .phero>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .phero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,20,22,.55) 0%,rgba(20,20,22,0) 26%,rgba(20,20,22,0) 45%,rgba(20,20,22,.78) 100%)}
 .phero-in{position:absolute;left:var(--gl);right:var(--gr);bottom:clamp(28px,6vh,64px);z-index:2;max-width:980px}
-@media (min-width:901px){.phero.tr .phero-in{left:auto;text-align:right;max-width:46%}}
 .phero h1{font-size:clamp(34px,4.4vw,72px);margin-top:14px;text-shadow:0 1px 16px rgba(0,0,0,.4)}
 .phero p{margin-top:14px;max-width:38em;font-weight:300;font-size:clamp(16px,1.2vw,19px)}
 .dhead{background:var(--dark);color:var(--white);padding:clamp(130px,20vh,200px) var(--gr) clamp(40px,7vh,80px) var(--gl)}
@@ -132,9 +134,14 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 .mlogo img{height:40px;width:auto;max-width:none;display:block;filter:brightness(0);opacity:.82;transition:opacity .2s}
 .mlogo:hover img{opacity:1}
 .dl .mlogo{margin-top:12px} .dl .mlogo img{height:30px}
+.intl{padding-top:0;padding-bottom:0}
+.intl .wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:clamp(28px,4vw,64px);align-items:center;max-width:1280px}
+.intl-t{padding:clamp(40px,6vw,80px) 0}
+.intl .wrap>img{width:100%;aspect-ratio:16/10;object-fit:cover;display:block;margin:clamp(28px,3.4vw,48px) 0}
+@media (max-width:900px){.intl .wrap{grid-template-columns:1fr;gap:0}.intl-t{padding-bottom:8px}.intl .wrap>img{margin-top:18px}}
 /* practice grid */
-.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.6vw,28px);max-width:none}
-.pgrid .pcard h3{font-size:clamp(22px,2.1vw,32px)}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,1.6vw,28px);max-width:1080px}
+.pgrid .pcard h3{font-size:clamp(21px,1.8vw,27px)}
 @media (max-width:700px){.pgrid{grid-template-columns:1fr}}
 .pcard{text-decoration:none;display:block;background:var(--dark2);color:var(--white);position:relative;overflow:hidden}
 .pcard img{width:100%;aspect-ratio:16/9;object-fit:cover;transition:transform .8s ease,opacity .4s;opacity:.92}
@@ -231,12 +238,7 @@ body:not(.intro) .skip{display:none} body.intro .replay{display:none}
 .q blockquote{font-family:var(--serif);font-size:clamp(20px,1.8vw,27px);line-height:1.36;border-top:1px solid var(--rule);padding-top:22px}
 .q blockquote::before{content:"„";color:var(--red)} .q blockquote::after{content:"“"}
 .en .q blockquote::before{content:"“"} .en .q blockquote::after{content:"”"}
-.qv1 .q blockquote{font-family:Caveat,cursive;font-size:clamp(26px,2.3vw,34px);line-height:1.22}
-.qv4 .q blockquote{font-family:"Marck Script",cursive;font-size:clamp(24px,2.1vw,31px);line-height:1.32}
-.qv5 .q blockquote{font-family:Kalam,cursive;font-weight:300;font-size:clamp(20px,1.7vw,25px);line-height:1.42}
-.qv6 .q blockquote{font-family:"Shadows Into Light Two",cursive;font-size:clamp(21px,1.8vw,27px);line-height:1.4}
-.qv3 .q blockquote{font-family:"Courier Prime",monospace;font-size:clamp(17px,1.35vw,20px);line-height:1.55}
-.qpick{display:flex;align-items:center;gap:10px;margin-bottom:34px;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink2)}
+.q blockquote{font-family:"Courier Prime",monospace;font-size:clamp(17px,1.35vw,20px);line-height:1.55}
 .qbadge{display:inline-block;border:1px solid var(--ink);padding:10px 16px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;margin-bottom:30px}
 .q cite{display:block;margin-top:14px;font-style:normal;font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--ink2)}
 .note{font-size:14px;color:var(--ink2);margin-top:40px}
@@ -337,7 +339,7 @@ function footer(){
    <div><h4>MS Partners</h4>${NAV.map(k=>`<a href="#${k}">${t.nav[k]}</a>`).join('')}</div>
    <div class="legal">© 2026 MS Partners</div></div></footer>`;
 }
-const phero=(img,e,h,p,alt,pos,full,right)=>`<section class="phero${full?' full':''}${right?' tr':''}"><img src="${im(img)}" alt="${alt||''}"${pos?` style="object-position:${pos}"`:''}><div class="phero-in">${e?`<div class="eyebrow">${e}</div>`:''}<h1>${h}</h1>${p?`<p>${p}</p>`:''}</div></section>`;
+const phero=(img,e,h,p,alt,pos)=>`<section class="phero"><img src="${im(img)}" alt="${alt||''}"${pos?` style="object-position:${pos}"`:''}><div class="phero-in">${e?`<div class="eyebrow">${e}</div>`:''}<h1>${h}</h1>${p?`<p>${p}</p>`:''}</div></section>`;
 const dhead=(e,h,p)=>`<section class="dhead"><div class="wrap"><div class="eyebrow">${e}</div><h1>${h}</h1>${p?`<p>${p}</p>`:''}</div></section>`;
 const ini=p=>p.name.split(' ').map(w=>w[0]).join('');
 const pic=(p,cls)=>p.img?`<img ${cls?`class="${cls}"`:''} src="img/${p.img}.jpg" alt="${p.name}" loading="lazy">`:`<div class="noph ${cls||''}" role="img" aria-label="${p.name}"><span>${ini(p)}</span></div>`;
@@ -383,18 +385,18 @@ function firm(){
   <section class="sec dark"><div class="wrap"><h2>${c.howH}</h2><div class="list4" style="margin-top:30px">${c.how.map(w=>`<div><h3>${w[0]}</h3><p>${w[1]}</p></div>`).join('')}</div></div></section>
   <div class="band"><img src="${im('knjiznica')}" alt="" loading="lazy"></div>
   <section class="sec"><div class="wrap two"><div><h2>${c.feeH}</h2><p class="sub">${c.feeLead}</p></div><div class="dl">${c.fee.map(f=>`<div><b>${f[0]}</b><span>${f[1]}</span></div>`).join('')}</div></div></section>
-  <section class="sec alt"><div class="wrap two"><div><h2>${c.intlH}</h2><p style="max-width:36em">${c.intl}</p><p style="margin-top:22px">${ALFA}</p></div><img class="figimg" src="${im('medjunarodno')}" alt="" loading="lazy"></div></section>
+  <section class="sec alt intl"><div class="wrap"><div class="intl-t"><h2>${c.intlH}</h2><p>${c.intl}</p><p style="margin-top:22px">${ALFA}</p></div><img src="${im('medjunarodno')}" alt="" loading="lazy"></div></section>
   <section class="sec"><div class="wrap"><h2>${c.recH}</h2><div class="dl" style="margin-top:26px">${c.rec.map((f,i)=>`<div><b>${f[0]}</b><span>${f[1]}${i===0?'<br>'+LMA:i===2?'<br>'+ALFA:''}</span></div>`).join('')}</div>
    <div class="more"><a class="btn" href="#prakse">${t.seePrac}</a><a class="btn" href="#tim">${t.seeTeam}</a><a class="btn" href="#reference">${t.seeRef}</a></div></div></section>`;
 }
 function practices(){
   const h=L(D.pageHeads.prakse);
-  return dhead(h[0],h[1],h[2])+`<section class="sec dark" style="padding-top:0"><div class="wrap pgrid">${D.practices.map((p,i)=>`<a class="pcard" href="#praksa-${p.id}"><img src="${im(p.img)}" alt="" loading="lazy"><div><small>${L(p).tag}</small><h3>${L(p).name}</h3></div></a>`).join('')}</div></section>`;
+  return dhead(h[0],h[1],h[2]).replace('class="wrap"','class="wrap" style="max-width:1080px"')+`<section class="sec dark" style="padding-top:0"><div class="wrap pgrid">${D.practices.map((p,i)=>`<a class="pcard" href="#praksa-${p.id}"><img src="${im(p.img)}" alt="" loading="lazy"><div><small>${L(p).tag}</small><h3>${L(p).name}</h3></div></a>`).join('')}</div></section>`;
 }
 function practice(id){
   const p=P(id); if(!p) return practices(); const c=L(p), t=T(), i=D.practices.indexOf(p), n=D.practices.length;
   const pv=D.practices[(i+n-1)%n], nx=D.practices[(i+1)%n];
-  return phero(p.img,c.tag,c.name,'','','',1,p.tr)+
+  return `<section class="pshow"><div class="wrap"><div class="eyebrow">${c.tag}</div><h1>${c.name}</h1><img src="${im(p.img)}" alt=""></div></section>`+
   `<section class="sec"><div class="wrap two"><div><a class="backl" href="#prakse">← ${t.back}</a><div class="prose"><p>${c.lead}</p></div>
     <h4 class="h4" style="margin-top:34px">${t.caps}</h4><ol class="caps">${c.caps.map(x=>`<li><span>${x}</span></li>`).join('')}</ol>
     ${p.tax?`<div class="taxbox"><h4 class="h4">${t.tax}</h4><p>${c.tax}</p></div>`:''}</div>
@@ -449,10 +451,9 @@ function refsBind(){
     b.onclick=go; b.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}}});
   draw();
 }
-let qv=3;
 function testimonials(){
   const c=L(D.testimonials);
-  return phero('testi',c.eyebrow,c.h1,'',lang==='hr'?'Televizijski studio iz 1960-ih':'A 1960s television studio')+`<section class="sec"><div class="wrap qv${qv}" id="qwrap"><div class="qbadge">${c.badge}</div><div class="qpick"><span>${lang==='hr'?'Verzija pisma':'Lettering version'}</span>${[1,3,4,5,6].map(n=>`<button class="fb t" data-qv="${n}" aria-pressed="${qv===n}">${n}</button>`).join('')}</div><div class="qgrid">${c.q.map(q=>`<figure class="q"><blockquote>${q[0]}</blockquote><cite>${q[1]}</cite></figure>`).join('')}</div><p class="note">${c.note}</p></div></section>`;
+  return phero('testi',c.eyebrow,c.h1,'',lang==='hr'?'Televizijski studio iz 1960-ih':'A 1960s television studio')+`<section class="sec"><div class="wrap"><div class="qbadge">${c.badge}</div><div class="qgrid">${c.q.map(q=>`<figure class="q"><blockquote>${q[0]}</blockquote><cite>${q[1]}</cite></figure>`).join('')}</div><p class="note">${c.note}</p></div></section>`;
 }
 function insights(){
   const c=L(D.insights);
@@ -504,7 +505,6 @@ function render(keep){
   else { location.hash='#home'; return }
   app.innerHTML=`<div class="page">${html}</div>`+footer();
   if(h==='reference') refsBind();
-  $$('[data-qv]').forEach(b=>b.onclick=()=>{qv=+b.dataset.qv;$('#qwrap').className='wrap qv'+qv;$$('[data-qv]').forEach(x=>x.setAttribute('aria-pressed',x===b))});
   if(h==='razgovor') $('#fsend').onclick=()=>{const ok=$('#fn').value.trim()&&/\S+@\S+\.\S+/.test($('#fe').value)&&$('#fm').value.trim();
     $('#fmsg').textContent=ok?(lang==='hr'?'Hvala. Ovo je prototip, pa se poruka još ne šalje; na pravoj stranici stizat će na info@mspartners.hr.':'Thank you. This is a prototype, so the message is not sent yet; on the live site it will go to info@mspartners.hr.'):(lang==='hr'?'Molimo upišite ime, e-poštu i poruku.':'Please enter your name, email and message.')};
   $$('.cp').forEach(b=>b.onclick=()=>{const v=b.dataset.c, ok=()=>{b.textContent=T().copied;setTimeout(()=>b.textContent=T().copy,1600)};

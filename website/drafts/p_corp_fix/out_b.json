@@ -1,0 +1,29 @@
+[
+  {
+    "created_at": "2026-11-21T09:37:59.092215Z",
+    "display_name": "Nano Banana Pro",
+    "id": "f7020087-2d50-4fd8-a6cd-cf0258989e3f",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_093759_f7020087-2d50-4fd8-a6cd-cf0258989e3f_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "16:9",
+      "batch_size": 1,
+      "height": 3072,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "190541e6-a0b7-4721-9572-a9ab044665bd",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/190541e6-a0b7-4721-9572-a9ab044665bd_resize.jpg"
+        }
+      ],
+      "prompt": "Edit this photograph minimally. On the conference table two men are signing contracts with fountain pens; each contract currently shows a blue ink signature drawn in the wrong direction, running lengthwise across the page. Fix ONLY the two blue signatures: erase the existing blue scribbles and write one small, natural handwritten blue-ink signature on each contract, placed on the signature line near the bottom of the page directly under the tip of that signer's pen, written in the signer's own writing direction - parallel to the printed text lines of that page as seen by the man who is signing it (left to right from his point of view, following the perspective of the paper). The signature must be short, elegant, slightly slanted cursive, realistic in scale, with the pen tip touching the end of the stroke. The blue ink of the two signatures stays the only colour in the black-and-white image. Keep absolutely everything else identical: all people, faces, hands, the cyborg, the papers, cups, ashtrays, skyline, sunrise, grain. No other changes, no new text.",
+      "resolution": "4k",
+      "surface": null,
+      "width": 5504
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_093759_f7020087-2d50-4fd8-a6cd-cf0258989e3f.png",
+    "status": "completed"
+  }
+]

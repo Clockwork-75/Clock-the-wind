@@ -1,0 +1,29 @@
+[
+  {
+    "created_at": "2026-11-21T10:32:56.790136Z",
+    "display_name": "Nano Banana Pro",
+    "id": "94002d4f-5cf6-408d-b0a8-e0188996a2b8",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_103256_94002d4f-5cf6-408d-b0a8-e0188996a2b8_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "4:3",
+      "batch_size": 1,
+      "height": 1792,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "7bcb3000-c5fd-468d-a422-cdc7f6f8a0ce",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/7bcb3000-c5fd-468d-a422-cdc7f6f8a0ce.png"
+        }
+      ],
+      "prompt": "Edit this photograph minimally. The man in the dark suit on the right has just written a small blue ink signature on the top sheet of the document stack - it is the small blue handwriting near the upper-right part of the sheet, just to the left of his other hand that rests flat on the paper. His right hand with the black fountain pen is currently too far from that signature. Move ONLY his right hand, wrist and forearm so that the tip of the pen touches the end of that blue signature, as if he is just finishing writing it; the hand keeps a natural writing grip and the dark sleeve with white cuff follows naturally. Where the hand used to be, show clean printed paper. Do NOT move, redraw, enlarge or change the blue signature and do not add any other ink. Keep everything else identical: his face, glasses, suit, tie, his other hand, the paper stack, table, cups, the other people, background, lighting, grain. Photorealistic; the blue signature stays the only colour.",
+      "resolution": "2k",
+      "surface": null,
+      "width": 2400
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_103256_94002d4f-5cf6-408d-b0a8-e0188996a2b8.png",
+    "status": "completed"
+  }
+]

@@ -1,0 +1,29 @@
+[
+  {
+    "created_at": "2026-11-21T10:28:24.428071Z",
+    "display_name": "Nano Banana Pro",
+    "id": "2af9995c-fee8-41e1-a7b8-d20e654f8366",
+    "job_type": "nano_banana_pro",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_102824_2af9995c-fee8-41e1-a7b8-d20e654f8366_min.webp",
+    "params": {
+      "application": null,
+      "aspect_ratio": "4:3",
+      "batch_size": 1,
+      "height": 1792,
+      "input_image": null,
+      "input_images": [
+        {
+          "id": "c189cc11-8545-4633-9c49-3bb6db713948",
+          "type": "media_input",
+          "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/c189cc11-8545-4633-9c49-3bb6db713948.png"
+        }
+      ],
+      "prompt": "Edit this black-and-white photograph minimally. The man in the dark suit on the right is signing the top sheet of a thick stack of documents with a black fountain pen held in his right hand. Change ONLY the position of his right hand, wrist and forearm with the pen: move the hand toward him, so that the pen tip now touches the paper near the corner of the top sheet that is closest to his body and to his own right side - in the picture this is the upper-right area of the top sheet, just above and to the left of his other hand that rests flat on the paper. The hand keeps the same natural writing grip, the sleeve and white cuff follow naturally, and the paper where the hand used to be is shown as clean printed paper. Do not add any signature or ink. Keep absolutely everything else identical: his face, glasses, suit, tie, his other hand, the stack of paper, the table, cups, ashtray, the other people, the background, lighting, grain. Photorealistic.",
+      "resolution": "2k",
+      "surface": null,
+      "width": 2400
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3MLWIT1OHR5mL9o933Qrl5JS59J/hf_20261121_102824_2af9995c-fee8-41e1-a7b8-d20e654f8366.png",
+    "status": "completed"
+  }
+]

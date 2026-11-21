@@ -318,7 +318,7 @@ const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/�
 
 function header(){
   const t=T(), h=sect(cur());
-  hdr.innerHTML=`<a class="logo" href="#home" aria-label="MS Partners"><img src="img/logo_white.png" alt="M&S — Šooš Maceljski, Mandić, Stanić & Partners"></a>
+  hdr.innerHTML=`<a class="logo" href="#home" aria-label="MS Partners"><img src="img/logo_white.svg" alt="M&S — Šooš Maceljski, Mandić, Stanić & Partners"></a>
   <button class="burger" id="burger" aria-label="Menu"><i></i><i></i><i></i></button>
   <nav class="nav" aria-label="Main">${NAV.map(k=>`<a href="#${k}" class="${h===k?'on':''}">${t.nav[k]}</a>`).join('')}</nav>
   <div class="tools"><button id="sbtn">${t.search}</button>
@@ -331,7 +331,7 @@ function header(){
 function footer(){
   const t=T(), c=L(D.contact);
   return `<footer class="ft"><div class="wrap">
-   <div><img src="img/logo_white.png" alt="M&S"><p>${c.firm}</p></div>
+   <div><img src="img/logo_white.svg" alt="M&S"><p>${c.firm}</p></div>
    <div><h4>${c.hq}</h4><p>Trg žrtava fašizma 6<br>10000 Zagreb</p><p style="margin-top:10px">${c.offices}: Šibenik · Knin</p><p style="margin-top:10px">+385 1 3707 030<br>info@mspartners.hr</p></div>
    <div><h4>MS Partners</h4>${NAV.map(k=>`<a href="#${k}">${t.nav[k]}</a>`).join('')}</div>
    <div class="legal">© 2026 MS Partners</div></div></footer>`;

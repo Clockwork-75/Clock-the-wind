@@ -58,7 +58,7 @@ async function dwd(kind) {
   // rain (total since the run start → mm/h in gribToField), instability (CAPE) and, ICON-D2 only, the lightning potential index
   const RN = { tot_prec: 'precipAcc', cape_ml: 'cape', lpi: 'lpi' };
   // ICON-D2 ends at ~43.2° N (no Vis, Lastovo, Korčula, Dubrovnik, Jabuka) and is the package's heaviest grid: wind only.
-  // Rain and thunderstorms come from the models that cover the whole Adriatic (ICON-EU, ECMWF, GFS).
+  // Rain and thunderstorms come from two models that cover the whole Adriatic: ICON-EU and ECMWF.
   const vars = ['u_10m', 'v_10m', 'vmax_10m', 'pmsl', 'relhum_2m', 't_2m', ...(kind === 'eu' ? ['tot_prec', 'cape_ml'] : [])];
   await pool(steps.flatMap(h => vars.map(v => [h, v])), 8, async ([h, v]) => {
     const b = await get(url(run, h, v)); if (!b) return;
@@ -97,7 +97,7 @@ async function ecmwf() {
 // ---------------- NOAA GFS (server-side subset) ----------------
 async function gfs() {
   const b = WIDE;
-  const url = (run, h) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&var_PRMSL=on&var_RH=on&var_TMP=on&var_PRATE=on&var_CAPE=on&lev_10_m_above_ground=on&lev_2_m_above_ground=on&lev_surface=on&lev_mean_sea_level=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
+  const url = (run, h) => `https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?dir=%2Fgfs.${ymd(run)}%2F${hh(run)}%2Fatmos&file=gfs.t${hh(run)}z.pgrb2.0p25.f${pad(h, 3)}&var_UGRD=on&var_VGRD=on&var_GUST=on&var_PRMSL=on&var_RH=on&var_TMP=on&lev_10_m_above_ground=on&lev_2_m_above_ground=on&lev_surface=on&lev_mean_sea_level=on&subregion=&toplat=${Math.ceil(b.n + 0.5)}&leftlon=${Math.floor(b.w - 0.5)}&rightlon=${Math.ceil(b.e + 0.5)}&bottomlat=${Math.floor(b.s - 0.5)}`;
   let run = Math.floor((Date.now() - 4.5 * H) / (6 * H)) * 6 * H, ok = false;
   const need = r => Math.max(120, Math.min(384, Math.ceil((t1 - r) / H / 6) * 6));
   for (let k = 0; k < 3 && !ok; k++) { const t = await get(url(run, need(run)), {}, 1); ok = !!(t && t.length > 100); if (!ok) run -= 6 * H; }

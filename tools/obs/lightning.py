@@ -2,7 +2,7 @@
 
 The public EUMETView map service (layer mtg_fd:li_afa, 'accumulated flash area', a new picture every 5 min) is read for
 the wider Adriatic; every coloured pixel is a place where the satellite saw lightning. Pixels are grouped into 0.05°
-cells, so the app can put one small lightning icon on each. The last four pictures (≈20 min) are kept with their time,
+cells, so the app can put one small lightning icon on each (0.12° ≈ 12 km). The last four pictures (≈20 min) are kept with their time,
 so the newest can flash and the older fade. Output: lightning.json (branch `munje`).
 The app cannot read the map service itself (no CORS), which is why this runs on GitHub.
 """
@@ -16,7 +16,7 @@ os.makedirs(OUT, exist_ok=True)
 UA = {'User-Agent': 'ClockTheWind sailing app (github actions)'}
 S, N, W, E = 38.0, 48.0, 8.0, 24.0          # the Adriatic with a margin (storms come from Italy / the Balkans)
 WIDTH, HEIGHT = 1600, 1000                    # 0.01° per pixel
-CELL = 0.05
+CELL = 0.12                                    # one icon per ~12 km: a storm stays readable on a phone
 
 def get(url, timeout=60):
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
@@ -51,7 +51,7 @@ best = {}
 for p in points:
     k = (round(p['lat'] / CELL), round(p['lon'] / CELL))
     if k not in best or p['t'] > best[k]['t']: best[k] = p
-json.dump({'created': int(time.time()), 'latest': int(latest.timestamp()), 'frames': frames, 'points': sorted(best.values(), key=lambda p: -p['t']),
+json.dump({'created': int(time.time()), 'latest': int(latest.timestamp()), 'frames': frames, 'points': sorted(best.values(), key=lambda p: (-p['t'], -p['n']))[:400],
            'source': 'EUMETSAT MTG Lightning Imager (view.eumetsat.int, mtg_fd:li_afa)'},
           open(os.path.join(OUT, 'lightning.json'), 'w'), separators=(',', ':'))
 print('ukupno mjesta s munjama:', len(best), '| zadnja slika', latest.isoformat())

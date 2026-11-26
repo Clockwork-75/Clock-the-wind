@@ -11,7 +11,13 @@ const base = process.argv[2] || 'http://localhost:8080/';
   p.on('requestfailed', r => { if (/rainviewer|eumetsat/.test(r.url())) console.log('ZAHTJEV PAO', r.url().slice(0, 120), r.failure() && r.failure().errorText); });
   await p.addInitScript(u => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'forecast', source: 'cloud', cloudUrl: u })); }, base + 'data/latest.ctw');
   await p.goto(base + 'index.html');
-  await p.waitForFunction(() => window.ctw && window.ctw.state.set && window.ctw.state.set.source === 'cloud', null, { timeout: 400000 });
+  for (let k = 0; k < 40; k++) {   // progress every 10 s instead of a blind wait
+    const st = await p.evaluate(() => { const c = window.ctw; if (!c) return { ready: false, msg: 'nema ctw' }; const d = c.fn.dbg ? c.fn.dbg() : {}; return { ready: !!(c.state.set && c.state.set.source === 'cloud'), src: c.state.set && c.state.set.source, msg: d.txt, toast: d.toast, dl: d.dl, models: d.models }; }).catch(e => ({ err: e.message }));
+    console.log('učitavanje', k * 10, 's', JSON.stringify(st));
+    if (st.ready) break;
+    if (k === 39) { require('fs').mkdirSync('shots', { recursive: true }); await p.screenshot({ path: 'shots/zapelo.png' }); throw new Error('paket se nije učitao'); }
+    await p.waitForTimeout(10000);
+  }
   const r = await p.evaluate(async () => {
     const c = window.ctw, s = c.state.set, { sample } = await import('/js/field.js'), H = 3600000;
     const out = {};

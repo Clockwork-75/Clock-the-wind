@@ -57,7 +57,8 @@ async function dwd(kind) {
   const msgs = [];
   // rain (total since the run start → mm/h in gribToField), instability (CAPE) and, ICON-D2 only, the lightning potential index
   const RN = { tot_prec: 'precipAcc', cape_ml: 'cape', lpi: 'lpi' };
-  const vars = ['u_10m', 'v_10m', 'vmax_10m', 'pmsl', 'relhum_2m', 't_2m', 'tot_prec', 'cape_ml', ...(kind === 'd2' ? ['lpi'] : [])];
+  // ICON-D2 is the finest grid (the package's biggest part): rain + lightning potential only – its CAPE adds little next to LPI
+  const vars = ['u_10m', 'v_10m', 'vmax_10m', 'pmsl', 'relhum_2m', 't_2m', 'tot_prec', ...(kind === 'd2' ? ['lpi'] : ['cape_ml'])];
   await pool(steps.flatMap(h => vars.map(v => [h, v])), 8, async ([h, v]) => {
     const b = await get(url(run, h, v)); if (!b) return;
     const raw = bunzip(b); if (raw) addMsgs(raw, msgs, BBOX, RN[v] || null);

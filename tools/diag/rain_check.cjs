@@ -7,10 +7,11 @@ const base = process.argv[2] || 'http://localhost:8080/';
   const b = await pw.chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
   const p = await b.newPage({ viewport: { width: 1180, height: 820 } });
   p.on('pageerror', e => console.log('PAGE ERROR', e.message));
+  p.on('console', m => { if (/error|greš|fail/i.test(m.text())) console.log('KONZOLA', m.text().slice(0, 200)); });
   p.on('requestfailed', r => { if (/rainviewer|eumetsat/.test(r.url())) console.log('ZAHTJEV PAO', r.url().slice(0, 120), r.failure() && r.failure().errorText); });
   await p.addInitScript(u => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'forecast', source: 'cloud', cloudUrl: u })); }, base + 'data/latest.ctw');
   await p.goto(base + 'index.html');
-  await p.waitForFunction(() => window.ctw && window.ctw.state.set && window.ctw.state.set.source === 'cloud', null, { timeout: 120000 });
+  await p.waitForFunction(() => window.ctw && window.ctw.state.set && window.ctw.state.set.source === 'cloud', null, { timeout: 400000 });
   const r = await p.evaluate(async () => {
     const c = window.ctw, s = c.state.set, { sample } = await import('/js/field.js'), H = 3600000;
     const out = {};

@@ -9,7 +9,7 @@ const base = process.argv[2] || 'http://localhost:8080/';
   p.on('pageerror', e => console.log('PAGE ERROR', e.message));
   p.on('console', m => { if (/error|greš|fail/i.test(m.text())) console.log('KONZOLA', m.text().slice(0, 200)); });
   p.on('requestfailed', r => { if (/rainviewer|eumetsat/.test(r.url())) console.log('ZAHTJEV PAO', r.url().slice(0, 120), r.failure() && r.failure().errorText); });
-  await p.addInitScript(u => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'forecast', source: 'cloud', cloudUrl: u })); }, base + 'data/latest.ctw');
+  await p.addInitScript(u => { localStorage.setItem('ctw.intro', 'off'); localStorage.setItem('ctw.settings', JSON.stringify({ mode: 'race', source: 'cloud', cloudUrl: u })); }, base + 'data/latest.ctw');
   await p.goto(base + 'index.html');
   for (let k = 0; k < 40; k++) {   // progress every 10 s instead of a blind wait
     const st = await p.evaluate(() => { const c = window.ctw; if (!c) return { ready: false, msg: 'nema ctw' }; const d = c.fn.dbg ? c.fn.dbg() : {}; return { ready: !!(c.state.set && c.state.set.source === 'cloud'), src: c.state.set && c.state.set.source, msg: d.txt, toast: d.toast, dl: d.dl, models: d.models }; }).catch(e => ({ err: e.message }));

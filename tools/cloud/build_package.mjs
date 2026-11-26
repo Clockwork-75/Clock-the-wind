@@ -85,7 +85,7 @@ async function ecmwf() {
     // rain: 'tprate' (rate, kg/m²/s → mm/h); thunderstorms: 'mucape' (most-unstable CAPE)
     const want = new Set(['10u', '10v', 'msl', '2t', '2d', 'tprate', 'mucape', ...(g ? [g] : [])]);
     const RN = { tprate: 'precipRate', mucape: 'cape' };
-    for (const j of idxs.filter(j => want.has(j.param) && (j.levtype === 'sfc' || !j.levtype))) {
+    for (const j of idxs.filter(j => want.has(j.param))) {
       const b = await get(base(run, h) + '.grib2', { Range: `bytes=${j._offset}-${j._offset + j._length - 1}` });
       if (b) addMsgs(b, msgs, WIDE, RN[j.param] || null);
     }

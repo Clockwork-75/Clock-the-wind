@@ -35,7 +35,8 @@ function varGrib2(d, c, n) {
   if (d === 0 && c === 3 && n === 1) return 'mslp';   // pressure reduced to mean sea level (Pa → hPa)   // maximum wind speed (DHMZ ALADIN-HR: hourly max at 10 m)
   if (d === 0 && c === 2 && n === 23) return 'gu';   // gust as u/v components (Météo-France ARPEGE/AROME)
   if (d === 0 && c === 2 && n === 24) return 'gv';
-  if (d === 0 && c === 1 && (n === 8 || n === 52 || n === 7)) return 'precip';
+  if (d === 0 && c === 1 && n === 8) return 'precipAcc';               // total precipitation, accumulated (kg/m² = mm)
+  if (d === 0 && c === 1 && (n === 52 || n === 7)) return 'precipRate';   // precipitation rate (kg/m²/s)
   if (d === 0 && c === 7 && n === 6) return 'cape';
   if (d === 10 && c === 0 && n === 3) return 'wave';
   if (d === 10 && c === 0 && (n === 4 || n === 14)) return 'waveDir';
@@ -44,7 +45,7 @@ function varGrib2(d, c, n) {
   if (d === 10 && c === 1 && n === 3) return 'cv';
   return null;
 }
-const GRIB1 = { 2: 'mslp', 33: 'U', 34: 'V', 180: 'gust', 61: 'precip', 157: 'cape', 100: 'wave', 101: 'waveDir', 103: 'wavePer', 49: 'cu', 50: 'cv' };
+const GRIB1 = { 2: 'mslp', 33: 'U', 34: 'V', 180: 'gust', 61: 'precipAcc', 157: 'cape', 100: 'wave', 101: 'waveDir', 103: 'wavePer', 49: 'cu', 50: 'cv' };
 
 function grid2(b, s) { // section 3 template 3.0
   const tmpl = u16(b, s + 12);
@@ -207,7 +208,7 @@ function parseGrib2(b, o, msgs) {
       else if (b[p + 5] === 255) bitmap = null;
     } else if (sn === 7) {
       // ECMWF writes mean sea level pressure as 'pressure' (0-3-0) on the mean-sea-level surface (101)
-      let name = varGrib2(disc, prod.cat, prod.num) || (disc === 0 && prod.cat === 3 && prod.num === 0 && prod.surf === 101 ? 'mslp' : null);
+      let name = RENAME || varGrib2(disc, prod.cat, prod.num) || (disc === 0 && prod.cat === 3 && prod.num === 0 && prod.surf === 101 ? 'mslp' : null);
       // air temperature, dew point and relative humidity at 2 m (for the humidity comparison with the measurements)
       if (!name && disc === 0 && prod.surf === 103 && Math.abs(prod.level - 2) < 0.5) name = prod.cat === 0 && prod.num === 0 ? 't2' : prod.cat === 0 && prod.num === 6 ? 'td2' : prod.cat === 1 && prod.num === 1 ? 'rh' : null;
       const isWind10 = (name === 'U' || name === 'V' || name === 'gu' || name === 'gv') ? (prod.surf === 103 && Math.abs(prod.level - 10) < 0.5) || prod.surf === 1 : true;
@@ -273,10 +274,11 @@ function parseGrib1(b, o, msgs) {
 // Files from paid services often mix variables, levels and packings: a message we cannot read is skipped
 // (and remembered), so the wind in the same file is still imported. Only if nothing usable is left do we fail.
 let ANY_LEVEL = false;   // tests only: accept U/V on any level
+let RENAME = null;       // the caller knows what the file holds (DWD: one variable per file, e.g. 'lpi' with a local code)
 let EXTRA1 = null;       // a producer's local GRIB1 parameters, e.g. DHMZ ALADIN-HR: 196/197 = u/v of the hourly maximum wind
 export function decodeGrib(buffer, opts = {}) {
   const b = new Uint8Array(buffer), msgs = [], skipped = [];
-  ANY_LEVEL = !!opts.anyLevel; EXTRA1 = opts.grib1 || null;
+  ANY_LEVEL = !!opts.anyLevel; EXTRA1 = opts.grib1 || null; RENAME = opts.name || null;
   let o = 0;
   while (o < b.length - 8) {
     if (b[o] === 0x47 && b[o + 1] === 0x52 && b[o + 2] === 0x49 && b[o + 3] === 0x42) {
@@ -287,7 +289,7 @@ export function decodeGrib(buffer, opts = {}) {
       o += len > 8 ? len : 1;
     } else o++;
   }
-  ANY_LEVEL = false; EXTRA1 = null;
+  ANY_LEVEL = false; EXTRA1 = null; RENAME = null;
   msgs.skipped = skipped;
   if (!msgs.length && skipped.length) throw new Error(skipped[0]);
   return msgs;
@@ -332,6 +334,14 @@ export function gribToField(msgs, bbox, id) {
   // relative humidity from temperature and dew point (ECMWF gives these, not the humidity itself) – Magnus formula
   if (vars.t2 && vars.td2 && !vars.rh) { const r = vars.rh = new Float32Array(T * N); for (let i = 0; i < r.length; i++) { const t = vars.t2[i], d = vars.td2[i]; r[i] = t === t && d === d ? Math.min(100, 100 * Math.exp(17.625 * d / (243.04 + d) - 17.625 * t / (243.04 + t))) : NaN; } }
   delete vars.td2;
+  // rain in mm/h: a rate (kg/m²/s) × 3600; an accumulated total (since the run start) → the difference per hour
+  if (vars.precipRate && !vars.precip) { const r = vars.precip = new Float32Array(T * N); for (let i = 0; i < r.length; i++) { const x = vars.precipRate[i]; r[i] = x === x ? Math.max(0, x * 3600) : NaN; } }
+  if (vars.precipAcc && !vars.precip) {
+    const a = vars.precipAcc, r = vars.precip = new Float32Array(T * N).fill(NaN);
+    for (let t = 1; t < T; t++) { const dh = (times[t] - times[t - 1]) / 3600000; for (let i = 0; i < N; i++) { const x = a[t * N + i], y = a[(t - 1) * N + i]; if (x === x && y === y) r[t * N + i] = Math.max(0, x - y) / dh; } }
+    if (T > 1) for (let i = 0; i < N; i++) r[i] = r[N + i];   // the first hour: as the next one
+  }
+  delete vars.precipRate; delete vars.precipAcc;
   // gusts given as u/v components: their strength is what the app shows
   if (vars.gu && vars.gv) { if (!vars.gust) { const g = vars.gust = new Float32Array(T * N); for (let i = 0; i < g.length; i++) g[i] = Math.hypot(vars.gu[i], vars.gv[i]); } delete vars.gu; delete vars.gv; }
   else { delete vars.gu; delete vars.gv; }

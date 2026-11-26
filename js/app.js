@@ -553,6 +553,7 @@ const syncToggles = () => {
   $('#ovDepth').classList.toggle('on', !!state.ovDepth);
   $('#ovIsobars').classList.toggle('on', !!state.ovIsobars);
   $('#ovObs').classList.toggle('on', !!state.ovObs);
+  if ($('#ovRadar')) { $('#ovRadar').classList.toggle('on', !!state.ovRadar); $('#ovLight').classList.toggle('on', !!state.ovLight); }
   $('#tglColors').classList.toggle('on', state.colors !== false);
 };
 if (settings.ovDepth === undefined) settings.ovDepth = true; // depths visible by default
@@ -561,6 +562,35 @@ if (settings.ovDepth === undefined) settings.ovDepth = true; // depths visible b
   $(id).onclick = () => { state[k] = settings[k] = !state[k]; saveSettings(); syncToggles(); wxLayer.draw(); chartLayer.draw(); depthLayer.draw(); };
 });
 $('#tglColors').onclick = () => { state.colors = settings.colors = state.colors === false; saveSettings(); syncToggles(); wxLayer.draw(); };
+// ---------------- live: radar (RainViewer) and lightning (EUMETSAT MTG Lightning Imager) ----------------
+// what is happening NOW – they do not follow the time on the timeline (the forecast layers Kiša / Grmljavina do that)
+map.createPane('live'); map.getPane('live').style.zIndex = 330; map.getPane('live').style.pointerEvents = 'none';
+const live = { radar: null, light: null, timer: null, radarT: 0 };
+async function liveRadar() {
+  try {
+    const j = await (await fetch('https://api.rainviewer.com/public/weather-maps.json', { cache: 'no-cache' })).json();
+    const fr = j.radar && j.radar.past && j.radar.past[j.radar.past.length - 1]; if (!fr) throw new Error('nema radarske slike');
+    const url = `${j.host}${fr.path}/256/{z}/{x}/{y}/2/1_1.png`;
+    if (live.radar) live.radar.setUrl(url);
+    else live.radar = L.tileLayer(url, { pane: 'live', opacity: 0.75, maxNativeZoom: 7, maxZoom: 18, attribution: 'Radar: RainViewer' }).addTo(map);
+    live.radarT = fr.time * 1000;
+  } catch (e) { toast('Radar trenutno nije dostupan (' + e.message + ')', 4000); }
+}
+function liveLight() {
+  const t = Math.floor(Date.now() / 300000);   // a new picture every 5 min
+  if (live.light) live.light.setParams({ _t: t });
+  else live.light = L.tileLayer.wms('https://view.eumetsat.int/geoserver/wms', { pane: 'live', layers: 'mtg_fd:li_afa', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.9, _t: t, attribution: 'Munje: EUMETSAT MTG LI' }).addTo(map);
+}
+function syncLive() {
+  if (state.ovRadar) liveRadar(); else if (live.radar) { map.removeLayer(live.radar); live.radar = null; }
+  if (state.ovLight) liveLight(); else if (live.light) { map.removeLayer(live.light); live.light = null; }
+  clearInterval(live.timer); live.timer = (state.ovRadar || state.ovLight) ? setInterval(() => { if (state.ovRadar) liveRadar(); if (state.ovLight) liveLight(); }, 5 * 60000) : null;
+}
+[['#ovRadar', 'ovRadar', 'Radar: kiša SADA (zadnjih 10 min) – ne prati vrijeme na traci'], ['#ovLight', 'ovLight', 'Munje: bljeskovi SADA sa satelita (zadnjih ~10 min) – ne prati vrijeme na traci']].forEach(([id, k, msg]) => {
+  state[k] = !!settings[k];
+  $(id).onclick = () => { state[k] = settings[k] = !state[k]; saveSettings(); syncToggles(); syncLive(); if (state[k]) toast(msg, 3500); };
+});
+syncLive();
 syncToggles();
 syncToggles();
 $('#tglParticles').onclick = () => { state.particles = settings.particles = !state.particles; saveSettings(); syncToggles(); };
@@ -2250,7 +2280,7 @@ function windOfRoute() {
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
   L.push(`GPS: ${gps.status()}${gps.fix ? ` ±${Math.round(gps.fix.acc)} m` : ''} · primljeno ${gps.count}, odbačeno ${gps.rejected} · trag ${gps.track.length}`);
-  L.push(`Verzija 5.2 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 5.3 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2521,7 +2551,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 5.2 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 5.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

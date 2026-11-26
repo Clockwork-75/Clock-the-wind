@@ -34,7 +34,8 @@ export const LAYERS = {
   current: { name: 'Struje', unit: 'kn', vars: ['cu', 'cv'], src: 'marine', scale: scale([[0, '#1d3557'], [0.15, '#245d8f'], [0.3, '#2a86b8'], [0.5, '#39b39c'], [0.75, '#c9d64a'], [1, '#f2c037'], [1.5, '#f08a2a'], [2.5, '#e03a3a']]), value: a => Math.hypot(a[0], a[1]), legend: [0, 0.25, 0.5, 1, 1.5, 2] },
   rain:    { name: 'Kiša', unit: 'mm/h', vars: ['precip'], src: 'wx', scale: scale([[0, '#000000', 0], [0.1, '#9fd8ff', 0], [0.2, '#9fd8ff', 0.75], [0.5, '#4fb0ff', 0.85], [1, '#2f6fe0', 0.9], [3, '#2fb24c', 0.9], [6, '#f2d43a', 0.95], [10, '#f08a24', 0.95], [20, '#d7263d', 1], [40, '#a020a0', 1]]), value: a => a[0], legend: [0.2, 1, 3, 6, 10, 20] },
   conf:    { name: 'Pouzdanost ClockW', unit: '%', vars: ['conf'], src: 'wx', scale: scale([[0, '#c62828'], [30, '#ef6c00'], [50, '#f9a825'], [70, '#c0ca33'], [85, '#43a047'], [100, '#1b7f3b']]), value: a => a[0], legend: [0, 25, 50, 75, 100] },
-  storm:   { name: 'Grmljavina', unit: 'J/kg', vars: ['cape', 'lpi'], src: 'wx', scale: scale([[0, '#000000', 0], [150, '#fff3b0', 0], [300, '#fff3b0', 0.55], [700, '#f7c948', 0.75], [1200, '#f08c2e', 0.85], [2000, '#e03a3a', 0.9], [3000, '#9b2c9b', 0.95]]), value: a => a[0], legend: [300, 700, 1200, 2000, 3000] },
+  storm:   { name: 'Grmljavina', unit: 'J/kg', vars: ['cape', 'lpi'], src: 'wx', scale: scale([[0, '#000000', 0], [150, '#fff3b0', 0], [300, '#fff3b0', 0.55], [700, '#f7c948', 0.75], [1200, '#f08c2e', 0.85], [2000, '#e03a3a', 0.9], [3000, '#9b2c9b', 0.95]]), value: a => { const l = a[1]; if (l === l && l > 0.2) return Math.max(a[0] === a[0] ? a[0] : 0, 300 + l * 150);   // ICON-D2: lightning potential (LPI) shows where storms really fire
+    return a[0]; }, legend: [300, 700, 1200, 2000, 3000] },
 };
 export const windScale = LAYERS.wind.scale;
 export function colorFor(layer, v) {

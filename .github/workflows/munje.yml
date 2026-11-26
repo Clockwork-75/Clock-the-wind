@@ -1,0 +1,27 @@
+# Clock the Wind – where lightning really strikes (EUMETSAT MTG Lightning Imager), every 10 minutes.
+# The result (lightning.json) is kept on the branch `munje`; the app reads it from raw.githubusercontent.com.
+name: Munje
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: munje
+  cancel-in-progress: true
+jobs:
+  munje:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Alati
+        run: python3 -c "import PIL, numpy" 2>/dev/null || pip install --quiet pillow numpy
+      - name: Munje sa satelita
+        run: python3 tools/obs/lightning.py out
+      - name: Spremi na granu munje
+        run: |
+          cd out && git init -q && git checkout -q -b munje && git add lightning.json
+          git -c user.name=ctw-ci -c user.email=ci@users.noreply.github.com commit -qm "munje $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" munje

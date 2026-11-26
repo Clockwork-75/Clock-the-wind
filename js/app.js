@@ -565,7 +565,7 @@ settings.ovRain = false;   // rain is never drawn over the wind any more: it is 
 $('#tglColors').onclick = () => { state.colors = settings.colors = state.colors === false; saveSettings(); syncToggles(); wxLayer.draw(); };
 // ---------------- live: radar (RainViewer) and lightning (EUMETSAT MTG Lightning Imager) ----------------
 // what is happening NOW – they do not follow the time on the timeline (the forecast layers Kiša / Grmljavina do that)
-map.createPane('live'); map.getPane('live').style.zIndex = 330; map.getPane('live').style.pointerEvents = 'none';
+map.createPane('live'); map.getPane('live').style.zIndex = 470;   // above the routes: a lightning icon can be tapped
 const live = { radar: null, light: null, timer: null, radarT: 0 };
 async function liveRadar() {
   try {
@@ -573,21 +573,36 @@ async function liveRadar() {
     const fr = j.radar && j.radar.past && j.radar.past[j.radar.past.length - 1]; if (!fr) throw new Error('nema radarske slike');
     const url = `${j.host}${fr.path}/256/{z}/{x}/{y}/2/1_1.png`;
     if (live.radar) live.radar.setUrl(url);
-    else live.radar = L.tileLayer(url, { pane: 'live', opacity: 0.75, maxNativeZoom: 7, maxZoom: 18, attribution: 'Radar: RainViewer' }).addTo(map);
+    else live.radar = L.tileLayer(url, { pane: 'overlayPane', opacity: 0.75, maxNativeZoom: 7, maxZoom: 18, attribution: 'Radar: RainViewer' }).addTo(map);
     live.radarT = fr.time * 1000;
   } catch (e) { toast('Radar trenutno nije dostupan (' + e.message + ')', 4000); }
 }
-function liveLight() {
-  const t = Math.floor(Date.now() / 300000);   // a new picture every 5 min
-  if (live.light) live.light.setParams({ _t: t });
-  else live.light = L.tileLayer.wms('https://view.eumetsat.int/geoserver/wms', { pane: 'live', layers: 'mtg_fd:li_afa', format: 'image/png', transparent: true, version: '1.3.0', opacity: 0.9, _t: t, attribution: 'Munje: EUMETSAT MTG LI' }).addTo(map);
+// lightning: small icons where the satellite (EUMETSAT MTG Lightning Imager) saw flashes in the last ~20 min – read on
+// GitHub every 10 min (tools/obs/lightning.py → branch munje); the newest flash, the older fade
+const LIGHT_URL = 'https://raw.githubusercontent.com/Clockwork-75/Clock-the-wind/munje/lightning.json';
+const BOLT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.2h6.1L9.8 22 19 10.3h-6.2z"/></svg>';
+async function liveLight() {
+  try {
+    const j = await (await fetch(LIGHT_URL + '?t=' + Math.floor(Date.now() / 120000), { cache: 'no-cache' })).json();
+    if (!state.ovLight) return;
+    if (!live.light) live.light = L.layerGroup().addTo(map);
+    live.light.clearLayers();
+    const now = Date.now() / 1000;
+    for (const p of j.points || []) {
+      const age = (now - p.t) / 60, fresh = p.t >= j.latest - 300;   // minutes; the newest picture flashes
+      const cls = `bolt${fresh ? ' fresh' : ''}${p.n >= 12 ? ' big' : ''}`;
+      L.marker([p.lat, p.lon], { pane: 'live', interactive: true, icon: L.divIcon({ className: 'bolticon', html: `<div class="${cls}" style="opacity:${fresh ? 1 : Math.max(0.35, 1 - (j.latest - p.t) / 1500)}">${BOLT}</div>`, iconSize: [0, 0] }) })
+        .bindPopup(`<b>⚡ Munja</b><br>${fmtTime(p.t * 1000, false)} · prije ${Math.round(age)} min<br><small class="muted">satelit EUMETSAT MTG</small>`).addTo(live.light);
+    }
+    live.lightN = (j.points || []).length; live.lightT = j.latest * 1000;
+  } catch (e) { toast('Munje trenutno nisu dostupne (' + e.message + ')', 4000); }
 }
 function syncLive() {
   if (state.ovRadar) liveRadar(); else if (live.radar) { map.removeLayer(live.radar); live.radar = null; }
   if (state.ovLight) liveLight(); else if (live.light) { map.removeLayer(live.light); live.light = null; }
   clearInterval(live.timer); live.timer = (state.ovRadar || state.ovLight) ? setInterval(() => { if (state.ovRadar) liveRadar(); if (state.ovLight) liveLight(); }, 5 * 60000) : null;
 }
-[['#ovRadar', 'ovRadar', 'Radar: kiša SADA (zadnjih 10 min) – ne prati vrijeme na traci'], ['#ovLight', 'ovLight', 'Munje: bljeskovi SADA sa satelita (zadnjih ~10 min) – ne prati vrijeme na traci']].forEach(([id, k, msg]) => {
+[['#ovRadar', 'ovRadar', 'Radar: kiša SADA (zadnjih 10 min) – ne prati vrijeme na traci'], ['#ovLight', 'ovLight', 'Munje: gdje je satelit vidio munje u zadnjih ~20 min (kasni oko 15 min) – ne prati vrijeme na traci']].forEach(([id, k, msg]) => {
   state[k] = !!settings[k];
   $(id).onclick = () => { state[k] = settings[k] = !state[k]; saveSettings(); syncToggles(); syncLive(); if (state[k]) toast(msg, 3500); };
 });
@@ -600,7 +615,7 @@ $('#tglNumbers').onclick = () => { state.showNumbers = settings.showNumbers = !s
 
 function renderLegend() {
   const L = LAYERS[state.layer], s = L.scale;
-  const stops = s.stops.map(([v, c]) => `${c} ${((v - s.lo) / (s.hi - s.lo) * 100).toFixed(1)}%`).join(',');
+  const stops = s.stops.map(([v, c, a]) => `${a === 0 ? 'rgba(255,255,255,0.08)' : c} ${((v - s.lo) / (s.hi - s.lo) * 100).toFixed(1)}%`).join(',');   // fully transparent bands: shown as 'nothing', not black
   $('#legend').innerHTML = `<div class="ttl"><span>${L.name}</span><span>${L.unit}</span></div><div class="bar" style="background:linear-gradient(90deg,${stops})"></div>
     <div class="ticks">${(L.labels || L.legend).map(v => `<span>${v}</span>`).join('')}</div>`;
 }
@@ -2280,7 +2295,7 @@ function windOfRoute() {
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
   L.push(`GPS: ${gps.status()}${gps.fix ? ` ±${Math.round(gps.fix.acc)} m` : ''} · primljeno ${gps.count}, odbačeno ${gps.rejected} · trag ${gps.track.length}`);
-  L.push(`Verzija 5.3 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 5.4 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2551,7 +2566,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 5.3 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 5.4 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

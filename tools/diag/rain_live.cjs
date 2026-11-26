@@ -4,7 +4,7 @@
 let pw; try { pw = require('playwright'); } catch { pw = require('playwright-core'); }
 const base = process.argv[2] || 'http://localhost:8080/';
 (async () => {
-  const b = await pw.chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+  const b = await pw.webkit.launch();
   const p = await b.newPage({ viewport: { width: 1180, height: 820 } });
   p.on('pageerror', e => console.log('PAGE ERROR', e.message));
   p.on('console', m => { if (/error|greš|fail/i.test(m.text())) console.log('KONZOLA', m.text().slice(0, 200)); });

@@ -569,3 +569,4 @@ body.land-detail[data-basemap="offline"] #map, body.land-detail[data-basemap="of
   .fab.gpsfab { padding: 9px 9px; }
   .modepill { max-width: min(150px, calc(100vw - 272px)); }   /* room for the GPS button in the same row */
 }
+.tgl[hidden]{display:none!important}

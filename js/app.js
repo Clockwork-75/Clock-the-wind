@@ -557,6 +557,7 @@ const syncToggles = () => {
   $('#tglColors').classList.toggle('on', state.colors !== false);
 };
 if (settings.ovDepth === undefined) settings.ovDepth = true; // depths visible by default
+settings.ovRain = false;   // rain is never drawn over the wind any more: it is its own layer (Kiša)
 [['#ovWaves', 'ovWaves'], ['#ovCurrents', 'ovCurrents'], ['#ovRain', 'ovRain'], ['#ovDepth', 'ovDepth'], ['#ovIsobars', 'ovIsobars']].forEach(([id, k]) => {
   state[k] = !!settings[k];
   $(id).onclick = () => { state[k] = settings[k] = !state[k]; saveSettings(); syncToggles(); wxLayer.draw(); chartLayer.draw(); depthLayer.draw(); };
@@ -600,9 +601,8 @@ $('#tglNumbers').onclick = () => { state.showNumbers = settings.showNumbers = !s
 function renderLegend() {
   const L = LAYERS[state.layer], s = L.scale;
   const stops = s.stops.map(([v, c]) => `${c} ${((v - s.lo) / (s.hi - s.lo) * 100).toFixed(1)}%`).join(',');
-  const extra = state.layer === 'storm' ? ' · CAPE (⚡ ICON-2I)' : '';
-  $('#legend').innerHTML = `<div class="ttl"><span>${L.name}${extra}</span><span>${L.unit}</span></div><div class="bar" style="background:linear-gradient(90deg,${stops})"></div>
-    <div class="ticks">${L.legend.map(v => `<span>${v}</span>`).join('')}</div>`;
+  $('#legend').innerHTML = `<div class="ttl"><span>${L.name}</span><span>${L.unit}</span></div><div class="bar" style="background:linear-gradient(90deg,${stops})"></div>
+    <div class="ticks">${(L.labels || L.legend).map(v => `<span>${v}</span>`).join('')}</div>`;
 }
 
 // ---------------- course (marks) ----------------

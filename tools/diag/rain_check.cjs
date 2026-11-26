@@ -26,7 +26,7 @@ const base = process.argv[2] || 'http://localhost:8080/';
         }
         if (sum > best.sum) best = { t: f.times[ti], sum };
       }
-      out[id] = `varijable ${v.join(',')} | najkišniji sat ${new Date(best.t + H).toISOString().slice(5, 16)} (zbroj ${best.sum.toFixed(1)}), najviše ${rmax.toFixed(1)} mm/h | CAPE max ${Math.round(cmax)} | LPI max ${lmax.toFixed(1)}`;
+      out[id] = `područje ${f.lat0.toFixed(2)}–${(f.lat0 + f.dlat * (f.ny - 1)).toFixed(2)} N, ${f.lon0.toFixed(2)}–${(f.lon0 + f.dlon * (f.nx - 1)).toFixed(2)} E | varijable ${v.join(',')} | najkišniji sat ${new Date(best.t + H).toISOString().slice(5, 16)} (zbroj ${best.sum.toFixed(1)}), najviše ${rmax.toFixed(1)} mm/h | CAPE max ${Math.round(cmax)} | LPI max ${lmax.toFixed(1)}`;
       if (!c.wettest || best.sum > c.wettest.sum) c.wettest = { ...best, id };
     }
     return { out, wettest: c.wettest };

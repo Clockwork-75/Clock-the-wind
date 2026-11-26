@@ -57,8 +57,9 @@ async function dwd(kind) {
   const msgs = [];
   // rain (total since the run start → mm/h in gribToField), instability (CAPE) and, ICON-D2 only, the lightning potential index
   const RN = { tot_prec: 'precipAcc', cape_ml: 'cape', lpi: 'lpi' };
-  // ICON-D2 is the finest grid (the package's biggest part): rain + lightning potential only – its CAPE adds little next to LPI
-  const vars = ['u_10m', 'v_10m', 'vmax_10m', 'pmsl', 'relhum_2m', 't_2m', 'tot_prec', ...(kind === 'd2' ? ['lpi'] : ['cape_ml'])];
+  // ICON-D2 ends at ~43.2° N (no Vis, Lastovo, Korčula, Dubrovnik, Jabuka) and is the package's heaviest grid: wind only.
+  // Rain and thunderstorms come from the models that cover the whole Adriatic (ICON-EU, ECMWF, GFS).
+  const vars = ['u_10m', 'v_10m', 'vmax_10m', 'pmsl', 'relhum_2m', 't_2m', ...(kind === 'eu' ? ['tot_prec', 'cape_ml'] : [])];
   await pool(steps.flatMap(h => vars.map(v => [h, v])), 8, async ([h, v]) => {
     const b = await get(url(run, h, v)); if (!b) return;
     const raw = bunzip(b); if (raw) addMsgs(raw, msgs, BBOX, RN[v] || null);

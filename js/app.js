@@ -251,7 +251,7 @@ const BOAT_GROUPS = [
   { id: 'clockwork', name: 'Clockwork', type: 'Melges 40', draft: 2.6 },
   { id: 'leeloo', name: 'LeeLoo', type: 'Mat 11.80', draft: 2.6 },
   { id: 'fugu', name: 'Fugu', type: 'First 30 JK', draft: 1.9 },
-  { id: 'nikola', name: 'Hanse 460 Nikola', type: 'charter', draft: 2.27 },
+  { id: 'nikola', name: 'Hanse 460 Grampi', type: 'charter', draft: 2.27 },
 ];
 let boats = [];
 async function loadBoats() {
@@ -263,7 +263,7 @@ async function loadBoats() {
     { id: 'leeloo', group: 'leeloo', kind: 'vpp', name: 'LeeLoo · Mat 11.80 – VPP (North Sails)', src: MAT1180_VPP, sails: 'mat1180', builtin: true },
     { id: 'leeloo-orc', group: 'leeloo', kind: 'orc', name: 'LeeLoo · Mat 11.80 – ORC 2025', src: MAT1180_ORC, sails: 'mat1180', builtin: true },
     { id: 'fugu', group: 'fugu', kind: 'vpp', name: 'Fugu · First 30 JK – polar (Bénéteau/JK)', src: FIRST30_VPP, sails: 'none', builtin: true },
-    { id: 'nikola', group: 'nikola', kind: 'orc', name: 'Hanse 460 Nikola – ORC (Hanse 460, 2023)', src: HANSE460_ORC, sails: 'none', builtin: true },
+    { id: 'nikola', group: 'nikola', kind: 'orc', name: 'Hanse 460 Grampi – ORC (Hanse 460, 2023)', src: HANSE460_ORC, sails: 'none', builtin: true },
     ...user,
   ];
   selectBoat(settings.boatId, true);

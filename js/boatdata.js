@@ -5,7 +5,7 @@
 //    UP/DN targets, sail per cell) and the ORC 2025 club certificate polar (043/25).
 //  · Fugu – First 30 JK: Bénéteau/JK "Best Speed Polar Graph" (TWS 6–20 kn, TWA 32–180°, 105 % jib, spinnaker and
 //    gennaker, flat water), read point by point from the vector curves of the owner's PDF.
-//  · Nikola – Hanse 460 (2023, Berret-Racoupeau, draft 2.27 m): ORC VPP, the mean of two public ORC 2025 club certificates
+//  · Grampi – Hanse 460 (2023, Berret-Racoupeau, draft 2.27 m): ORC VPP, the mean of two public ORC 2025 club certificates
 //    (ESP 11278 "Per Se" and ESP 3469 "Bienvenido", both Hanse 460 2023; they differ by ≤0.1 kn). Source: ORC data
 //    via github.com/jieter/orc-data (MIT). Downwind (TWA ≥ 110°) the ORC figures assume the asymmetric spinnaker (144 m²).
 // Speeds in knots. `full: true` = a complete VPP grid (real values below the beat and beyond the gybe angle).

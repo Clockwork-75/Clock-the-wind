@@ -30,7 +30,7 @@ jobs:
       - name: Spremi na granu obs
         run: |
           cd obsdata
-          rm -rf .git_tmp && mkdir .git_tmp && cp obs.json history.json archive.json .git_tmp/ && cd .git_tmp
-          git init -q && git checkout -q -b obs && git add obs.json history.json archive.json
+          rm -rf .git_tmp && mkdir .git_tmp && cp obs.json history.json archive.json verif.json moja_log.json .git_tmp/ && cd .git_tmp
+          git init -q && git checkout -q -b obs && git add obs.json history.json archive.json verif.json moja_log.json
           git -c user.name=ctw-ci -c user.email=ci@users.noreply.github.com commit -qm "mjerenja $(date -u +%FT%TZ)"
           git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" obs

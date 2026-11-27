@@ -532,6 +532,7 @@ def ang(a, b): d = abs(a - b) % 360; return 360 - d if d > 180 else d
 def frm(u, v): return (math.degrees(math.atan2(-u, -v)) + 360) % 360
 # score2: hour → model → lead bin → [Σ vector error, Σ speed error, Σ |speed error|, n, Σ direction error, n dir]
 agg2 = hist.setdefault('score2', {})
+verif = load('verif.json', {})
 for created, P_ in sorted(fc.items()):
     if not P_.get('uv'): continue          # old packages without direction: not scored
     t0 = P_['t0'] // 1000
@@ -554,6 +555,9 @@ for created, P_ in sorted(fc.items()):
                 fu, fv = f; fs = math.hypot(fu, fv)
                 c = agg2.setdefault(str(t), {}).setdefault(mid, {}).setdefault(b, [0, 0, 0, 0, 0, 0])
                 c[0] += math.hypot(fu - m[0], fv - m[1]); c[1] += fs - m[2]; c[2] += abs(fs - m[2]); c[3] += 1
+                # for the analysis (where and when MOJA or a model was right): day → place → lead bin → model → [Σ vector, Σ speed, n]
+                vd = verif.setdefault(dt.datetime.fromtimestamp(t, ZG).strftime('%Y-%m-%d'), {}).setdefault(pid, {}).setdefault(b, {}).setdefault(mid, [0, 0, 0])
+                vd[0] = round(vd[0] + math.hypot(fu - m[0], fv - m[1]), 1); vd[1] = round(vd[1] + fs - m[2], 1); vd[2] += 1
                 if fs >= 5 and m[2] >= 5: c[4] += ang(frm(fu, fv), frm(m[0], m[1])); c[5] += 1
 hist.pop('score', None)
 for t in list(agg2):
@@ -654,14 +658,25 @@ def moja_issue():
             row.append([round(b[0] + du, 1), round(b[1] + dv, 1)])
         rows.append(row)
     return {'created': int(now * 1000), 't0': P0['t0'], 'step': P0.get('step', H * 1000), 'places': ids, 'uv': True, 'models': {'moja': rows},
-            'weights': {r['id']: round(w, 3) for r, w in zip(st, weights(0))}}
+            'weights': {r['id']: round(w, 3) for r, w in zip(st, weights(0))},
+            'recipe': {r['id']: {'w0': round(w, 3), 'w24': round(w24, 3), 'w48': round(w48, 3), 'ratio': round(r['ratio'], 2), 'turn': round(r['bias'])}
+                       for r, w, w24, w48 in zip(st, weights(0), weights(30), weights(60))}}
+mlog = load('moja_log.json', [])   # (weights, speed ratio, direction turn) of every MOJA issue, 90 days
 mj = [k for k, v in fc.items() if 'moja' in v.get('models', {})]
 if not mj or now - max(int(k) for k in mj) / 1000 >= 3 * H - 600:
     try:
         m_ = moja_issue()
-        if m_: fc[str(m_['created'])] = m_; print('MOJA na serveru izrađena, težine sada:', m_['weights'])
+        if m_:
+            fc[str(m_['created'])] = m_; print('MOJA na serveru izrađena, težine sada:', m_['weights'])
+            mlog.append({'t': int(now), 'models': m_['recipe']})   # every issue's recipe, for the analysis
         else: print('MOJA: premalo mjerenja ili nema prognoze modela')
     except Exception as e: print('!! MOJA', e)
+
+for k in [k for k in verif if k < (dt.datetime.fromtimestamp(now, ZG) - dt.timedelta(days=90)).strftime('%Y-%m-%d')]: del verif[k]
+json.dump(verif, open(os.path.join(OUT, 'verif.json'), 'w'), separators=(',', ':'))
+
+mlog = [x for x in mlog if x['t'] >= now - 90 * 24 * H]
+json.dump(mlog, open(os.path.join(OUT, 'moja_log.json'), 'w'), separators=(',', ':'))
 
 # ---------------- 90-day memory: the measured wind and pressure at every place, hourly (for scoring by situation later) ----------------
 arch = load('archive.json', {})

@@ -373,6 +373,21 @@ function renderChips() {
     };
     b.appendChild(x);
   });
+  // MOJA: ✕ switches it off – it is no longer rebuilt by itself from the measurements, until you calculate it again
+  // (Analiza → Izračunaj MOJA)
+  const mb = el.querySelector('.chip[data-model="moja"]');
+  if (mb) {
+    const x = document.createElement('span'); x.className = 'chipx'; x.textContent = '✕'; x.title = 'Isključi MOJA prognozu';
+    x.onclick = e => {
+      e.stopPropagation();
+      settings.mojaOff = true; saveSettings();
+      const s = state.set; delete s.fields.moja; s.models = s.models.filter(id => id !== 'moja');
+      if (state.modelId === 'moja') { state.modelId = s.models[0]; state.wind = withFallback(s, state.modelId); }
+      if (state.routes.moja) { delete state.routes.moja; drawRoutes(); }
+      renderChips(); wxLayer.draw(); toast('MOJA je isključena – ponovno je izračunaj u kartici Analiza (Izračunaj MOJA)', 4500);
+    };
+    mb.appendChild(x);
+  }
 }
 
 // ---------------- timeline ----------------
@@ -2035,7 +2050,7 @@ function buildMoja() {
 }
 // built by itself whenever fresh measurements arrive (and after a new forecast), so MOJA is always current
 // not during a replay: rebuilding MOJA would stall the picture
-function autoMoja() { if (!state.obs || !state.set || rp.on) return; try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
+function autoMoja() { if (!state.obs || !state.set || rp.on || settings.mojaOff) return; try { const keep = state.modelId; buildMoja(); if (keep === 'moja') { state.wind = state.set.fields.moja; wxLayer.draw(); } } catch (e) { console.warn('MOJA', e); } }
 function pressureHtml() {
   const o = state.obs, s = state.set; if (!o || !s) return '';
   const pc = pressureCheck(), ids = s.models.filter(id => !isDerived(id) && s.fields[id] && s.fields[id].vars && s.fields[id].vars.mslp);
@@ -2107,7 +2122,7 @@ function renderAnalysisTab() {
     ${(o.signals || []).map(x => `<div class="os ${x.level}">⚠ <b>${x.title}</b><br><small>${x.text}</small></div>`).join('') || '<div class="note">Nema posebnih signala.</div>'}
     <div class="note">Mjerenja: DHMZ (plutače očitane s grafova, obalne postaje), zadnje ${fmtTime(o.created * 1000, false)}. Zeleno = model pogađa (greška < 4 kn), žuto = 4–8 kn, crveno = 8+ kn (kriva snaga ili krivi smjer). *MOJA je za sadašnji trenutak povučena prema ovim mjerenjima, pa ovdje nije u rangu – njezina vrijednost je u satima koji dolaze.</div>`;
   const bm = el.querySelector('#btnMoja');
-  if (bm) bm.onclick = () => { bm.disabled = true; bm.textContent = 'Računam…'; setTimeout(() => { const f = buildMoja(); if (f) { selectModel('moja'); toast('MOJA prognoza izračunata – prikazana na karti'); } renderAnalysisTab(); }, 30); };
+  if (bm) bm.onclick = () => { settings.mojaOff = false; saveSettings(); bm.disabled = true; bm.textContent = 'Računam…'; setTimeout(() => { const f = buildMoja(); if (f) { selectModel('moja'); toast('MOJA prognoza izračunata – prikazana na karti'); } renderAnalysisTab(); }, 30); };
 }
 const routeLayer = L.layerGroup().addTo(map);
 let boatMarkers = {};
@@ -2295,7 +2310,7 @@ function windOfRoute() {
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
   L.push(`GPS: ${gps.status()}${gps.fix ? ` ±${Math.round(gps.fix.acc)} m` : ''} · primljeno ${gps.count}, odbačeno ${gps.rejected} · trag ${gps.track.length}`);
-  L.push(`Verzija 5.4 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 5.5 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2566,7 +2581,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 5.4 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 5.5 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>

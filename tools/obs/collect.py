@@ -510,11 +510,11 @@ try:
     if str(pts['created']) not in fc: fc[str(pts['created'])] = pts; print('nova prognoza za ocjenu:', dt.datetime.fromtimestamp(pts['created'] / 1000, ZG))
 except Exception as e: print('!! točke prognoze', e)
 for k in list(fc):
-    if int(k) / 1000 < now - 3 * 24 * H: del fc[k]
+    if int(k) / 1000 < now - 4 * 24 * H: del fc[k]   # a forecast is scored up to 72 h after it was made
 agg = hist.setdefault('score', {})        # hour → model → lead bin → [sum |e|, sum e, n]
 done = set(hist.setdefault('scored', []))
 FEEDS = {r[0]: r[5] for r in REGISTRY}
-BINS = (('0-12', 0, 12), ('12-24', 12, 24), ('24-48', 24, 49))
+BINS = (('0-12', 0, 12), ('12-24', 12, 24), ('24-48', 24, 48), ('48-72', 48, 73))
 def measured(pid, t):
     """measured wind at the full hour t as a vector (u, v toward which it blows, kn) + speed; buoys brought from 3 m to 10 m.
     Every source of the place is tried: 10-minute value at the hour first, then hourly XML, then the nearest METAR/ARSO."""
@@ -557,8 +557,8 @@ for created, P_ in sorted(fc.items()):
                 if fs >= 5 and m[2] >= 5: c[4] += ang(frm(fu, fv), frm(m[0], m[1])); c[5] += 1
 hist.pop('score', None)
 for t in list(agg2):
-    if int(t) < now - 8 * 24 * H: del agg2[t]
-hist['scored'] = [k for k in done if int(k.rsplit('|', 1)[1]) >= now - 4 * 24 * H]
+    if int(t) < now - 90 * 24 * H: del agg2[t]   # 90 days of scores (small: hourly totals)
+hist['scored'] = [k for k in done if int(k.rsplit('|', 1)[1]) >= now - 5 * 24 * H]
 def skill(hours, bins=None):
     tot = {}
     for t, mm in agg2.items():
@@ -573,8 +573,103 @@ def skill(hours, bins=None):
         if n < 20: continue
         out.append({'id': m, 'mae': round(sv / n, 2), 'spd': round(sa / n, 2), 'bias': round(se / n, 2), 'dir': round(sd / nd) if nd >= 10 else None, 'n': n})
     return sorted(out, key=lambda r: r['mae'])   # ranked by the vector error: speed and direction together
-SKILL = {'24h': skill(24), '72h': skill(72), '7d': skill(7 * 24), '7d_0-12': skill(7 * 24, ['0-12']), '7d_24-48': skill(7 * 24, ['24-48'])}
+SKILL = {'24h': skill(24), '72h': skill(72), '7d': skill(7 * 24), '7d_0-12': skill(7 * 24, ['0-12']), '7d_24-48': skill(7 * 24, ['24-48']),
+         '7d_48-72': skill(7 * 24, ['48-72']), '30d': skill(30 * 24), '30d_0-12': skill(30 * 24, ['0-12']), '30d_24-48': skill(30 * 24, ['24-48']),
+         '30d_48-72': skill(30 * 24, ['48-72']), '90d': skill(90 * 24)}
 print('Rang modela 24 h (vektorska greška):', ', '.join(f"{r['id']} ±{r['mae']} (smjer ±{r['dir']}°)" for r in SKILL['24h']) or 'još nema dovoljno podataka')
+
+# ---------------- MOJA on the server: the same recipe as in the app, at the measurement places, so it is scored like a model ----------------
+# Made at most every 3 h from the newest package's models at the places; only hours AFTER now are kept (the hour whose
+# measurements pulled it can never score it). From the next runs on it is scored with every other model (id 'moja').
+def moja_issue():
+    pk = [k for k, v in fc.items() if v.get('uv') and 'moja' not in v.get('models', {})]
+    if not pk: return None
+    P0 = fc[max(pk, key=int)]
+    t0 = P0['t0'] // 1000; ids = P0['places']; M = P0['models']; nK = len(next(iter(M.values())))
+    k_now = int((now - t0) // H)
+    if k_now < 0 or k_now >= nK: return None
+    meas = {}
+    for p in live_places:
+        if p['id'] not in ids or p.get('wspd') is None: continue
+        sp = p['wspd'] * (U3_10 if p.get('h') == 3 else 1)
+        if sp < 0.5: meas[p['id']] = (0.0, 0.0, 0.0, None, p['lat'], p['lon']); continue
+        if p.get('wdir') is None: continue
+        a = math.radians(p['wdir']); meas[p['id']] = (-sp * math.sin(a), -sp * math.cos(a), sp, p['wdir'], p['lat'], p['lon'])
+    if len(meas) < 4: return None
+    sk = lambda key, mid: next((r['mae'] for r in SKILL.get(key, []) if r['id'] == mid and r['n'] >= 40), None)
+    st = []
+    for mid, rows in M.items():
+        if mid == 'moja': continue
+        n = ve = sm = sx = ds = dc = nd = 0
+        for j, pid in enumerate(ids):
+            m = meas.get(pid); f = rows[k_now][j]
+            if not m or not f: continue
+            fs = math.hypot(*f); n += 1; ve += math.hypot(f[0] - m[0], f[1] - m[1]); sm += fs; sx += m[2]
+            if m[3] is not None and fs >= 5 and m[2] >= 5:
+                d = (frm(*f) - m[3] + 540) % 360 - 180; ds += math.sin(math.radians(d)); dc += math.cos(math.radians(d)); nd += 1
+        if n < 4: continue
+        bias = max(-40, min(40, math.degrees(math.atan2(ds, dc)))) if nd >= 4 and math.hypot(ds, dc) / nd > 0.6 else 0
+        long = sk('24h', mid) or sk('72h', mid); mae = 0.5 * ve / n + 0.5 * long if long else ve / n
+        short = sk('7d_0-12', mid); l24 = sk('7d_24-48', mid); l48 = sk('7d_48-72', mid)
+        st.append({'id': mid, 'rows': rows, 'bias': bias, 'ratio': max(0.6, min(1.6, sx / max(1, sm))),
+                   'm': [0.5 * mae + 0.5 * short if short else mae, None, l24 or mae, l48 or l24 or mae]})
+    if not st: return None
+    def weights(lead):
+        ms = [r['m'][0] if lead < 12 else 0.5 * (r['m'][0] + r['m'][2]) if lead < 24 else r['m'][2] if lead < 48 else r['m'][3] for r in st]
+        w = [1 / max(1, m) ** 2 for m in ms]; S = sum(w); return [x / S for x in w]
+    def blend(k, j, lead):
+        w = weights(lead); rot = 1 if lead <= 0 else max(0.5, 1 - lead / 48)
+        su = sv = ss = W = 0
+        for r, wr in zip(st, w):
+            f = r['rows'][k][j] if k < len(r['rows']) else None
+            if not f: continue
+            a = -math.radians(r['bias'] * rot); cu = f[0] * math.cos(a) + f[1] * math.sin(a); cv = -f[0] * math.sin(a) + f[1] * math.cos(a)
+            su += wr * cu; sv += wr * cv; ss += wr * math.hypot(*f) * r['ratio']; W += wr
+        if not W: return None
+        mu, mv, sp = su / W, sv / W, ss / W; mag = math.hypot(mu, mv)
+        return (mu / mag * sp, mv / mag * sp) if mag > 0.01 else (0.0, 0.0)
+    res = []
+    for j, pid in enumerate(ids):
+        m = meas.get(pid)
+        if not m: continue
+        b = blend(k_now, j, 0)
+        if b: res.append((m[4], m[5], m[0] - b[0], m[1] - b[1]))
+    ll = {p['id']: (p['lat'], p['lon']) for p in places}
+    rows = []
+    for k in range(nK):
+        t = t0 + k * H; lead = (t - now) / H
+        if t <= now: rows.append([None] * len(ids)); continue
+        fade = math.exp(-lead / 4); row = []
+        for j, pid in enumerate(ids):
+            b = blend(k, j, lead)
+            if not b: row.append(None); continue
+            du = dv = 0
+            if fade > 0.02 and pid in ll:
+                la, lo = ll[pid]; sw = su = sv = 0
+                for (rla, rlo, ru, rv) in res:
+                    dk = math.hypot((rla - la) * 111, (rlo - lo) * 111 * math.cos(math.radians(la)))
+                    if dk > 60: continue
+                    w = 1 / (dk * dk + 25); sw += w; su += w * ru; sv += w * rv
+                if sw: wl = min(1, sw * 400) * fade; du, dv = su / sw * wl, sv / sw * wl
+            row.append([round(b[0] + du, 1), round(b[1] + dv, 1)])
+        rows.append(row)
+    return {'created': int(now * 1000), 't0': P0['t0'], 'step': P0.get('step', H * 1000), 'places': ids, 'uv': True, 'models': {'moja': rows},
+            'weights': {r['id']: round(w, 3) for r, w in zip(st, weights(0))}}
+mj = [k for k, v in fc.items() if 'moja' in v.get('models', {})]
+if not mj or now - max(int(k) for k in mj) / 1000 >= 3 * H - 600:
+    try:
+        m_ = moja_issue()
+        if m_: fc[str(m_['created'])] = m_; print('MOJA na serveru izrađena, težine sada:', m_['weights'])
+        else: print('MOJA: premalo mjerenja ili nema prognoze modela')
+    except Exception as e: print('!! MOJA', e)
+
+# ---------------- 90-day memory: the measured wind and pressure at every place, hourly (for scoring by situation later) ----------------
+arch = load('archive.json', {})
+hr = str(int(now // H * H))
+arch[hr] = {p['id']: [round(p['wspd'], 1), p.get('wdir'), p.get('pres')] for p in live_places if p.get('wspd') is not None and now - p.get('t', 0) < 2 * H}
+for k in [k for k in arch if int(k) < now - 90 * 24 * H]: del arch[k]
+json.dump(arch, open(os.path.join(OUT, 'archive.json'), 'w'), separators=(',', ':'))
+print('arhiva mjerenja:', len(arch), 'sati')
 
 # ---------------- measured pressure gradients (with the places, so the app can read the same from each model) ----------------
 def group(names):

@@ -2107,7 +2107,8 @@ function renderAnalysisTab() {
   const nowRank = obsRank().map(r => ({ ...r }));
   el.innerHTML = `
     <h3>Rang modela prema mjerenjima <small>(greška cijelog vjetra – snaga i smjer zajedno, kn · prosječna greška smjera ° · snaga + jača / − slabija)</small></h3>
-    <table class="rank">${rankRow('Sada', nowRank)}${rankRow('Zadnja 24 h', sk('24h'))}${rankRow('Zadnja 3 dana', sk('72h'))}${rankRow('7 dana', sk('7d'))}${rankRow('7 dana · prvih 12 h', sk('7d_0-12'))}${rankRow('7 dana · 24–48 h unaprijed', sk('7d_24-48'))}</table>
+    <table class="rank">${rankRow('Sada', nowRank)}${rankRow('Zadnja 24 h', sk('24h'))}${rankRow('Zadnja 3 dana', sk('72h'))}${rankRow('7 dana', sk('7d'))}${rankRow('7 dana · prvih 12 h', sk('7d_0-12'))}${rankRow('7 dana · 24–48 h unaprijed', sk('7d_24-48'))}${rankRow('7 dana · 48–72 h unaprijed', sk('7d_48-72'))}${rankRow('30 dana', sk('30d'))}${rankRow('30 dana · 48–72 h', sk('30d_48-72'))}${rankRow('90 dana', sk('90d'))}</table>
+    <div class="note"><b>MOJA</b> se ocjenjuje kao svaki model: računa se na serveru svaka 3 sata i boduje samo za sate POSLIJE izrade (mjerenja koja su je povukla ne smiju je ocjenjivati).</div>
     <h3>MOJA prognoza</h3>
     ${ms ? `<div class="note">Težine prema tome koliko modeli sada pogađaju mjerenja: ${ms.st.map(r => `<b style="color:${mcol(r.id)}">${modelById(r.id).name}</b> ${(r.w * 100).toFixed(0)} %${Math.abs(r.ratio - 1) >= 0.08 ? ` <small>(snaga ×${r.ratio.toFixed(2)})</small>` : ''}${Math.abs(r.dirBias) >= 5 ? ` <small>(smjer ${r.dirBias > 0 ? '−' : '+'}${Math.abs(Math.round(r.dirBias))}°)</small>` : ''}`).join(' · ')}.</div>
       <div class="note"><b>Kako nastaje:</b> 1) svaki model ispravi se za svoje izmjereno odstupanje – snagu (×) i smjer (°); 2) modeli se miješaju s težinama prema grešci cijelog vjetra (za sljedećih 12 h prema kratkoročnoj točnosti, za 1–2 dana prema točnosti na tom roku, kad se skupi arhiva); 3) ako izmjereni gradijent tlaka bure/juga odstupa od modela, brzine se dodatno podignu/spuste; 4) prvih ~6 h prognoza se povlači prema izmjerenoj strelici vjetra (snaga i smjer) i udarima na svakoj plutači i postaji, utjecaj slabi s udaljenošću (~60 km) i vremenom.</div>
@@ -2310,7 +2311,7 @@ function windOfRoute() {
 function viewCheck() {
   const st = state, s = st.set, H = 3600000, L = [];
   L.push(`GPS: ${gps.status()}${gps.fix ? ` ±${Math.round(gps.fix.acc)} m` : ''} · primljeno ${gps.count}, odbačeno ${gps.rejected} · trag ${gps.track.length}`);
-  L.push(`Verzija 5.5 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
+  L.push(`Verzija 5.6 · izvor ${s ? s.source || s.quality : '–'} · paket izrađen ${s && s.created ? fmtTime(+s.created) : '–'}`);
   if (!s || !st.wind) { L.push('Nema prognoze na karti'); return L; }
   const f = st.wind, ft = f.times, step = ft.length > 1 ? (ft[1] - ft[0]) / H : 0;
   L.push(`Karta: ${modelById(st.modelId).name} (${st.modelId}) · sloj ${st.layer} · polje je model iz paketa: ${s.fields[st.modelId] === f ? 'da' : 'NE'}`);
@@ -2581,7 +2582,7 @@ function renderSettingsTab() {
     <button id="introPlay" class="btn block">Pokaži animaciju</button>
     <button id="viewCheck" class="btn block">Provjera prikaza</button>
     <div id="viewCheckOut" class="note" style="white-space:pre-line;user-select:text;-webkit-user-select:text"></div>
-    <div class="note">Verzija 5.5 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
+    <div class="note">Verzija 5.6 · Instaliraj: Safari → Dijeli → „Dodaj na početni zaslon" (iPhone/iPad) ili Safari → Datoteka → „Dodaj u Dock" (Mac).</div>
     <h3>Obriši ClockW modele</h3>
     <div id="cwDelBox">${cwDeleteHtml()}</div>
     <h3>Obriši sve</h3>
